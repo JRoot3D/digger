@@ -22,7 +22,7 @@
 - [x] 3.1 Create the `xtask` binary crate with `clap` and add `.cargo/config.toml` with the alias `xtask = "run --package xtask --"`; verify `cargo xtask --help` lists subcommands
 - [x] 3.2 Implement `cargo xtask ci` running format check, Clippy with `-D warnings`, tests and `cargo doc` with warnings denied, stopping at the first failure with a non-zero exit; verify it passes on the clean tree and fails when a formatting error is introduced
 - [x] 3.3 Add the dependency-direction check to `cargo xtask ci`: fail if `cargo tree` for `digger-core` or `digger-sound` contains a crate from the platform deny-list; verify with a unit test over sample `cargo tree` output for both a clean and a violating tree
-- [ ] 3.4 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 3.4 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 4. Licence and contributor documentation
 
