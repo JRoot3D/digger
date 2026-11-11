@@ -17,11 +17,13 @@ mod crc;
 mod framebuffer;
 mod palette;
 mod saved;
+mod text;
 
 pub use crc::crc32;
 pub use framebuffer::{Framebuffer, ProbeBits};
 pub use palette::{Intensity, Palette, Rgb, colors};
 pub use saved::SavedRect;
+pub use text::{CELL_ADVANCE, TextColor};
 
 #[cfg(test)]
 mod tests;

@@ -53,9 +53,9 @@ task of each group is the quality gate and the commit.
 
 ## 6. Text, numbers, background and title
 
-- [ ] 6.1 Implement `TextColor` and `draw_char` (opaque 12x12 cell, recolouring table, unaligned x, no-op for a character without a glyph); verify with `text_cell_is_opaque`, `text_recolour_table` (all four colours), `text_unaligned_position` and `draw_char_without_glyph_is_noop`
-- [ ] 6.2 Implement `draw_text` and `erase_text` (12-pixel advance, unsupported characters as spaces, quirk R5); verify with `text_advance_is_12`, `text_invalid_char_becomes_space`, `text_lowercase_equals_uppercase` and `erase_top_line_covers_320_columns`
-- [ ] 6.3 Implement `draw_number` (right-aligned, leftmost cell only when non-zero, quirk R6); verify with `number_zero_width_6`, `number_six_digits`, `number_leftmost_cell_not_erased`, `number_width_1_zero_draws_nothing` and `number_drops_high_digits`
+- [x] 6.1 Implement `TextColor` and `draw_char` (opaque 12x12 cell, recolouring table, unaligned x, no-op for a character without a glyph); verify with `text_cell_is_opaque`, `text_recolour_table` (all four colours), `text_unaligned_position` and `draw_char_without_glyph_is_noop`
+- [x] 6.2 Implement `draw_text` and `erase_text` (12-pixel advance, unsupported characters as spaces, quirk R5); verify with `text_advance_is_12`, `text_invalid_char_becomes_space`, `text_lowercase_equals_uppercase` and `erase_top_line_covers_320_columns`
+- [x] 6.3 Implement `draw_number` (right-aligned, leftmost cell only when non-zero, quirk R6); verify with `number_zero_width_6`, `number_six_digits`, `number_leftmost_cell_not_erased`, `number_width_1_zero_draws_nothing` and `number_drops_high_digits`
 - [ ] 6.4 Implement `LevelPlan` (1–8, constructor returns `None` otherwise) and `draw_background` (752 tiles from y 14, last row clipped, quirk R7); verify with `level_plan_rejects_0_and_9`, `background_coverage`, `background_plan_selects_tile` and `background_preserves_top_line`
 - [ ] 6.5 Implement `draw_title`; verify with `title_replaces_whole_picture`, `title_keeps_palette` and `title_text_fits_in_black_margin`
 - [ ] 6.6 Document the public `video` API with rustdoc, including a module-level explanation of logical versus real coordinates and why the picture is game state; verify with `cargo doc -p digger-core --no-deps` producing no warnings
