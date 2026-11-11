@@ -285,7 +285,7 @@ Each row becomes an entry in `docs/compat-quirks.md` (class "affects the simulat
 | Pixel probe beyond the screen reads outside the picture | The phase-2 probe's defined result is used as is (quirks R1, R2): earth beyond x 319 or y 199, row wrap near the right edge, 0 outside the buffer | UB → defined |
 | Two alternating players with two diggers indexes past the digger array | Unrepresentable in `GameMode`; rejected by `from_parts` | UB → rejected |
 | Start level ≤ 0 gives blank levels and a division by zero in the RNG | `StartLevel` accepts 1..=1000 only; `Modulus` is non-zero by construction | UB → rejected |
-| Dig step indexes outside the field | No cell changes; penalty still charged; `debug_assert!` | UB → defined |
+| Dig step indexes outside the field | No cell changes; penalty still charged (no debug assertion: the playfield spec's "Dig request beyond the right edge" scenario exercises the case in debug test builds) | UB → defined |
 | Signed overflow in the generator and SplitMix64 | Wrapping arithmetic, as every recording assumes | UB → defined |
 | Reads of unoccupied monster slots, removed bags and out-of-play diggers | Arrays are always fully initialised and keep last values | UB → defined |
 | On-screen limit has no value for level < 1 | Unreachable (start level validated) | — |

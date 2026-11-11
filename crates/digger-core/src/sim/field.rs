@@ -1,2 +1,675 @@
 //! The earth of the 15x10 cell grid: slices, the dig step, redraw
 //! normalisation, emeralds and the per-player saves (design D1, D5).
+//!
+//! Each cell's earth is five horizontal slices 4 pixels wide and six
+//! vertical slices 3 pixels high, plus an "untouched" mark. A [`Cell`] keeps
+//! the original's 16-bit layout because the upstream state hash covers it
+//! (design D5): horizontal slices in bits 0–4, vertical slices in bits 6–11,
+//! the untouched mark in bit 13 and every other bit always set. No mask
+//! literal appears outside this module (research 01 §5.3, research 02 §0).
+
+use super::geom::{CellPos, Direction, locate};
+use super::ids::PlayerId;
+use super::level::{LevelLayout, LevelNumber, LevelSet};
+use super::penalty::{Penalty, PenaltySite};
+use crate::geom::Px;
+
+/// Number of horizontal slices of a cell: five, 4 pixels wide each.
+pub(crate) const H_SLICES: u8 = 5;
+/// Number of vertical slices of a cell: six, 3 pixels high each.
+pub(crate) const V_SLICES: u8 = 6;
+/// Width of a horizontal slice in pixels.
+const H_SLICE_WIDTH: u8 = 4;
+/// Height of a vertical slice in pixels.
+const V_SLICE_HEIGHT: u8 = 3;
+
+/// Bits of the five horizontal slices.
+const H_MASK: u16 = 0x001f;
+/// Bit of the first vertical slice; slice `i` is bit `V_SHIFT + i`.
+const V_SHIFT: u8 = 6;
+/// Bits of the six vertical slices.
+const V_MASK: u16 = 0x0fc0;
+/// The untouched mark.
+const UNTOUCHED: u16 = 0x2000;
+/// Every slice: what a cell without any tunnel holds.
+const ALL_SLICES: u16 = H_MASK | V_MASK;
+
+/// Number of cells in the grid.
+const CELLS: usize = 150;
+/// Number of grid columns, as an index stride.
+const STRIDE: usize = 15;
+
+/// The earth of one cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Cell(u16);
+
+impl Cell {
+    /// Solid untouched earth: every slice present.
+    pub const EARTH: Self = Self(u16::MAX);
+
+    /// The cell a level starts with for the layout character `c`: `S` has
+    /// no slices, `H` no horizontal slices, `V` no vertical slices, and all
+    /// three are not untouched; any other character is solid untouched
+    /// earth (playfield spec, "Initial earth and tunnel state").
+    pub const fn from_layout_char(c: u8) -> Self {
+        match c {
+            b'S' => Self(Self::EARTH.0 & !(H_MASK | V_MASK | UNTOUCHED)),
+            b'H' => Self(Self::EARTH.0 & !(H_MASK | UNTOUCHED)),
+            b'V' => Self(Self::EARTH.0 & !(V_MASK | UNTOUCHED)),
+            _ => Self::EARTH,
+        }
+    }
+
+    /// The cell's 16-bit value in the original's layout, as the upstream
+    /// state hash reads it.
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+
+    /// Whether horizontal slice `i` (0..=4, left to right) is still earth.
+    /// A slice number out of range reads as earth.
+    pub const fn has_h_slice(self, i: u8) -> bool {
+        i >= H_SLICES || self.0 & (1 << i) != 0
+    }
+
+    /// Whether vertical slice `i` (0..=5, top to bottom) is still earth.
+    /// A slice number out of range reads as earth.
+    pub const fn has_v_slice(self, i: u8) -> bool {
+        i >= V_SLICES || self.0 & (1 << (V_SHIFT + i)) != 0
+    }
+
+    /// Whether all five horizontal slices are still earth.
+    pub const fn has_all_h_slices(self) -> bool {
+        self.0 & H_MASK == H_MASK
+    }
+
+    /// Whether all six vertical slices are still earth.
+    pub const fn has_all_v_slices(self) -> bool {
+        self.0 & V_MASK == V_MASK
+    }
+
+    /// Whether every horizontal slice is gone.
+    pub const fn has_no_h_slices(self) -> bool {
+        self.0 & H_MASK == 0
+    }
+
+    /// Whether every vertical slice is gone.
+    pub const fn has_no_v_slices(self) -> bool {
+        self.0 & V_MASK == 0
+    }
+
+    /// Whether the cell is untouched: never fully crossed by a digging
+    /// move and not opened by its layout character.
+    pub const fn is_untouched(self) -> bool {
+        self.0 & UNTOUCHED != 0
+    }
+
+    /// Whether the cell has a tunnel in it: at least one of its eleven
+    /// slices is gone (research 02 §0).
+    pub const fn has_tunnel(self) -> bool {
+        self.0 & ALL_SLICES != ALL_SLICES
+    }
+
+    /// Removes horizontal slice `i`; out-of-range numbers change nothing.
+    pub(crate) const fn clear_h_slice(&mut self, i: u8) {
+        if i < H_SLICES {
+            self.0 &= !(1 << i);
+        }
+    }
+
+    /// Removes vertical slice `i`; out-of-range numbers change nothing.
+    pub(crate) const fn clear_v_slice(&mut self, i: u8) {
+        if i < V_SLICES {
+            self.0 &= !(1 << (V_SHIFT + i));
+        }
+    }
+
+    /// Removes the untouched mark.
+    const fn clear_untouched(&mut self) {
+        self.0 &= !UNTOUCHED;
+    }
+
+    /// Removes every horizontal slice and the untouched mark.
+    const fn open_horizontal(&mut self) {
+        self.0 &= !(H_MASK | UNTOUCHED);
+    }
+
+    /// Removes every vertical slice and the untouched mark.
+    const fn open_vertical(&mut self) {
+        self.0 &= !(V_MASK | UNTOUCHED);
+    }
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self::EARTH
+    }
+}
+
+/// The earth of the whole 15×10 grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Field {
+    /// Cells row by row: cell (h, v) at index v×15 + h, the original's
+    /// order, which the state hash follows.
+    cells: [Cell; CELLS],
+}
+
+impl Field {
+    /// A field of solid untouched earth, as a level number below 1 gives
+    /// (playfield spec, "Initial earth and tunnel state").
+    pub const EARTH: Self = Self {
+        cells: [Cell::EARTH; CELLS],
+    };
+
+    /// The field a level starts with for `layout`, read cell by cell
+    /// through [`Cell::from_layout_char`].
+    pub fn from_layout(layout: &LevelLayout) -> Self {
+        let mut field = Self::EARTH;
+        for cell in CellPos::all_column_major() {
+            *field.cell_mut(cell) = Cell::from_layout_char(layout.cell_char(cell));
+        }
+        field
+    }
+
+    /// The field `level` of `set` starts with, as played with one or two
+    /// diggers (the Q07 substitution applies through
+    /// [`LevelSet::layout_as_played`]). `None` stands for a level number
+    /// below 1 and gives solid earth.
+    pub fn for_level(set: &LevelSet, level: Option<LevelNumber>, two_diggers: bool) -> Self {
+        match level {
+            Some(level) => Self::from_layout(&set.layout_as_played(level.plan(), two_diggers)),
+            None => Self::EARTH,
+        }
+    }
+
+    /// The earth of `cell`.
+    pub fn cell(&self, cell: CellPos) -> Cell {
+        match self.cells.get(index(cell)) {
+            Some(cell) => *cell,
+            None => unreachable!("a cell position is inside the 15x10 grid"),
+        }
+    }
+
+    /// Every cell row by row, cell (h, v) at index v×15 + h.
+    pub const fn cells(&self) -> &[Cell; CELLS] {
+        &self.cells
+    }
+
+    /// The earth of `cell`, mutably.
+    fn cell_mut(&mut self, cell: CellPos) -> &mut Cell {
+        match self.cells.get_mut(index(cell)) {
+            Some(cell) => cell,
+            None => unreachable!("a cell position is inside the 15x10 grid"),
+        }
+    }
+
+    /// One dig step of a mover at `at` heading `dir`: removes exactly one
+    /// slice of the cell being entered and charges [`PenaltySite::DigStep`].
+    ///
+    /// With h, v the mover's cell, xs = ((x−12) mod 20) div 4 and
+    /// ys = ((y−18) mod 18) div 3: right removes horizontal slice xs of
+    /// (h+1, v); down vertical slice ys of (h, v+1); left horizontal slice
+    /// xs−1 of (h, v), or slice 4 of (h−1, v) when xs is 0; up vertical
+    /// slice ys−1 of (h, v), or slice 5 of (h, v−1) when ys is 0. A
+    /// horizontal step that leaves the cell with no horizontal slices, or a
+    /// vertical one that leaves it with no vertical slices, clears its
+    /// untouched mark (playfield spec, "Digging removes one slice per
+    /// step"; research 01 §5.3, research 02 §0).
+    ///
+    /// The penalty is charged even with no direction (compat-quirks Q38).
+    /// A step that would address a cell outside the grid changes nothing
+    /// (compat-quirks U05).
+    #[allow(dead_code, reason = "called by the movers of later task groups")]
+    pub(crate) fn dig(&mut self, at: Px, dir: Option<Direction>, penalty: &mut Penalty) {
+        penalty.charge(PenaltySite::DigStep);
+        let (Some(dir), Some(located)) = (dir, locate(at)) else {
+            return;
+        };
+        let xs = located.rem_x / H_SLICE_WIDTH;
+        let ys = located.rem_y / V_SLICE_HEIGHT;
+        let own = located.cell;
+        let (target, slice) = match dir {
+            Direction::Right => (own.neighbour(Direction::Right), xs),
+            Direction::Down => (own.neighbour(Direction::Down), ys),
+            Direction::Left => match xs.checked_sub(1) {
+                Some(slice) => (Some(own), slice),
+                None => (own.neighbour(Direction::Left), H_SLICES - 1),
+            },
+            Direction::Up => match ys.checked_sub(1) {
+                Some(slice) => (Some(own), slice),
+                None => (own.neighbour(Direction::Up), V_SLICES - 1),
+            },
+        };
+        let Some(target) = target else {
+            return;
+        };
+        let cell = self.cell_mut(target);
+        if dir.is_horizontal() {
+            cell.clear_h_slice(slice);
+            if cell.has_no_h_slices() {
+                cell.clear_untouched();
+            }
+        } else {
+            cell.clear_v_slice(slice);
+            if cell.has_no_v_slices() {
+                cell.clear_untouched();
+            }
+        }
+    }
+}
+
+impl Field {
+    /// Applies the full-redraw normalisation to every cell: a cell that is
+    /// not untouched loses all six vertical slices when any of them is
+    /// gone, and all five horizontal slices when any of them is gone.
+    /// Untouched cells are left as they are.
+    ///
+    /// **Quirk Q05:** a full draw (a new level, or the turn passing to the
+    /// other player) changes the game state this way, not only the picture,
+    /// so it runs whether or not anything is displayed (research 01 §5.3,
+    /// §10 item 8, research 03 §8.2).
+    #[allow(dead_code, reason = "called by the full level draw (task group 4)")]
+    pub(crate) fn normalise_for_redraw(&mut self) {
+        for cell in &mut self.cells {
+            if cell.is_untouched() {
+                continue;
+            }
+            if !cell.has_all_v_slices() {
+                cell.open_vertical();
+            }
+            if !cell.has_all_h_slices() {
+                cell.open_horizontal();
+            }
+        }
+    }
+}
+
+impl Default for Field {
+    fn default() -> Self {
+        Self::EARTH
+    }
+}
+
+/// The field of each player of an alternating two-player game, saved at the
+/// end of every round and restored when that player's field is next drawn
+/// in full. Two simultaneous diggers share one field and use the first
+/// player's save only (playfield spec, "Per-player field memory"; research
+/// 01 §2.1, §5.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub(crate) struct PlayerFields {
+    saved: [Field; PlayerId::COUNT],
+}
+
+#[allow(dead_code, reason = "used by the round flow (task groups 7 and 14)")]
+impl PlayerFields {
+    /// Keeps `field` as `player`'s field: at level start with the level's
+    /// initial field, and at the end of every round with the field in play.
+    pub(crate) fn save(&mut self, player: PlayerId, field: &Field) {
+        *player.of_mut(&mut self.saved) = *field;
+    }
+
+    /// `player`'s saved field, to be put in play before a full draw.
+    pub(crate) fn restore(&self, player: PlayerId) -> Field {
+        *player.of(&self.saved)
+    }
+}
+
+/// The row-major index of `cell`: v×15 + h.
+fn index(cell: CellPos) -> usize {
+    usize::from(cell.v()) * STRIDE + usize::from(cell.h())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cell(h: u8, v: u8) -> CellPos {
+        CellPos::new(h, v).unwrap_or_else(|| unreachable!("test cell inside the grid"))
+    }
+
+    fn level(n: u16) -> Option<LevelNumber> {
+        LevelNumber::new(n)
+    }
+
+    /// A layout of solid earth with the given characters at the given cells.
+    fn layout_with(marks: &[(u8, u8, u8)]) -> LevelLayout {
+        let mut rows = [[b' '; 15]; 10];
+        for &(h, v, c) in marks {
+            if let Some(slot) = rows
+                .get_mut(usize::from(v))
+                .and_then(|row| row.get_mut(usize::from(h)))
+            {
+                *slot = c;
+            }
+        }
+        LevelLayout::from_rows(rows)
+    }
+
+    fn h_slices(c: Cell) -> [bool; 5] {
+        [0, 1, 2, 3, 4].map(|i| c.has_h_slice(i))
+    }
+
+    fn v_slices(c: Cell) -> [bool; 6] {
+        [0, 1, 2, 3, 4, 5].map(|i| c.has_v_slice(i))
+    }
+
+    /// The cells of `after` that differ from `before`.
+    fn changed(before: &Field, after: &Field) -> Vec<CellPos> {
+        CellPos::all_column_major()
+            .filter(|&c| before.cell(c) != after.cell(c))
+            .collect()
+    }
+
+    #[test]
+    fn initial_cells_from_layout_chars() {
+        let field = Field::from_layout(&layout_with(&[
+            (0, 0, b'S'),
+            (1, 0, b'H'),
+            (2, 0, b'V'),
+            (3, 0, b' '),
+            (4, 0, b'B'),
+            (5, 0, b'C'),
+        ]));
+        let junction = field.cell(cell(0, 0));
+        assert!(junction.has_no_h_slices() && junction.has_no_v_slices());
+        assert!(!junction.is_untouched() && junction.has_tunnel());
+
+        let horizontal = field.cell(cell(1, 0));
+        assert_eq!(h_slices(horizontal), [false; 5]);
+        assert_eq!(v_slices(horizontal), [true; 6]);
+        assert!(!horizontal.is_untouched() && horizontal.has_tunnel());
+
+        let vertical = field.cell(cell(2, 0));
+        assert_eq!(h_slices(vertical), [true; 5]);
+        assert_eq!(v_slices(vertical), [false; 6]);
+        assert!(!vertical.is_untouched() && vertical.has_tunnel());
+
+        for h in 3..=5 {
+            let earth = field.cell(cell(h, 0));
+            assert_eq!(earth, Cell::EARTH);
+            assert!(earth.has_all_h_slices() && earth.has_all_v_slices());
+            assert!(earth.is_untouched() && !earth.has_tunnel());
+        }
+        // The original's bit values (research 01 §5.3), which the state
+        // hash will read.
+        assert_eq!(junction.bits(), 0xd020);
+        assert_eq!(horizontal.bits(), 0xdfe0);
+        assert_eq!(vertical.bits(), 0xd03f);
+        assert_eq!(Cell::EARTH.bits(), 0xffff);
+    }
+
+    #[test]
+    fn unknown_char_is_solid_earth() {
+        for c in [b'x', b'h', b's', b'0', b'.', 0, 0xff] {
+            assert_eq!(Cell::from_layout_char(c), Cell::EARTH, "char {c:#04x}");
+        }
+        let field = Field::from_layout(&layout_with(&[(7, 3, b'x')]));
+        assert_eq!(field, Field::EARTH);
+    }
+
+    #[test]
+    fn level_below_1_is_all_earth() {
+        let set = LevelSet::builtin();
+        assert_eq!(level(0), None);
+        assert_eq!(Field::for_level(&set, None, false), Field::EARTH);
+        assert_eq!(Field::for_level(&set, None, true), Field::EARTH);
+        assert!(Field::EARTH.cells().iter().all(|c| c.is_untouched()));
+
+        // Level 1 is not: its first cell is an `S`.
+        let level_1 = Field::for_level(&set, level(1), false);
+        assert!(level_1.cell(cell(0, 0)).has_no_h_slices());
+        assert_eq!(
+            level_1,
+            Field::from_layout(set.layout(LevelNumber::FIRST.plan()))
+        );
+    }
+
+    #[test]
+    fn dig_right_from_corner_removes_slice_0_of_next_cell() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        field.dig(Px::new(12, 18), Some(Direction::Right), &mut penalty);
+        assert_eq!(changed(&Field::EARTH, &field), [cell(1, 0)]);
+        let entered = field.cell(cell(1, 0));
+        assert_eq!(h_slices(entered), [false, true, true, true, true]);
+        assert_eq!(v_slices(entered), [true; 6]);
+        assert!(entered.is_untouched());
+        assert_eq!(penalty.value(), 1);
+        assert_eq!(penalty.count_of(PenaltySite::DigStep), 1);
+    }
+
+    #[test]
+    fn dig_left_from_corner_removes_slice_4_of_previous_cell() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        field.dig(Px::new(52, 18), Some(Direction::Left), &mut penalty);
+        assert_eq!(changed(&Field::EARTH, &field), [cell(1, 0)]);
+        assert_eq!(
+            h_slices(field.cell(cell(1, 0))),
+            [true, true, true, true, false]
+        );
+
+        // Inside a cell the step removes slice xs − 1 of the own cell.
+        let mut field = Field::EARTH;
+        field.dig(Px::new(60, 18), Some(Direction::Left), &mut penalty);
+        assert_eq!(changed(&Field::EARTH, &field), [cell(2, 0)]);
+        assert_eq!(
+            h_slices(field.cell(cell(2, 0))),
+            [true, false, true, true, true]
+        );
+        assert_eq!(penalty.count_of(PenaltySite::DigStep), 2);
+    }
+
+    #[test]
+    fn dig_up_inside_cell() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        field.dig(Px::new(12, 42), Some(Direction::Up), &mut penalty);
+        assert_eq!(changed(&Field::EARTH, &field), [cell(0, 1)]);
+        assert_eq!(
+            v_slices(field.cell(cell(0, 1))),
+            [true, false, true, true, true, true]
+        );
+
+        // From a cell corner the step removes slice 5 of the cell above.
+        let mut field = Field::EARTH;
+        field.dig(Px::new(12, 36), Some(Direction::Up), &mut penalty);
+        assert_eq!(changed(&Field::EARTH, &field), [cell(0, 0)]);
+        assert_eq!(
+            v_slices(field.cell(cell(0, 0))),
+            [true, true, true, true, true, false]
+        );
+
+        // Down removes slice ys of the cell below.
+        let mut field = Field::EARTH;
+        field.dig(Px::new(12, 24), Some(Direction::Down), &mut penalty);
+        assert_eq!(changed(&Field::EARTH, &field), [cell(0, 1)]);
+        assert_eq!(
+            v_slices(field.cell(cell(0, 1))),
+            [true, true, false, true, true, true]
+        );
+        assert_eq!(penalty.count_of(PenaltySite::DigStep), 3);
+    }
+
+    #[test]
+    fn five_steps_clear_untouched_mark() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        for step in 0..5 {
+            assert!(field.cell(cell(1, 0)).is_untouched(), "before step {step}");
+            field.dig(
+                Px::new(12 + 4 * step, 18),
+                Some(Direction::Right),
+                &mut penalty,
+            );
+        }
+        let crossed = field.cell(cell(1, 0));
+        assert!(crossed.has_no_h_slices());
+        assert!(crossed.has_all_v_slices());
+        assert!(!crossed.is_untouched());
+        assert_eq!(changed(&Field::EARTH, &field), [cell(1, 0)]);
+
+        // Six steps down clear the mark of a vertically crossed cell.
+        let mut field = Field::EARTH;
+        for step in 0..6 {
+            field.dig(
+                Px::new(12, 18 + 3 * step),
+                Some(Direction::Down),
+                &mut penalty,
+            );
+        }
+        let crossed = field.cell(cell(0, 1));
+        assert!(crossed.has_no_v_slices() && crossed.has_all_h_slices());
+        assert!(!crossed.is_untouched());
+        assert_eq!(penalty.count_of(PenaltySite::DigStep), 11);
+    }
+
+    #[test]
+    fn partly_dug_cell_stays_untouched() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        field.dig(Px::new(12, 18), Some(Direction::Right), &mut penalty);
+        field.dig(Px::new(16, 18), Some(Direction::Right), &mut penalty);
+        let dug = field.cell(cell(1, 0));
+        assert_eq!(h_slices(dug), [false, false, true, true, true]);
+        assert!(dug.has_tunnel());
+        assert!(dug.is_untouched());
+
+        // A vertical step into the same cell leaves it untouched as well: the
+        // mark goes only when one kind of slice is gone completely.
+        field.dig(Px::new(32, 36), Some(Direction::Up), &mut penalty);
+        let dug = field.cell(cell(1, 0));
+        assert!(!dug.has_v_slice(5) && dug.is_untouched());
+    }
+
+    #[test]
+    fn dig_beyond_grid_changes_nothing() {
+        let mut penalty = Penalty::default();
+        let cases = [
+            (Px::new(292, 18), Direction::Right),
+            (Px::new(292, 180), Direction::Right),
+            (Px::new(12, 180), Direction::Down),
+            (Px::new(12, 18), Direction::Left),
+            (Px::new(12, 18), Direction::Up),
+            (Px::new(8, 18), Direction::Right),
+            (Px::new(12, 10), Direction::Down),
+            (Px::new(400, 300), Direction::Left),
+        ];
+        for (at, dir) in cases {
+            for start in [
+                Field::EARTH,
+                Field::for_level(&LevelSet::builtin(), level(1), false),
+            ] {
+                let mut field = start;
+                field.dig(at, Some(dir), &mut penalty);
+                assert_eq!(field, start, "dig {dir:?} from {at:?}");
+            }
+        }
+        // The penalty is charged for every request all the same.
+        assert_eq!(penalty.count_of(PenaltySite::DigStep), 16);
+    }
+
+    #[test]
+    fn dig_without_direction_charges_but_changes_nothing() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        field.dig(Px::new(100, 100), None, &mut penalty);
+        assert_eq!(field, Field::EARTH);
+        assert_eq!(penalty.count_of(PenaltySite::DigStep), 1);
+    }
+
+    #[test]
+    fn quirk_q05_redraw_opens_partly_dug_cells() {
+        // (1,0) is `H`, (2,0) is `V`: neither is untouched.
+        let start = Field::from_layout(&layout_with(&[(1, 0, b'H'), (2, 0, b'V')]));
+        let mut field = start;
+        let mut penalty = Penalty::default();
+        // One vertical slice of the `H` cell: a step down from (32,18) into
+        // (1,1) would leave (1,0) alone, so dig up from the cell below.
+        field.dig(Px::new(32, 36), Some(Direction::Up), &mut penalty);
+        // One horizontal slice of the `V` cell: a step right from (32,18).
+        field.dig(Px::new(32, 18), Some(Direction::Right), &mut penalty);
+        let h_cell = field.cell(cell(1, 0));
+        let v_cell = field.cell(cell(2, 0));
+        assert_eq!(v_slices(h_cell), [true, true, true, true, true, false]);
+        assert_eq!(h_slices(v_cell), [false, true, true, true, true]);
+
+        field.normalise_for_redraw();
+        let h_cell = field.cell(cell(1, 0));
+        let v_cell = field.cell(cell(2, 0));
+        assert!(h_cell.has_no_v_slices() && h_cell.has_no_h_slices());
+        assert!(v_cell.has_no_h_slices() && v_cell.has_no_v_slices());
+        assert_eq!(changed(&start, &field), [cell(1, 0), cell(2, 0)]);
+
+        // A cell opened by its layout character alone is already normal.
+        let mut level_1 = Field::for_level(&LevelSet::builtin(), level(1), false);
+        let before = level_1;
+        level_1.normalise_for_redraw();
+        assert_eq!(level_1, before);
+    }
+
+    #[test]
+    fn untouched_cells_survive_redraw() {
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        // Two horizontal and one vertical slice of the untouched (1,0).
+        field.dig(Px::new(12, 18), Some(Direction::Right), &mut penalty);
+        field.dig(Px::new(16, 18), Some(Direction::Right), &mut penalty);
+        field.dig(Px::new(32, 36), Some(Direction::Up), &mut penalty);
+        assert!(field.cell(cell(1, 0)).is_untouched());
+        let before = field;
+        field.normalise_for_redraw();
+        assert_eq!(field, before);
+
+        let mut earth = Field::EARTH;
+        earth.normalise_for_redraw();
+        assert_eq!(earth, Field::EARTH);
+    }
+
+    #[test]
+    fn redraw_normalisation_is_idempotent() {
+        let mut field = Field::for_level(&LevelSet::builtin(), level(2), false);
+        let mut penalty = Penalty::default();
+        for step in 0..3 {
+            field.dig(
+                Px::new(12, 18 + 3 * step),
+                Some(Direction::Down),
+                &mut penalty,
+            );
+        }
+        field.normalise_for_redraw();
+        let once = field;
+        field.normalise_for_redraw();
+        assert_eq!(field, once);
+    }
+
+    #[test]
+    fn players_have_separate_fields() {
+        let set = LevelSet::builtin();
+        let initial = Field::for_level(&set, level(1), false);
+        let mut saves = PlayerFields::default();
+        let [p1, p2] = PlayerId::ALL;
+        saves.save(p1, &initial);
+        saves.save(p2, &initial);
+
+        // Player 1 digs a tunnel and the round ends.
+        let mut in_play = saves.restore(p1);
+        let mut penalty = Penalty::default();
+        for step in 0..5 {
+            in_play.dig(
+                Px::new(112 + 4 * step, 90),
+                Some(Direction::Right),
+                &mut penalty,
+            );
+        }
+        assert_ne!(in_play, initial);
+        saves.save(p1, &in_play);
+
+        // Player 2's turn starts from the level's initial layout.
+        assert_eq!(saves.restore(p2), initial);
+        // The turn returns to player 1 with the saved tunnels.
+        assert_eq!(saves.restore(p1), in_play);
+        assert!(!saves.restore(p1).cell(cell(6, 4)).is_untouched());
+        assert!(initial.cell(cell(6, 4)).is_untouched());
+    }
+}
