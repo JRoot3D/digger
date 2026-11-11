@@ -100,7 +100,7 @@ impl Framebuffer {
     /// to the picture; `at.x` is used as given (research 03 §4.7).
     ///
     /// A character the font has no glyph for (see
-    /// [`glyph_for`](crate::assets::glyph_for)) leaves the picture unchanged.
+    /// [`glyph_for`]) leaves the picture unchanged.
     /// Lower-case letters are drawn as upper case.
     pub fn draw_char(&mut self, c: char, at: Px, color: TextColor) {
         // Quirk R5: a lone character without a glyph draws nothing.
