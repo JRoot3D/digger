@@ -1,0 +1,58 @@
+Digger (Rust)
+=============
+
+This program is an independent Rust re-creation of Digger Remastered. It is
+free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation,
+either version 2 of the License, or (at your option) any later version
+(SPDX: GPL-2.0-or-later). The full licence text is in the file LICENSE.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+
+Lineage and credits
+-------------------
+
+Digger
+    Portions Copyright (c) 1983 Windmill Software Inc.
+    The original game for the IBM PC, written by Rob Sleath and published by
+    Windmill Software in 1983.
+
+Digger Remastered
+    Copyright (c) Andrew Jenner 1998-2004, with the permission of Rob Sleath.
+    Andrew Jenner reverse-engineered the original game, rewrote it in C,
+    redrew the VGA graphics and released Digger Remastered under the GNU
+    General Public License, version 2 or (at your option) any later version.
+    https://digger.org/
+
+Digger Remastered continuation (sobomax/digger)
+    Copyright (c) Maksym Sobolyev (also written Maxim Sobolev), 2002 onwards.
+    Maksym Sobolyev continued Digger Remastered with portable platform
+    back ends, the extended recording format (eDRF), the state-hash
+    checkpoints and the recordings used to verify this port.
+    https://github.com/sobomax/digger
+
+This port contains no C code from any of the above. Its behaviour was written
+from descriptions of the upstream program (docs/research/) and is verified by
+replaying the upstream recordings.
+
+
+Graphics and sound data
+-----------------------
+
+The graphics (sprites, character set, title screen, palettes) and the sound
+and music tables used by this program are derived from Digger Remastered.
+They are read as data from the Digger Remastered sources as distributed in
+sobomax/digger, and are covered by the same GNU General Public License grant
+made by Andrew Jenner. The VGA graphics were redrawn by Andrew Jenner; the
+sound tables and CGA graphics originate in the 1983 game and are distributed
+under the permission of Rob Sleath as relayed by Andrew Jenner.
+
+The music comprises third-party compositions: "Popcorn" (composed by Gershon
+Kingsley), the William Tell Overture (Gioachino Rossini) and the Funeral March
+from Piano Sonata No. 2 (Frederic Chopin).
+
+The basis for these statements is recorded in docs/research/07-web-research.md
+(section A.5, "Licence and copyright"). This notice is not legal advice.

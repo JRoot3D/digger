@@ -40,4 +40,5 @@ applied in the order given in the roadmap.
 ## Licence
 
 GPL-2.0-or-later, as a derived work of Digger Remastered. The licence text is
-added by the first change (`bootstrap-rust-workspace`).
+in [`LICENSE`](LICENSE); credits and the provenance of the graphics and sound
+data are in [`NOTICE`](NOTICE).
