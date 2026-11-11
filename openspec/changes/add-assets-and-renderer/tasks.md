@@ -34,12 +34,12 @@ task of each group is the quality gate and the commit.
 
 ## 4. Asset access in digger-core
 
-- [ ] 4.1 Create the `assets` module: embed `sprites.bin`, `font.bin` and `title.zz`, include `index.rs`, add `const` assertions on blob lengths, and define `ImageSize`, `ImageId` (constructor returns `None` for 120 and above) and `ImageId::get()`; verify with `image_id_rejects_120`, `image_count_is_120` and `image_byte_size_matches_dimensions`
-- [ ] 4.2 Add the named `ImageId` constants and helpers needed by later phases (blank, bag frames, gold, monsters, bonus, fireball, `background(plan)`, tunnel shapes, emerald and eraser, life icons, `for_second_digger()`, `for_second_fireball()`), each with its research citation; verify with `image_sizes_by_number` (the full size table of the spec), `second_digger_offset_is_31`, `second_fireball_offset_is_32` and `duplicate_image_numbers`
-- [ ] 4.3 Add the content guarantees as tests over the embedded data: `image_values_in_allowed_set`, `mask_values_are_0_or_255`, `coloured_pixels_have_zero_mask`, `eraser_images_are_zero`, `opaque_images_have_zero_mask`, `tile_colour_sets`, `tunnel_masks_are_pixel_doubled`; verify all pass
-- [ ] 4.4 Implement glyph lookup by character; verify with `glyph_coverage_is_66_of_95`, `lowercase_shares_uppercase_glyph`, `hyphen_has_no_glyph`, `glyph_values_and_ink_columns` and `space_glyph_is_blank`
-- [ ] 4.5 Implement `TitlePicture::decode()` with `AssetError` (add `miniz_oxide` to `digger-core`); verify with `title_decodes_to_256000_bytes`, `title_value_set`, `title_landmark_pixels` and `title_truncated_stream_is_error` (decoding the first 1000 bytes through the same internal function)
-- [ ] 4.6 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(core): embed assets with typed image, glyph and title access`
+- [x] 4.1 Create the `assets` module: embed `sprites.bin`, `font.bin` and `title.zz`, include `index.rs`, add `const` assertions on blob lengths, and define `ImageSize`, `ImageId` (constructor returns `None` for 120 and above) and `ImageId::get()`; verify with `image_id_rejects_120`, `image_count_is_120` and `image_byte_size_matches_dimensions`
+- [x] 4.2 Add the named `ImageId` constants and helpers needed by later phases (blank, bag frames, gold, monsters, bonus, fireball, `background(plan)`, tunnel shapes, emerald and eraser, life icons, `for_second_digger()`, `for_second_fireball()`), each with its research citation; verify with `image_sizes_by_number` (the full size table of the spec), `second_digger_offset_is_31`, `second_fireball_offset_is_32` and `duplicate_image_numbers`
+- [x] 4.3 Add the content guarantees as tests over the embedded data: `image_values_in_allowed_set`, `mask_values_are_0_or_255`, `coloured_pixels_have_zero_mask`, `eraser_images_are_zero`, `opaque_images_have_zero_mask`, `tile_colour_sets`, `tunnel_masks_are_pixel_doubled`; verify all pass
+- [x] 4.4 Implement glyph lookup by character; verify with `glyph_coverage_is_66_of_95`, `lowercase_shares_uppercase_glyph`, `hyphen_has_no_glyph`, `glyph_values_and_ink_columns` and `space_glyph_is_blank`
+- [x] 4.5 Implement `TitlePicture::decode()` with `AssetError` (add `miniz_oxide` to `digger-core`); verify with `title_decodes_to_256000_bytes`, `title_value_set`, `title_landmark_pixels` and `title_truncated_stream_is_error` (decoding the first 1000 bytes through the same internal function)
+- [x] 4.6 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(core): embed assets with typed image, glyph and title access`
 
 ## 5. Framebuffer and palettes
 

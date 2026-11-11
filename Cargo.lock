@@ -161,6 +161,9 @@ version = "0.1.0"
 [[package]]
 name = "digger-core"
 version = "0.1.0"
+dependencies = [
+ "miniz_oxide",
+]
 
 [[package]]
 name = "digger-sound"

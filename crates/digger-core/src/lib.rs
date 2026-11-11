@@ -11,6 +11,11 @@
 
 #![forbid(unsafe_code)]
 
+pub mod assets;
+mod error;
+
+pub use error::{AssetError, Error};
+
 #[cfg(test)]
 mod tests {
     #[test]
