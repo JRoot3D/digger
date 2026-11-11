@@ -79,6 +79,10 @@ const _: () = {
         let len = byte_len(entry.w, entry.h);
         assert!(len > 0, "sprite entry with an empty size");
         assert!(
+            len <= ImageSize::MAX_BYTES,
+            "sprite entry larger than ImageSize::MAX_BYTES"
+        );
+        assert!(
             entry.image as usize + len <= SPRITES.len(),
             "sprite image outside sprites.bin"
         );

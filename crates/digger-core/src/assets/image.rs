@@ -15,6 +15,10 @@ pub struct ImageSize {
 }
 
 impl ImageSize {
+    /// Bytes in the largest image, a 4,15 one: 32x30 real pixels. No image,
+    /// and therefore no saved background, is larger.
+    pub const MAX_BYTES: usize = 960;
+
     /// The size from the generated index.
     const fn new(w: u8, h: u8) -> Self {
         Self { w, h }

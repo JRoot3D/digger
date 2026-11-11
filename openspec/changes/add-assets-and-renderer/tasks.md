@@ -43,13 +43,13 @@ task of each group is the quality gate and the commit.
 
 ## 5. Framebuffer and palettes
 
-- [ ] 5.1 Add `geom` (`Px`, `align_x`, logical rectangle helpers) and `Framebuffer` with creation, `clear`, `pixels()` and the logical-to-real mapping; verify with `new_framebuffer_is_black_palette_zero`, `clear_keeps_palette` and `align_x_rounds_toward_negative_infinity`
-- [ ] 5.2 Add `Palette`, `Intensity`, `Rgb` and the four colour tables, `set_palette` (resets intensity, quirk R3), `set_intensity` and `colors()`; verify with `palette_tables_match_spec` (all 64 entries), `palette_select_resets_intensity`, `intensity_keeps_palette` and `palette_change_leaves_pixels`
-- [ ] 5.3 Implement the in-crate CRC-32 and `Framebuffer::crc32()`; verify with `crc32_known_vectors` (empty input, "123456789" = 0xCBF43926) and `crc32_of_cleared_frame` against the independently computed CRC-32 of 256000 zero bytes
-- [ ] 5.4 Implement `blit_masked` with the original rule (quirk R4) and clipping on all four edges; verify with `blit_rule_truth_table`, `blit_clips_bottom_edge`, `blit_clips_left_edge`, `blit_fully_outside_is_noop` and `blit_maps_logical_to_real`
-- [ ] 5.5 Implement `SavedRect`, `capture` (zero-filled outside the picture) and `restore` (opaque, own size, clipped); verify with `capture_restore_round_trip`, `capture_zero_fills_outside`, `restore_is_opaque` and `restore_uses_saved_size`
-- [ ] 5.6 Implement the pixel probe returning `ProbeBits` with the documented in-range rule, the 0xFF result beyond x 319 / y 199, row wrap and zero reads outside the buffer (quirks R1, R2); verify with `probe_vectors`, `probe_beyond_right_or_bottom_is_ff`, `probe_row_wrap`, `probe_outside_buffer_reads_zero` and `probe_negative_coordinates`
-- [ ] 5.7 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(core): add indexed framebuffer, palettes, masked blit and pixel probe`
+- [x] 5.1 Add `geom` (`Px`, `align_x`, logical rectangle helpers) and `Framebuffer` with creation, `clear`, `pixels()` and the logical-to-real mapping; verify with `new_framebuffer_is_black_palette_zero`, `clear_keeps_palette` and `align_x_rounds_toward_negative_infinity`
+- [x] 5.2 Add `Palette`, `Intensity`, `Rgb` and the four colour tables, `set_palette` (resets intensity, quirk R3), `set_intensity` and `colors()`; verify with `palette_tables_match_spec` (all 64 entries), `palette_select_resets_intensity`, `intensity_keeps_palette` and `palette_change_leaves_pixels`
+- [x] 5.3 Implement the in-crate CRC-32 and `Framebuffer::crc32()`; verify with `crc32_known_vectors` (empty input, "123456789" = 0xCBF43926) and `crc32_of_cleared_frame` against the independently computed CRC-32 of 256000 zero bytes
+- [x] 5.4 Implement `blit_masked` with the original rule (quirk R4) and clipping on all four edges; verify with `blit_rule_truth_table`, `blit_clips_bottom_edge`, `blit_clips_left_edge`, `blit_fully_outside_is_noop` and `blit_maps_logical_to_real`
+- [x] 5.5 Implement `SavedRect`, `capture` (zero-filled outside the picture) and `restore` (opaque, own size, clipped); verify with `capture_restore_round_trip`, `capture_zero_fills_outside`, `restore_is_opaque` and `restore_uses_saved_size`
+- [x] 5.6 Implement the pixel probe returning `ProbeBits` with the documented in-range rule, the 0xFF result beyond x 319 / y 199, row wrap and zero reads outside the buffer (quirks R1, R2); verify with `probe_vectors`, `probe_beyond_right_or_bottom_is_ff`, `probe_row_wrap`, `probe_outside_buffer_reads_zero` and `probe_negative_coordinates`
+- [x] 5.7 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(core): add indexed framebuffer, palettes, masked blit and pixel probe`
 
 ## 6. Text, numbers, background and title
 

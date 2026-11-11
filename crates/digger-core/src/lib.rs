@@ -13,6 +13,8 @@
 
 pub mod assets;
 mod error;
+pub mod geom;
+pub mod video;
 
 pub use error::{AssetError, Error};
 
