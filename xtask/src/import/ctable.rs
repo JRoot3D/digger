@@ -11,7 +11,13 @@
 //!   and 32-bit (`uint32_t`) element types;
 //! - pointer tables `[qualifiers] type * [const] NAME[N] = { element, … };`
 //!   whose elements are identifiers, `NULL` or `0`; identifiers are resolved
-//!   against the arrays of the same file.
+//!   against the arrays of the same file;
+//! - in a scalar initialiser `[qualifiers] type NAME = { … };` (a struct),
+//!   designated members `.MEMBER = { { "…", "…" }, { … } }` whose value is
+//!   a brace list of brace lists of string literals, read as a string-group
+//!   table named `NAME.MEMBER`. Adjacent literals are concatenated as in C;
+//!   their bytes are kept as written, escape sequences included. Members of
+//!   any other shape are skipped.
 //!
 //! Every other top-level item (function definitions, declarations without an
 //! initialiser) is skipped as a balanced run of tokens. Anything malformed
@@ -33,6 +39,9 @@ pub(crate) enum TableData {
     /// A pointer table: each element names an array of the same file, or is
     /// `None` for `NULL` / `0`.
     Pointers(Vec<Option<String>>),
+    /// A designated struct member holding groups of string literals: one
+    /// entry per inner brace list, one byte string per literal.
+    StringGroups(Vec<Vec<Vec<u8>>>),
 }
 
 /// One table read from a file, with the line its declaration starts on.
@@ -103,6 +112,15 @@ impl TableFile {
         }
     }
 
+    /// The string-group table called `name` (`VARIABLE.MEMBER`).
+    pub(crate) fn string_groups(&self, name: &str) -> Result<&[Vec<Vec<u8>>], ImportError> {
+        let table = self.require(name)?;
+        match &table.data {
+            TableData::StringGroups(groups) => Ok(groups),
+            _ => Err(self.wrong_kind(name, table, "a list of string groups")),
+        }
+    }
+
     /// The pointer table called `name`; every named element is guaranteed to
     /// be an array of this file.
     pub(crate) fn pointers(&self, name: &str) -> Result<&[Option<String>], ImportError> {
@@ -141,10 +159,9 @@ fn resolve_pointers(table_file: &TableFile) -> Result<(), ImportError> {
             continue;
         };
         for symbol in elements.iter().flatten() {
-            let resolved = table_file
-                .tables
-                .get(symbol)
-                .is_some_and(|target| !matches!(target.data, TableData::Pointers(_)));
+            let resolved = table_file.tables.get(symbol).is_some_and(|target| {
+                matches!(target.data, TableData::Bytes(_) | TableData::Words(_))
+            });
             if !resolved {
                 return Err(ImportError::UnknownSymbol {
                     file: table_file.file.clone(),
@@ -165,7 +182,9 @@ fn resolve_pointers(table_file: &TableFile) -> Result<(), ImportError> {
 enum TokenKind {
     Ident(String),
     Number(u64),
-    /// A string or character literal (only ever skipped).
+    /// A string literal's bytes between the quotes, as written.
+    Str(Vec<u8>),
+    /// A character literal (only ever skipped).
     Literal,
     Punct(u8),
 }
@@ -340,7 +359,15 @@ impl<'a> Lexer<'a> {
         }
         if byte == b'"' || byte == b'\'' {
             self.literal(line, byte)?;
-            return Ok(TokenKind::Literal);
+            if byte == b'\'' {
+                return Ok(TokenKind::Literal);
+            }
+            // Without the quotes; the literal is at least the two quotes long.
+            let content = self
+                .text
+                .get(start + 1..self.pos.saturating_sub(1))
+                .unwrap_or_default();
+            return Ok(TokenKind::Str(content.to_vec()));
         }
         Ok(TokenKind::Punct(byte))
     }
@@ -513,7 +540,20 @@ impl<'a> Parser<'a> {
             .iter()
             .any(|token| token.kind == TokenKind::Punct(b'['));
         if !is_array {
-            // A scalar initialiser: not a table, skip to its `;`.
+            // A scalar initialiser: not an array, but a struct initialiser
+            // may hold string-group members. Skip the rest to its `;`.
+            if let (
+                Some(open),
+                Some(Token {
+                    kind: TokenKind::Ident(variable),
+                    ..
+                }),
+            ) = (self.peek(), head.last())
+                && is_punct(open, b'{')
+            {
+                self.pos += 1;
+                self.struct_initialiser(variable, open.line)?;
+            }
             return self.skip_to_semicolon(eq_line);
         }
         let (name, line, kind, size) = self.array_head(head, eq_line)?;
@@ -546,6 +586,7 @@ impl<'a> Parser<'a> {
             TableData::Bytes(values) => values.len(),
             TableData::Words(values) => values.len(),
             TableData::Pointers(values) => values.len(),
+            TableData::StringGroups(groups) => groups.len(),
         };
         if let Some(size) = size
             && usize::try_from(size).ok() != Some(count)
@@ -560,6 +601,130 @@ impl<'a> Parser<'a> {
         }
         self.tables.insert(name, Table { line, data });
         Ok(())
+    }
+
+    /// The members of a struct initialiser whose `{` has just been consumed,
+    /// up to and including its closing `}`. String-group members are
+    /// recorded as tables named `variable.member`.
+    fn struct_initialiser(&mut self, variable: &str, open_line: usize) -> Result<(), ImportError> {
+        loop {
+            let Some(token) = self.next() else {
+                return Err(self.syntax(
+                    open_line,
+                    format!("unterminated initialiser of `{variable}`"),
+                ));
+            };
+            match &token.kind {
+                TokenKind::Punct(b'}') => return Ok(()),
+                TokenKind::Punct(b'{') => self.skip_block(token.line)?,
+                TokenKind::Punct(b'.') => {
+                    let member = match (
+                        self.peek(),
+                        self.tokens.get(self.pos + 1),
+                        self.tokens.get(self.pos + 2),
+                    ) {
+                        (
+                            Some(Token {
+                                kind: TokenKind::Ident(member),
+                                line,
+                            }),
+                            Some(eq),
+                            Some(open),
+                        ) if is_punct(eq, b'=') && is_punct(open, b'{') => Some((member, *line)),
+                        _ => None,
+                    };
+                    if let Some((member, line)) = member {
+                        self.pos += 3;
+                        let name = format!("{variable}.{member}");
+                        if let Some(groups) = self.string_groups(line)? {
+                            if self.tables.contains_key(&name) {
+                                return Err(self.syntax(line, format!("`{name}` is defined twice")));
+                            }
+                            self.tables.insert(
+                                name,
+                                Table {
+                                    line,
+                                    data: TableData::StringGroups(groups),
+                                },
+                            );
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// A brace list of brace lists of string literals whose outer `{` has
+    /// just been consumed, up to and including its closing `}`. Returns
+    /// `None`, having skipped the whole list, when it has another shape.
+    fn string_groups(
+        &mut self,
+        open_line: usize,
+    ) -> Result<Option<Vec<Vec<Vec<u8>>>>, ImportError> {
+        let mut groups = Vec::new();
+        // Whether a group was just read, so that a comma may follow.
+        let mut after_group = false;
+        loop {
+            let Some(token) = self.next() else {
+                return Err(self.syntax(open_line, "unterminated initialiser"));
+            };
+            match token.kind {
+                TokenKind::Punct(b'}') => return Ok(Some(groups)),
+                TokenKind::Punct(b',') if after_group => after_group = false,
+                TokenKind::Punct(b'{') if !after_group => {
+                    let line = token.line;
+                    let Some(group) = self.string_group(line)? else {
+                        self.skip_block(open_line)?;
+                        return Ok(None);
+                    };
+                    groups.push(group);
+                    after_group = true;
+                }
+                TokenKind::Punct(b'{') => {
+                    // Two groups without a comma: not the expected shape.
+                    self.skip_block(token.line)?;
+                    self.skip_block(open_line)?;
+                    return Ok(None);
+                }
+                _ => {
+                    self.skip_block(open_line)?;
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
+    /// One brace list of string literals whose `{` has just been consumed,
+    /// up to and including its `}`. Returns `None`, having skipped to the
+    /// closing `}`, when it holds anything but literals and commas.
+    fn string_group(&mut self, open_line: usize) -> Result<Option<Vec<Vec<u8>>>, ImportError> {
+        let mut strings = Vec::new();
+        let mut current: Option<Vec<u8>> = None;
+        loop {
+            let Some(token) = self.next() else {
+                return Err(self.syntax(open_line, "unterminated initialiser"));
+            };
+            match &token.kind {
+                TokenKind::Str(bytes) => current.get_or_insert_with(Vec::new).extend(bytes),
+                TokenKind::Punct(b',') if current.is_some() => {
+                    strings.extend(current.take());
+                }
+                TokenKind::Punct(b'}') => {
+                    strings.extend(current.take());
+                    return Ok(Some(strings));
+                }
+                TokenKind::Punct(b'{') => {
+                    self.skip_block(token.line)?;
+                    self.skip_block(open_line)?;
+                    return Ok(None);
+                }
+                _ => {
+                    self.skip_block(open_line)?;
+                    return Ok(None);
+                }
+            }
+        }
     }
 
     fn skip_to_semicolon(&mut self, line: usize) -> Result<(), ImportError> {
@@ -756,6 +921,7 @@ fn describe(token: &Token) -> String {
     match &token.kind {
         TokenKind::Ident(name) => format!("identifier `{name}`"),
         TokenKind::Number(value) => format!("number {value}"),
+        TokenKind::Str(_) => "string literal".to_owned(),
         TokenKind::Literal => "literal".to_owned(),
         TokenKind::Punct(byte) if byte.is_ascii_graphic() => format!("`{}`", char::from(*byte)),
         TokenKind::Punct(byte) => format!("byte 0x{byte:02x}"),
@@ -812,6 +978,56 @@ mod tests {
         // A value that does not fit in 32 bits is an error.
         assert_eq!(syntax_line("uint32_t big[] = {\n0x100000000 };"), Some(2));
         Ok(())
+    }
+
+    #[test]
+    fn ctable_reads_struct_string_groups() -> Result<(), ImportError> {
+        let file = parse_text(
+            "struct state st = {\n  .count = 1, .name = \"n\", .table = {1, 2},\n  \
+             .grid = {{\"ab\", \"c\" \"d\"},\n           {\"ef\", \"gh\",}},\n  \
+             .flag = false\n};\nuint8_t after[] = {7};\n",
+        )?;
+        let groups = file.string_groups("st.grid")?;
+        assert_eq!(
+            groups,
+            [
+                vec![b"ab".to_vec(), b"cd".to_vec()],
+                vec![b"ef".to_vec(), b"gh".to_vec()]
+            ]
+        );
+        assert_eq!(file.get("st.grid").map(|table| table.line), Some(3));
+        // Members of other shapes are not tables; the file goes on.
+        assert!(file.get("st.table").is_none());
+        assert!(file.get("st.name").is_none());
+        assert!(file.get("st.count").is_none());
+        assert_eq!(file.bytes("after")?, [7]);
+        Ok(())
+    }
+
+    #[test]
+    fn ctable_string_groups_of_other_shapes_are_skipped() -> Result<(), ImportError> {
+        let file = parse_text(
+            "struct s a = { .m = {{\"x\", 1}}, .n = {\"x\"}, .o = {{\"x\"} {\"y\"}},\n\
+             .p = {{{\"x\"}}}, .q = {{\"ok\"}} };\n",
+        )?;
+        for name in ["a.m", "a.n", "a.o", "a.p"] {
+            assert!(file.get(name).is_none(), "{name}");
+        }
+        assert_eq!(file.string_groups("a.q")?, [vec![b"ok".to_vec()]]);
+        assert!(
+            file.bytes("a.q").is_err(),
+            "a string-group table is not an array"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ctable_unterminated_struct_initialiser_is_error() {
+        let error = parse_text("struct s a = { .m = {{\"x\"}\n").err();
+        assert!(
+            matches!(error, Some(ImportError::Syntax { .. })),
+            "{error:?}"
+        );
     }
 
     #[test]

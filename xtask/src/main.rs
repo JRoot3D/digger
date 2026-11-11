@@ -27,8 +27,9 @@ enum Command {
     /// Run the same checks as continuous integration: formatting, Clippy,
     /// tests, documentation and the dependency-direction check.
     Ci,
-    /// Read the upstream sprite, font, title and icon tables as data and
-    /// write the asset files, index and manifest (or compare with --check).
+    /// Read the upstream sprite, font, title, icon and level tables as data
+    /// and write the asset files, index and manifest (or compare with
+    /// --check).
     ImportAssets(import::ImportArgs),
     /// Write the golden scenes and a contact sheet of all 120 images as PPM
     /// files (default target/sheets/), for review by eye.

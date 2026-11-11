@@ -1,5 +1,5 @@
-//! `cargo xtask import-assets`: read the upstream sprite, font, title and
-//! icon tables as data and turn them into the committed files in `assets/`
+//! `cargo xtask import-assets`: read the upstream sprite, font, title, icon
+//! and level tables as data and turn them into the committed files in `assets/`
 //! (design D2, D7).
 //!
 //! Upstream C is never compiled or run: its source files are read as text by
@@ -12,6 +12,7 @@ mod fixture;
 pub(crate) mod font;
 pub(crate) mod icon;
 pub(crate) mod index;
+pub(crate) mod levels;
 pub(crate) mod manifest;
 pub(crate) mod sprites;
 pub(crate) mod title;
@@ -49,6 +50,8 @@ pub(crate) const FONT_FILE: &str = "alpha.c";
 pub(crate) const TITLE_FILE: &str = "title_gz.c";
 /// The upstream source file holding the window icon.
 pub(crate) const ICON_FILE: &str = "icon.c";
+/// The upstream source file holding the built-in level layouts.
+pub(crate) const LEVEL_FILE: &str = "game.c";
 
 /// Why `cargo xtask import-assets` failed (design D7). Every variant names
 /// the file it concerns; those about table contents also name the table.
@@ -85,6 +88,16 @@ pub(crate) enum ImportError {
         table: String,
         expected: usize,
         got: usize,
+    },
+    /// A level layout holds a character outside the layout alphabet.
+    Character {
+        file: String,
+        table: String,
+        /// The layout number, 1 to 8.
+        layout: usize,
+        row: usize,
+        column: usize,
+        byte: u8,
     },
     /// The title stream does not inflate to the expected picture.
     TitleInflate {
@@ -149,6 +162,20 @@ impl fmt::Display for ImportError {
                 f,
                 "{file}: table `{table}` has {got} entries, expected {expected}"
             ),
+            Self::Character {
+                file,
+                table,
+                layout,
+                row,
+                column,
+                byte,
+            } => write!(
+                f,
+                "{file}: table `{table}`, layout {layout}, row {row}, column {column}: \
+                 byte 0x{byte:02x} ({:?}) is not one of the layout characters {:?}",
+                char::from(*byte),
+                String::from_utf8_lossy(levels::ALPHABET)
+            ),
             Self::TitleInflate {
                 file,
                 table,
@@ -210,6 +237,7 @@ pub(crate) const SPRITES_OUT: &str = "sprites.bin";
 pub(crate) const FONT_OUT: &str = "font.bin";
 pub(crate) const TITLE_OUT: &str = "title.zz";
 pub(crate) const ICON_OUT: &str = "icon.rgba";
+pub(crate) const LEVELS_OUT: &str = "levels.bin";
 pub(crate) const INDEX_OUT: &str = "index.rs";
 pub(crate) const MANIFEST_OUT: &str = "manifest.txt";
 
@@ -246,6 +274,7 @@ pub(crate) fn build(upstream: &Path) -> Result<Import, ImportError> {
     let font = font::import(&read_source(upstream, FONT_FILE)?)?;
     let title = title::import(&read_source(upstream, TITLE_FILE)?)?;
     let icon = icon::import(&read_source(upstream, ICON_FILE)?)?;
+    let levels = levels::import(&read_source(upstream, LEVEL_FILE)?)?;
     let index = index::render(&sprites.entries, &font.glyph_index);
 
     let mut files = vec![
@@ -264,6 +293,10 @@ pub(crate) fn build(upstream: &Path) -> Result<Import, ImportError> {
         OutputFile {
             name: ICON_OUT,
             bytes: icon,
+        },
+        OutputFile {
+            name: LEVELS_OUT,
+            bytes: levels,
         },
         OutputFile {
             name: INDEX_OUT,
@@ -478,10 +511,12 @@ mod tests {
                 "font.bin",
                 "title.zz",
                 "icon.rgba",
+                "levels.bin",
                 "index.rs",
                 "manifest.txt"
             ]
         );
+        assert_eq!(file(&import, "levels.bin").map(<[u8]>::len), Some(1200));
         assert_eq!(file(&import, "font.bin").map(<[u8]>::len), Some(23_040));
         assert_eq!(file(&import, "title.zz").map(<[u8]>::len), Some(2772));
         assert_eq!(file(&import, "icon.rgba").map(<[u8]>::len), Some(16_384));
@@ -520,7 +555,7 @@ mod tests {
         write(&build(checkout.path())?, first.path())?;
         write(&build(checkout.path())?, second.path())?;
         let files = snapshot(first.path())?;
-        assert_eq!(files.len(), 6);
+        assert_eq!(files.len(), 7);
         assert_eq!(files, snapshot(second.path())?);
         // Writing again over the first output changes nothing either.
         write(&build(checkout.path())?, first.path())?;
@@ -649,7 +684,7 @@ mod tests {
         let empty = TempDir::new("check-empty")?;
         let error = check(&import, empty.path()).err();
         assert!(
-            matches!(&error, Some(ImportError::Drift { missing, .. }) if missing.len() == 6),
+            matches!(&error, Some(ImportError::Drift { missing, .. }) if missing.len() == 7),
             "{error:?}"
         );
         Ok(())

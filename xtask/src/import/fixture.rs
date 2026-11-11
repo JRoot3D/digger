@@ -3,7 +3,7 @@
 //! Everything here is generated: no upstream data is copied into the tests.
 //! The full fixture has the upstream shape (120 image numbers, 40 glyphs and
 //! the 95-entry character table, a 2772-byte zlib stream inflating to 256000
-//! bytes, 4096 icon words) with made-up contents.
+//! bytes, 4096 icon words, eight 10×15 level layouts) with made-up contents.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use super::font::{GLYPH_BYTES, GLYPH_NAMES};
 use super::sprites::{ImageSize, upstream_size, upstream_sizes};
 use super::title::{PICTURE_LEN, STREAM_LEN};
-use super::{FONT_FILE, ICON_FILE, SPRITE_FILE, TITLE_FILE};
+use super::{FONT_FILE, ICON_FILE, LEVEL_FILE, SPRITE_FILE, TITLE_FILE};
 
 /// An 8-bit array definition in upstream style.
 pub(crate) fn c_bytes(name: &str, values: &[u8]) -> String {
@@ -216,6 +216,39 @@ pub(crate) fn icon_c() -> String {
     c_words("Icon", &words)
 }
 
+/// Eight made-up 10×15 layouts over the layout alphabet.
+pub(crate) fn fixture_layouts() -> Vec<Vec<String>> {
+    (0..8)
+        .map(|layout| {
+            (0..10)
+                .map(|row| {
+                    let bytes = pattern(layout * 10 + row, 15, b" SHVBC");
+                    String::from_utf8_lossy(&bytes).into_owned()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// A fixture `game.c` whose `dgstate` initialiser holds `layouts` as its
+/// `.leveldat` member, between other members as upstream has them.
+pub(crate) fn game_c(layouts: &[Vec<String>]) -> String {
+    let mut text = String::from(
+        "/* Digger fixture */\n\n#include <stdint.h>\n#include \"game.h\"\n\n\
+         struct gamestate dgstate = {\n  .nplayers = 1, .diggers = 1, .name = \"x\",\n  .leveldat = {",
+    );
+    let groups: Vec<String> = layouts
+        .iter()
+        .map(|rows| {
+            let rows: Vec<String> = rows.iter().map(|row| format!("\"{row}\"")).collect();
+            format!("{{{}}}", rows.join(",\n                "))
+        })
+        .collect();
+    text += &groups.join(",\n               ");
+    text += "}\n};\n\nvoid\ngame_tick(void)\n{\n  dgstate.ticks++;\n}\n";
+    text
+}
+
 /// A directory removed again when dropped.
 #[derive(Debug)]
 pub(crate) struct TempDir(PathBuf);
@@ -243,7 +276,7 @@ impl Drop for TempDir {
     }
 }
 
-/// A complete fixture upstream checkout holding the four source files.
+/// A complete fixture upstream checkout holding the five source files.
 pub(crate) fn upstream(tag: &str) -> Result<TempDir, Box<dyn std::error::Error>> {
     let dir = TempDir::new(tag)?;
     std::fs::write(dir.path().join(SPRITE_FILE), vgagrafx_c())?;
@@ -253,6 +286,7 @@ pub(crate) fn upstream(tag: &str) -> Result<TempDir, Box<dyn std::error::Error>>
         title_gz_c().ok_or("no fixture title stream")?,
     )?;
     std::fs::write(dir.path().join(ICON_FILE), icon_c())?;
+    std::fs::write(dir.path().join(LEVEL_FILE), game_c(&fixture_layouts()))?;
     Ok(dir)
 }
 

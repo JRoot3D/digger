@@ -1,8 +1,8 @@
 # Game assets
 
-The sprites, font, title picture and window icon exist upstream only as data
-tables in C source files. `cargo xtask import-assets` reads those tables **as
-data** from a checkout of
+The sprites, font, title picture, window icon and built-in level layouts
+exist upstream only as data tables in C source files. `cargo xtask
+import-assets` reads those tables **as data** from a checkout of
 [sobomax/digger](https://github.com/sobomax/digger) at commit
 `638125eecc2a36629b886f58d7b75253894cf3d3` and writes the files in
 [`assets/`](../assets/README.md). The files are committed, so a normal build
@@ -64,6 +64,25 @@ alpha. Upstream stores each pixel as a 32-bit word `0xAARRGGBB`; the word
 `0xFF112233` becomes the bytes `11 22 33 FF`. The `digger` binary embeds the
 icon; this file is only committed and guarded until then.
 
+### `levels.bin` (1200 bytes)
+
+The eight built-in level layouts (research 01 §5.5; requirements in the
+`playfield` spec of `add-simulation-core`). Each layout is 10 rows of 15
+cells, one ASCII byte per cell from the layout alphabet: space (solid
+earth), `S` (tunnelled both ways), `H` (horizontal tunnel), `V` (vertical
+tunnel), `B` (earth holding a bag) and `C` (earth holding an emerald). The
+file is layout-major, then row-major, with no separators or terminators:
+layout `n` (1..8), row `r` (0..9, top first) starts at byte
+`150 (n - 1) + 15 r`.
+
+Upstream keeps the layouts in `game.c` as the designated member `.leveldat`
+of the `dgstate` struct initialiser, eight brace lists of ten string
+literals; the table reader reads it as the string-group table
+`dgstate.leveldat`. The importer rejects a layout count other than 8, a
+layout with other than 10 rows, a row of other than 15 characters and any
+character outside the alphabet, naming the layout, row and column.
+`digger-core` embeds the file with `include_bytes!` as a 1200-byte array.
+
 ### `index.rs`
 
 Generated Rust source that `digger-core` pulls in with `include!`:
@@ -122,8 +141,9 @@ unmodified checkout `git status` shows no change afterwards.
 ## Adding tables in later changes
 
 Later changes extend the same command rather than adding new ones:
-`add-simulation-core` adds the level layouts (`assets/levels.bin`) and
-`add-sound-engine` the music tables (`assets/music.bin`). Each extension:
+`add-simulation-core` added the level layouts (`assets/levels.bin`, read
+from `game.c` by `xtask/src/import/levels.rs`) and `add-sound-engine` adds
+the music tables (`assets/music.bin`). Each extension:
 
 1. adds a module under `xtask/src/import/` that reads its tables through the
    table reader in `ctable.rs` and validates their shape, returning
