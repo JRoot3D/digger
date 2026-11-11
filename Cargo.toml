@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/digger-core",
-    "crates/digger-sound",
-    "crates/digger",
-    "xtask",
+  "crates/digger-core",
+  "crates/digger-sound",
+  "crates/digger",
+  "xtask",
 ]
 
 [workspace.package]
