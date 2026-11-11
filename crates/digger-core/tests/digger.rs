@@ -513,3 +513,129 @@ fn no_second_fireball_while_one_exists() {
     assert_eq!(fire_cues(run.sounds()), 1, "a single launch in 40 ticks");
     assert!(!run.state().digger(FIRST).fire_ready());
 }
+
+/// Row 9 open from column 6 to column 9; the rest earth.
+const SHORT_CORRIDOR: [&str; 10] = [
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "      HHHH     ",
+];
+
+/// Row 9 open all along.
+const LONG_CORRIDOR: [&str; 10] = [
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "HHHHHHHHHHHHHHH",
+];
+
+/// Runs `n` ticks of `entry` and returns the first fireball's position and
+/// stage after each.
+fn flight(run: &mut Run, entry: &str, n: usize) -> Vec<(Px, FireballStage)> {
+    (0..n)
+        .map(|_| {
+            run.set_script(Script::parse(entry).expect("valid script"));
+            run.run_ticks(1);
+            let fireball = run.state().digger(FIRST).fireball();
+            (fireball.position(), fireball.stage())
+        })
+        .collect()
+}
+
+#[test]
+fn fireball_advances_8_px_per_tick() {
+    let mut run = started(LONG_CORRIDOR);
+    let path = flight(&mut run, "F", 5);
+    let xs: Vec<i32> = path.iter().skip(1).map(|(at, _)| at.x).collect();
+    assert_eq!(xs, [160, 168, 176, 184]);
+    assert!(
+        path.iter()
+            .skip(1)
+            .all(|(at, stage)| at.y == 184 && *stage == FireballStage::Flying)
+    );
+    let penalty = run.state().penalty();
+    assert_eq!(penalty.count_of(PenaltySite::FireballFlight), 1);
+}
+
+#[test]
+fn quirk_q19_shot_into_earth_explodes_at_previous_position() {
+    // The corridor ends at x = 211. The shot at x = 208 reads earth at
+    // x 212..215 on row 188, touches no sprite, and is drawn back at 200.
+    let mut run = started(SHORT_CORRIDOR);
+    let path = flight(&mut run, "F", 8);
+    let flying: Vec<i32> = path.iter().take(7).skip(1).map(|(at, _)| at.x).collect();
+    assert_eq!(flying, [160, 168, 176, 184, 192, 200]);
+    assert!(
+        path.iter()
+            .take(7)
+            .all(|(_, stage)| *stage == FireballStage::Flying)
+    );
+    assert_eq!(
+        path.get(7).copied(),
+        Some((
+            Px::new(200, 184),
+            FireballStage::Exploding { next_frame: 1 }
+        ))
+    );
+    assert_eq!(
+        run.state().sprites().position(FIRST_FIREBALL.sprite()),
+        Px::new(200, 184),
+        "redrawn at the previous position"
+    );
+    // The redraw is a second flight-frame draw, not a second penalty.
+    let penalty = run.state().penalty();
+    assert_eq!(penalty.count_of(PenaltySite::FireballFlight), 1);
+}
+
+#[test]
+fn quirk_q19_probe_ignored_while_touching_a_sprite() {
+    // Fired up from (152,180) into earth: at y = 173 the probe column
+    // x = 160 shows earth, but the fireball still overlaps its own digger
+    // (row 180), so it flies on. At y = 166 it touches nothing and is drawn
+    // back at 173.
+    let rows = [
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "               ",
+        "       S       ",
+    ];
+    let mut run = started(rows);
+    let fb = run.state().framebuffer();
+    assert!(
+        (173..180).any(|y| !fb.probe(Px::new(160, y)).is_empty()),
+        "earth above the digger"
+    );
+    run.place_digger(FIRST, Px::new(152, 180), Direction::Up)
+        .expect("a reachable position");
+    let path = flight(&mut run, "F", 4);
+    assert_eq!(
+        path.get(1..).unwrap_or_default(),
+        [
+            (Px::new(156, 180), FireballStage::Flying),
+            (Px::new(156, 173), FireballStage::Flying),
+            (
+                Px::new(156, 173),
+                FireballStage::Exploding { next_frame: 1 }
+            ),
+        ]
+    );
+}

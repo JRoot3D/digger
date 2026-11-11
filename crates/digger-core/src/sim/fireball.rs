@@ -16,11 +16,22 @@
 use crate::assets::ImageId;
 use crate::geom::Px;
 use crate::sound_cmd::SoundCommand;
+use crate::sprite::Collisions;
+use crate::video::{Framebuffer, ProbeBits};
 
 use super::Ctx;
 use super::geom::Direction;
 use super::ids::DiggerId;
 use super::level::Difficulty;
+use super::penalty::PenaltySite;
+
+/// Pixels a fireball travels per tick horizontally (research 02 §0, §3.6).
+const STEP_X: i32 = 8;
+/// Pixels a fireball travels per tick vertically (research 02 §0, §3.6).
+const STEP_Y: i32 = 7;
+/// Rows the vertical earth probe reads, from the fireball's top row down
+/// (research 02 §3.6).
+const VERTICAL_PROBE_ROWS: i32 = 7;
 
 /// Where a fireball is in its life, with the original's numbering of
 /// `bob.expsn` (research 02 §2, `bullet_obj`).
@@ -90,6 +101,12 @@ impl Fireball {
         }
     }
 
+    /// Starts (or restarts) the explosion at frame 1 (research 02 §2,
+    /// `explode`).
+    const fn explode(&mut self) {
+        self.stage = FireballStage::Exploding { next_frame: 1 };
+    }
+
     /// The stage (hashed as `expsn`).
     pub const fn stage(&self) -> FireballStage {
         self.stage
@@ -103,6 +120,62 @@ impl Fireball {
     /// The position (hashed as `bob.x`, `bob.y`).
     pub const fn position(&self) -> Px {
         self.position
+    }
+}
+
+/// The position one flight step from `at` in `direction`: 8 pixels
+/// horizontally, 7 vertically (digger spec, "Fireball flight").
+const fn step(at: Px, direction: Direction) -> Px {
+    match direction {
+        Direction::Right => Px::new(at.x + STEP_X, at.y),
+        Direction::Up => Px::new(at.x, at.y - STEP_Y),
+        Direction::Left => Px::new(at.x - STEP_X, at.y),
+        Direction::Down => Px::new(at.x, at.y + STEP_Y),
+    }
+}
+
+/// The position one flight step back from `at`, where a fireball stopped
+/// by earth explodes.
+const fn step_back(at: Px, direction: Direction) -> Px {
+    step(at, direction.reverse())
+}
+
+/// **Quirk Q19:** whether the picture shows earth for a fireball at `at`
+/// travelling in `direction`, read before the fireball is redrawn there
+/// (digger spec, "Earth probe for fireballs"; research 02 §3.6, research 03
+/// §4.6).
+///
+/// Horizontal shots probe row y+4 at x and x+4, covering logical x..x+7;
+/// upward shots probe x+4 on rows y..y+6 and keep the bits of its two real
+/// columns; downward shots probe x on rows y..y+6 and keep the bits of the
+/// left half of logical pixel x+3. Any non-black pixel is earth. The probe
+/// results outside the picture are the phase-2 probe's own (quirks R1, R2;
+/// compat-quirks U02): past the right or bottom edge everything is earth.
+pub(crate) fn probe_earth(fb: &Framebuffer, at: Px, direction: Direction) -> bool {
+    let column = |x: i32, mask: ProbeBits| {
+        (0..VERTICAL_PROBE_ROWS)
+            .map(|row| fb.probe(Px::new(x, at.y + row)))
+            .any(|bits| bits.intersects(mask))
+    };
+    match direction {
+        Direction::Right | Direction::Left => {
+            let row = at.y + 4;
+            !fb.probe(Px::new(at.x, row)).is_empty() || !fb.probe(Px::new(at.x + 4, row)).is_empty()
+        }
+        Direction::Up => column(at.x + 4, ProbeBits::UP),
+        Direction::Down => column(at.x, ProbeBits::DOWN),
+    }
+}
+
+/// Whether a fireball at `at` travelling in `direction` has left the
+/// range it may fly in: x > 296 right, y < 15 up, x < 16 left, y > 183
+/// down (digger spec, "What a fireball hits"; research 02 §3.6).
+const fn out_of_range(at: Px, direction: Direction) -> bool {
+    match direction {
+        Direction::Right => at.x > 296,
+        Direction::Up => at.y < 15,
+        Direction::Left => at.x < 16,
+        Direction::Down => at.y > 183,
     }
 }
 
@@ -125,7 +198,6 @@ impl FlameFrame {
 
     /// Advances the counter and returns the flying image of the first
     /// fireball for the new frame.
-    #[allow(dead_code, reason = "drawn by the flight of task 9.2")]
     pub(crate) const fn advance(&mut self) -> ImageId {
         self.0 = if self.0 >= 2 { 0 } else { self.0 + 1 };
         match self.0 {
@@ -184,7 +256,7 @@ impl Ctx<'_> {
     fn update_fire(&mut self, unit: DiggerId, record: DiggerId) {
         let digger = record.of(&self.sim.diggers);
         if !digger.not_firing {
-            // Flight is added by task 9.2.
+            self.fly(unit, record);
             return;
         }
         if digger.recharge_time != 0 {
@@ -218,6 +290,77 @@ impl Ctx<'_> {
         self.gfx.place(sprite, image, at);
         self.sound.push(SoundCommand::Fire(unit.fireball()));
     }
+
+    /// One flight step (research 02 §3.6, `updatefire`).
+    ///
+    /// The fireball moves, the picture is probed for earth at the new
+    /// position, the fireball is drawn there and the penalty charged. It
+    /// explodes when out of range; otherwise earth stops it only if the
+    /// draw touched no sprite at all, the own digger included, and then it
+    /// is drawn back at its previous position and explodes there
+    /// (quirk Q19).
+    fn fly(&mut self, unit: DiggerId, record: DiggerId) {
+        let fireball = record.of(&self.sim.diggers).fireball;
+        let direction = fireball.direction;
+        let to = step(fireball.position, direction);
+        // Quirk Q19: the picture is read after the move and before the
+        // redraw, so the fireball's own old image can be in the probe.
+        let earth = probe_earth(self.gfx.fb(), to, direction);
+        record.of_mut(&mut self.sim.diggers).fireball.position = to;
+        let hits = self.draw_fireball(unit, record);
+        self.sim.penalty.charge(PenaltySite::FireballFlight);
+        let touching = !hits.is_empty();
+        if out_of_range(to, direction) {
+            record.of_mut(&mut self.sim.diggers).fireball.explode();
+        } else if earth && !touching {
+            record.of_mut(&mut self.sim.diggers).fireball.position = step_back(to, direction);
+            self.draw_fireball(unit, record);
+            record.of_mut(&mut self.sim.diggers).fireball.explode();
+        }
+    }
+
+    /// Draws `record`'s fireball through `unit`'s fireball sprite and
+    /// returns the collisions of the draw (research 02 §2, `animate`).
+    ///
+    /// A flying fireball shows the next flying frame. An exploding one
+    /// shows its next explosion frame, sounds the explode cue with frame 1
+    /// and moves on to the following frame.
+    fn draw_fireball(&mut self, unit: DiggerId, record: DiggerId) -> Collisions {
+        let fireball = record.of(&self.sim.diggers).fireball;
+        let (image, next) = match fireball.stage {
+            FireballStage::Flying => (
+                unit.of_mut(&mut self.sim.fireball_frames).advance(),
+                FireballStage::Flying,
+            ),
+            FireballStage::Exploding { next_frame } => {
+                let image = match next_frame {
+                    1 => ImageId::EXPLOSION_1,
+                    2 => ImageId::EXPLOSION_2,
+                    _ => ImageId::EXPLOSION_3,
+                };
+                let next = if next_frame >= 3 {
+                    FireballStage::Spent
+                } else {
+                    FireballStage::Exploding {
+                        next_frame: next_frame + 1,
+                    }
+                };
+                (image, next)
+            }
+            FireballStage::Spent => {
+                debug_assert!(false, "a spent fireball is removed, not drawn");
+                return Collisions::EMPTY;
+            }
+        };
+        let hits =
+            self.gfx
+                .move_fireball(unit.fireball(), for_unit(image, unit), fireball.position);
+        if fireball.stage == (FireballStage::Exploding { next_frame: 1 }) {
+            self.sound.push(SoundCommand::Explode(unit.fireball()));
+        }
+        record.of_mut(&mut self.sim.diggers).fireball.stage = next;
+        hits
+    }
 }
 
 #[cfg(test)]
@@ -244,6 +387,53 @@ mod tests {
                 Px::new(104, 68)
             ]
         );
+    }
+
+    #[test]
+    fn probe_beyond_right_or_bottom_is_earth() {
+        let fb = Framebuffer::new();
+        let y = 100;
+        // A black picture is earth only where the probe leaves it.
+        for direction in [
+            Direction::Right,
+            Direction::Up,
+            Direction::Left,
+            Direction::Down,
+        ] {
+            assert!(!probe_earth(&fb, Px::new(100, y), direction));
+        }
+        // Right: the second probe at x+4 = 320 lies past the right edge.
+        assert!(!probe_earth(&fb, Px::new(312, y), Direction::Right));
+        assert!(probe_earth(&fb, Px::new(316, y), Direction::Right));
+        assert!(probe_earth(&fb, Px::new(320, y), Direction::Left));
+        // Up reads column x+4, down column x.
+        assert!(probe_earth(&fb, Px::new(316, y), Direction::Up));
+        assert!(!probe_earth(&fb, Px::new(316, y), Direction::Down));
+        assert!(probe_earth(&fb, Px::new(320, y), Direction::Down));
+        // Bottom: rows y..y+6 for vertical shots, row y+4 for horizontal.
+        assert!(!probe_earth(&fb, Px::new(100, 193), Direction::Down));
+        assert!(probe_earth(&fb, Px::new(100, 194), Direction::Down));
+        assert!(probe_earth(&fb, Px::new(100, 194), Direction::Up));
+        assert!(!probe_earth(&fb, Px::new(100, 195), Direction::Right));
+        assert!(probe_earth(&fb, Px::new(100, 196), Direction::Right));
+    }
+
+    #[test]
+    fn probe_masks_per_direction() {
+        // A single non-black logical pixel at (103, 50): real columns 206
+        // and 207 on real rows 100 and 101.
+        let mut fb = Framebuffer::new();
+        fb.put_opaque(Px::new(103, 50), 2, &[1; 4]);
+        // Horizontal at row y+4 = 50 covering x 100..107: earth.
+        assert!(probe_earth(&fb, Px::new(100, 46), Direction::Right));
+        // Down reads the left half of x+3: earth for x = 100 on rows
+        // 44..50.
+        assert!(probe_earth(&fb, Px::new(100, 44), Direction::Down));
+        assert!(!probe_earth(&fb, Px::new(100, 51), Direction::Down));
+        // Up reads only x+4: logical 103 is not seen from x = 100, but is
+        // from x = 99.
+        assert!(!probe_earth(&fb, Px::new(100, 44), Direction::Up));
+        assert!(probe_earth(&fb, Px::new(99, 44), Direction::Up));
     }
 
     #[test]
@@ -290,5 +480,73 @@ mod tests {
         first.of_mut(&mut game.sim.diggers).facing = Some(Direction::Right);
         game.step(&fire());
         assert!(!first.of(&game.sim.diggers).not_firing());
+    }
+
+    #[test]
+    fn probe_ignored_while_touching_a_tombstone() {
+        use crate::sim::{DeathStage, GameMode, LevelLayout, LevelSet};
+        // Two diggers on earth with only the first digger's start cell
+        // open. The second digger lies dead, its tombstone at (168,180) in
+        // the way of the first digger's shot to the right.
+        let mut rows = ["               "; 10];
+        rows[9] = "        S      ";
+        let layout = LevelLayout::parse_rows(rows).unwrap_or_else(|_| unreachable!());
+        let config = GameConfig {
+            mode: GameMode::TwoDiggers,
+            levels: LevelSet::from_plans([layout; 8], 20_000, true),
+            ..GameConfig::default()
+        };
+        let mut game = Game::new(config, 0);
+        while game.phase != Phase::Playing {
+            game.step(&FrameInput::NONE);
+        }
+        let [first, second] = DiggerId::ALL;
+        {
+            let dead = second.of_mut(&mut game.sim.diggers);
+            dead.alive = false;
+            dead.death = Some(DeathStage::Tombstone);
+        }
+        let tombstone = ImageId::new(30).unwrap_or_else(|| unreachable!());
+        game.gfx
+            .place(second.sprite(), tombstone, Px::new(188, 180));
+        // Digger 1 at (172,180) fires right: launched at (180,184) on the
+        // second tick. At x = 188 and 196 the probe reads the earth of
+        // column 9 but the shot overlaps the tombstone; at 204 it touches
+        // nothing and is drawn back at 196.
+        let mut path = Vec::new();
+        for _ in 0..5 {
+            game.step(&fire());
+            let fireball = first.of(&game.sim.diggers).fireball;
+            path.push((fireball.position.x, fireball.stage));
+        }
+        let flying = FireballStage::Flying;
+        let exploding = FireballStage::Exploding { next_frame: 1 };
+        assert_eq!(
+            path.get(1..).unwrap_or_default(),
+            [
+                (180, flying),
+                (188, flying),
+                (196, flying),
+                (196, exploding)
+            ]
+        );
+        assert!(!second.of(&game.sim.diggers).alive, "the dead stay dead");
+
+        // Without the tombstone the same shot stops at once.
+        game.gfx.erase(second.sprite());
+        {
+            let digger = first.of_mut(&mut game.sim.diggers);
+            digger.not_firing = true;
+            digger.recharge_time = 0;
+            digger.fireball = Fireball::ZEROED;
+        }
+        game.gfx.erase(first.fireball().sprite());
+        let mut path = Vec::new();
+        for _ in 0..2 {
+            game.step(&fire());
+            let fireball = first.of(&game.sim.diggers).fireball;
+            path.push((fireball.position.x, fireball.stage));
+        }
+        assert_eq!(path, [(180, flying), (180, exploding)]);
     }
 }
