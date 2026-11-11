@@ -147,7 +147,7 @@ A hobbin SHALL always take its first priority regardless of earth. On every move
 - **THEN** the emerald is removed, no points are scored and the remaining emerald count drops by one
 
 ### Requirement: Side effects persist while a monster is held in place
-During the spawn standstill, and whenever no digger is alive, a monster's move SHALL be undone so that its position does not change, but everything else its move does SHALL still happen: the decision and its random draw, hobbin digging and emerald destruction, delay changes and collisions evaluated at the attempted position. (research 02 §4.4)
+During the spawn standstill, and whenever no digger is alive, a monster's move SHALL be undone so that its position does not change, but everything else its move does SHALL still happen: the decision and its random draw, hobbin digging and emerald destruction, delay changes, and the collisions of the monster's drawing, which takes place where it is held. (research 02 §4.4)
 
 #### Scenario: Monsters freeze when the digger dies
 - **WHEN** the only digger is in its death sequence
@@ -198,7 +198,7 @@ A monster moving horizontally into a bag SHALL push it under the same rules as a
 - **THEN** it returns to its previous position, heads down, and its counter rises by 1
 
 ### Requirement: Monsters killing diggers
-When a monster's move leaves it overlapping one or more diggers outside bonus mode, every overlapped living digger SHALL be killed with a death by monster; invincible diggers are unaffected and tombstones are ignored. The overlap is evaluated at the position the monster attempted, even if the move was then undone. (research 02 §4.4, §3.7)
+When a monster's move leaves it overlapping one or more diggers outside bonus mode, every overlapped living digger SHALL be killed with a death by monster; invincible diggers are unaffected and tombstones are ignored. The overlap is evaluated where the monster is drawn after its move, which is the position it attempted unless the spawn standstill or the absence of a living digger held it in place, even if a bag then sends it back. (research 02 §4.4, §3.7)
 
 #### Scenario: Catching the digger
 - **WHEN** a nobbin's move overlaps a living, non-invincible digger outside bonus mode

@@ -780,7 +780,9 @@ impl Ctx<'_> {
     ///
     /// **Quirk Q27:** an undone step still has every side effect: the
     /// decision and its draw, the digging, the emerald, delays and the
-    /// collisions of the draw at the attempted position. **Quirk Q26:**
+    /// collisions of the draw, made where the monster is held. A bag that
+    /// blocks the move sends it back only after the draw, so those
+    /// collisions are met at the attempted position. **Quirk Q26:**
     /// outside bonus mode it is this move, never the digger's, that kills
     /// a digger it overlaps.
     fn monster_move(&mut self, slot: MonsterSlot) {
