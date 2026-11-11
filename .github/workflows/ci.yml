@@ -50,3 +50,16 @@ jobs:
       # The steps above are already built and cached, so this reruns quickly.
       - name: cargo xtask ci
         run: cargo xtask ci
+
+  deny:
+    name: deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check
