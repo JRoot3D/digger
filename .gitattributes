@@ -8,3 +8,5 @@
 *.png binary
 *.wav binary
 *.bin binary
+*.zz binary
+*.rgba binary
