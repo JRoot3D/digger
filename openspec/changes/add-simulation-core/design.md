@@ -114,7 +114,7 @@ pub struct StepOutcome {
 
 | Phase | Frames | Frame kind | Leaves to |
 |---|---|---|---|
-| `LevelDraw { cursor }` | ⌈items / 3⌉ (`DRAW_ITEMS_PER_FRAME = 3`; items = opened cells, then emeralds) | Wait | `PlayerFlash` (alternating mode, first round or after a turn change) or `Playing` |
+| `LevelDraw { cursor }` | ⌈items / 3⌉ (`DRAW_ITEMS_PER_FRAME = 3`; items = opened cells, then emeralds; the bags are drawn between the two and not counted; a draw with no item takes one frame) | Wait | `PlayerFlash` (alternating mode, first round or after a turn change) or `Playing` |
 | `PlayerFlash { frame }` | `PLAYER_FLASH_FRAMES = 45` | Wait | `Playing` |
 | `Playing` | one tick per frame | Tick | `Paused`, `WindDown`, or round end directly on gauntlet time-out |
 | `WindDown { left }` | 1..n ticks (`WIND_DOWN_MAX = 20`, `WIND_DOWN_QUIET_PENALTY = 8`) | Tick | round end |
