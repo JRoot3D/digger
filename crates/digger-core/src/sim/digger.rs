@@ -265,9 +265,9 @@ pub struct Digger {
     /// The fireball recharge countdown (`rechargetime`).
     pub(crate) recharge_time: u16,
     /// Ticks still to wait for the dirge before a one-digger death is
-    /// resolved (`dirgetime`; not hashed). Set at the first tombstone frame
-    /// and counted down on every tick of the death sequence; never reset
-    /// otherwise.
+    /// resolved (`dirgetime`; not hashed). Set at the first tombstone frame,
+    /// counted down on every tick of the death sequence and cleared at
+    /// round start (`initdigger`); a respawn keeps it.
     pub(crate) dirge_wait: u16,
     /// Whether no fireball of this digger is flying or exploding
     /// (`notfiring`).
@@ -476,7 +476,7 @@ impl Digger {
             },
             bag_time: 0,
             recharge_time: 0,
-            dirge_wait: self.dirge_wait,
+            dirge_wait: 0,
             not_firing: true,
             fire_ready: true,
             death: Some(DeathStage::Bag),
@@ -506,6 +506,7 @@ impl Digger {
         self.bag_time = 0;
         self.not_firing = true;
         self.recharge_time = 0;
+        self.dirge_wait = 0;
         self.emerald_window = 0;
     }
 
@@ -1508,6 +1509,17 @@ mod tests {
             .collect();
         assert!(without_look.contains(&image), "{image:?}");
         assert!(!second.of(&game.sim.diggers).fire_ready());
+    }
+
+    #[test]
+    fn round_start_clears_dirge_wait() {
+        let mut digger = Digger::NEVER_PLACED;
+        digger.dirge_wait = 16;
+        digger.start_round(SOLO_START_COLUMN, Direction::Right);
+        assert_eq!(digger.dirge_wait, 0);
+        digger.dirge_wait = 16;
+        digger.retire();
+        assert_eq!(digger.dirge_wait, 0);
     }
 
     #[test]
