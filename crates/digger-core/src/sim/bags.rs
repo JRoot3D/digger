@@ -9,6 +9,8 @@
 use crate::assets::ImageId;
 use crate::geom::Px;
 
+use super::geom::Direction;
+
 #[cfg(any(test, feature = "testkit"))]
 use super::Ctx;
 #[cfg(any(test, feature = "testkit"))]
@@ -23,6 +25,9 @@ pub struct Bag {
     pub(crate) exists: bool,
     /// The position (`x`, `y`).
     pub(crate) position: Px,
+    /// The direction the bag is moving in (`dir`), or none at rest. Bags
+    /// are given motion by task group 11; until then every bag is at rest.
+    pub(crate) direction: Option<Direction>,
 }
 
 impl Bag {
@@ -35,6 +40,18 @@ impl Bag {
     pub const fn position(&self) -> Px {
         self.position
     }
+
+    /// The direction the bag is moving in (hashed as `dir`), or none at
+    /// rest.
+    pub const fn direction(&self) -> Option<Direction> {
+        self.direction
+    }
+
+    /// Whether a digger crushed by this bag stops being carried: the bag
+    /// no longer exists or is at rest (research 02 §3.7, `getbagdir`).
+    pub(crate) const fn has_stopped(&self) -> bool {
+        !self.exists || self.direction.is_none()
+    }
 }
 
 #[cfg(any(test, feature = "testkit"))]
@@ -45,6 +62,7 @@ impl Ctx<'_> {
         *id.of_mut(&mut self.sim.bags) = Bag {
             exists: true,
             position: at,
+            direction: None,
         };
         self.gfx.erase(id.sprite());
         self.gfx.place(id.sprite(), ImageId::BAG_STILL, at);

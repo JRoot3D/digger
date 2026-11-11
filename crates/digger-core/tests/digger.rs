@@ -8,11 +8,12 @@
 
 use digger_core::assets::ImageId;
 use digger_core::geom::Px;
-use digger_core::testkit::{Run, Scenario, Script};
+use digger_core::testkit::{KillCause, Run, Scenario, Script};
+use digger_core::video::Framebuffer;
 use digger_core::{
     BagId, CellPos, Controls, DeathStage, DiggerId, Direction, EmeraldStep, FireballId,
-    FireballStage, GameMode, MonsterSlot, Movement, Observer, PenaltySite, ScoreId, SlotId,
-    SoundCommand,
+    FireballStage, GameMode, GauntletSeconds, MonsterSlot, Movement, Observer, PenaltySite,
+    ScoreId, SlotId, SoundCommand, Tempo, Tune,
 };
 
 const FIRST: DiggerId = DiggerId::ALL[0];
@@ -747,7 +748,10 @@ fn fireball_kills_other_digger() {
     run.run_ticks(1);
     let victim = run.state().digger(SECOND);
     assert!(!victim.alive());
-    assert_eq!(victim.death_stage(), Some(DeathStage::Monster));
+    // Killed as by a monster during digger 1's update; digger 2's own
+    // update on the same tick already spends the undrawn tick.
+    assert_eq!(victim.death_stage(), Some(DeathStage::Arc));
+    assert_eq!(victim.death_frame(), 0);
     let fireball = run.state().digger(FIRST).fireball();
     assert_eq!(fireball.stage(), FireballStage::Exploding { next_frame: 1 });
     assert!(run.state().digger(FIRST).alive());
@@ -815,4 +819,297 @@ fn level_1_next_shot_64_ticks_after_removal() {
     run.run_ticks(1);
     assert!(!run.state().digger(FIRST).not_firing(), "fired on R+64");
     assert_eq!(fire_cues(run.sounds()), 1);
+}
+
+/// Runs `n` ticks with no input.
+fn idle(run: &mut Run, n: u32) {
+    run.set_script(Script::default());
+    assert_eq!(run.run_ticks(n), n);
+}
+
+/// The image number and position of `unit`'s sprite, or `None` while it is
+/// not shown.
+fn digger_sprite(run: &Run, unit: DiggerId) -> Option<(u8, Px)> {
+    let sprites = run.state().sprites();
+    let sprite = unit.sprite();
+    sprites
+        .is_enabled(sprite)
+        .then(|| (sprites.image(sprite).number(), sprites.position(sprite)))
+}
+
+/// Whether `sounds` holds `command`.
+fn has(sounds: &[SoundCommand], command: SoundCommand) -> bool {
+    sounds.contains(&command)
+}
+
+/// A one-player run on solid earth whose digger is killed by a monster at
+/// the end of tick T = 1; returns the run and T.
+fn killed_alone(mode: GameMode) -> (Run, u32) {
+    let mut run = Scenario::new(mode).rows(EARTH).build();
+    run.start();
+    idle(&mut run, 1);
+    run.kill_digger(FIRST, KillCause::Monster)
+        .expect("the digger is in play");
+    (run, 1)
+}
+
+#[test]
+fn death_arc_heights_177_175_174_174_175_177_180() {
+    let (mut run, t) = killed_alone(GameMode::OnePlayer);
+    run.take_sounds();
+    // T+1: nothing is drawn; the sprite still shows the walking digger.
+    idle(&mut run, 1);
+    let (image, at) = digger_sprite(&run, FIRST).expect("shown");
+    assert_ne!(image, ImageId::DIGGER_DEAD.number());
+    assert_eq!(at, Px::new(152, 180));
+    assert_eq!(run.state().penalty().count_of(PenaltySite::DeathArc), 0);
+    assert_eq!(run.take_sounds(), []);
+    // T+2 to T+8: the dead digger in its arc.
+    let mut heights = Vec::new();
+    let mut cues = Vec::new();
+    for _ in 0..7 {
+        idle(&mut run, 1);
+        let (image, at) = digger_sprite(&run, FIRST).expect("shown");
+        assert_eq!(image, ImageId::DIGGER_DEAD.number());
+        assert_eq!(at.x, 152);
+        heights.push(at.y);
+        assert_eq!(run.state().penalty().count_of(PenaltySite::DeathArc), 1);
+        let sounds = run.take_sounds();
+        cues.push((
+            has(&sounds, SoundCommand::DiggerDeath),
+            has(&sounds, SoundCommand::MusicOff),
+        ));
+    }
+    assert_eq!(run.ticks(), t + 8);
+    assert_eq!(heights, [177, 175, 174, 174, 175, 177, 180]);
+    let none = (false, false);
+    assert_eq!(
+        cues,
+        [(true, false), none, none, none, none, none, (false, true)],
+        "death cue on T+2, music off on T+8"
+    );
+    let digger = run.state().digger(FIRST);
+    assert_eq!(digger.death_stage(), Some(DeathStage::Grave));
+    assert_eq!(digger.position(), Px::new(152, 180));
+}
+
+#[test]
+fn tombstone_frames_at_g_g3_g6_g9_g12() {
+    let (mut run, t) = killed_alone(GameMode::OnePlayer);
+    // The 5-tick wait ends on T+13; G = T+14.
+    idle(&mut run, 13);
+    run.take_sounds();
+    let g = t + 14;
+    let mut frames = Vec::new();
+    for tick in g..=g + 13 {
+        idle(&mut run, 1);
+        assert_eq!(run.ticks(), tick);
+        let (image, at) = digger_sprite(&run, FIRST).expect("shown");
+        assert_eq!(at, Px::new(152, 180));
+        if run.state().penalty().count_of(PenaltySite::TombstoneFrame) == 1 {
+            frames.push((tick - g, image));
+        }
+    }
+    assert_eq!(frames, [(0, 26), (3, 27), (6, 28), (9, 29), (12, 30)]);
+    let dirges: Vec<_> = run
+        .sounds()
+        .iter()
+        .filter(|s| matches!(s, SoundCommand::Music { .. }))
+        .collect();
+    assert_eq!(
+        dirges,
+        [&SoundCommand::Music {
+            tune: Tune::Dirge,
+            tempo: Tempo::Standard,
+        }]
+    );
+    assert_eq!(
+        run.state().digger(FIRST).death_stage(),
+        Some(DeathStage::Tombstone)
+    );
+
+    // With two diggers the dirge is at the quick tempo.
+    let mut run = Scenario::new(GameMode::TwoDiggers).rows(EARTH).build();
+    run.start();
+    idle(&mut run, 1);
+    run.kill_digger(SECOND, KillCause::Fireball)
+        .expect("the digger is in play");
+    idle(&mut run, 13);
+    run.take_sounds();
+    idle(&mut run, 1);
+    assert_eq!(
+        digger_sprite(&run, SECOND).map(|(image, _)| image),
+        Some(26 + 31)
+    );
+    assert!(has(
+        run.sounds(),
+        SoundCommand::Music {
+            tune: Tune::Dirge,
+            tempo: Tempo::Quick,
+        }
+    ));
+}
+
+#[test]
+fn quirk_q23_one_digger_round_ends_at_g_plus_89() {
+    let (mut run, t) = killed_alone(GameMode::OnePlayer);
+    let g = t + 14;
+    // The tombstone has rested its 60 ticks by G+73, but the death waits
+    // for the dirge.
+    idle(&mut run, g + 73 - t);
+    let digger = run.state().digger(FIRST);
+    assert_eq!(digger.death_stage(), Some(DeathStage::Tombstone));
+    assert_eq!(digger.death_timer(), 0);
+    assert!(!digger.dead());
+    idle(&mut run, 88 - 73);
+    assert_eq!(run.ticks(), g + 88);
+    assert_eq!(run.state().round(), 0);
+    assert_eq!(run.state().lives(FIRST), 3);
+    idle(&mut run, 1);
+    assert_eq!(run.ticks(), g + 89);
+    assert_eq!(run.state().round(), 1, "the round ended on tick G+89");
+    // The next round has begun at the start cell.
+    let digger = run.state().digger(FIRST);
+    assert!(digger.alive());
+    assert_eq!(digger.position(), Px::new(152, 180));
+}
+
+/// The top line (score and lives) of `run`'s picture.
+fn status_line(run: &Run) -> Vec<u8> {
+    let rows = 14 * Framebuffer::WIDTH * 2;
+    run.state()
+        .framebuffer()
+        .pixels()
+        .get(..rows)
+        .expect("the picture has a top line")
+        .to_vec()
+}
+
+#[test]
+fn one_player_death_leaves_2_lives() {
+    let (mut run, _) = killed_alone(GameMode::OnePlayer);
+    assert!(run.run_until(|s| s.round() == 1, 200));
+    assert_eq!(run.state().lives(FIRST), 2);
+    assert!(run.state().digger(FIRST).alive());
+    // The status line shows one spare life, as a round started with 2 lives
+    // does.
+    let mut fresh = Scenario::new(GameMode::OnePlayer).rows(EARTH).build();
+    fresh.set_lives(FIRST, 2).expect("in play");
+    fresh.start();
+    assert_eq!(status_line(&run), status_line(&fresh));
+}
+
+#[test]
+fn gauntlet_death_keeps_lives() {
+    let mode = GameMode::Gauntlet {
+        time: GauntletSeconds::DEFAULT,
+    };
+    let (mut run, _) = killed_alone(mode);
+    assert!(run.run_until(|s| s.round() == 1, 200));
+    assert_eq!(run.state().lives(FIRST), 3);
+    let digger = run.state().digger(FIRST);
+    assert!(digger.alive(), "play resumes with a new round");
+    assert_eq!(digger.position(), Px::new(152, 180));
+    assert!(run.summary().is_none());
+}
+
+/// A two-digger run on solid earth whose second digger, with `lives`
+/// lives, is killed by a monster at the end of tick T = 1; returns the run
+/// and the tick R = G + 73 its death is resolved on.
+fn partner_killed(lives: u32) -> (Run, u32) {
+    let mut run = Scenario::new(GameMode::TwoDiggers).rows(EARTH).build();
+    run.set_lives(SECOND, lives).expect("in play");
+    run.start();
+    idle(&mut run, 1);
+    run.kill_digger(SECOND, KillCause::Monster)
+        .expect("the digger is in play");
+    (run, 1 + 14 + 73)
+}
+
+#[test]
+fn respawn_at_132_180_with_2_lives_and_blinking() {
+    let (mut run, r) = partner_killed(3);
+    idle(&mut run, r - 2);
+    assert!(!run.state().digger(SECOND).alive());
+    run.take_sounds();
+    idle(&mut run, 1);
+    assert_eq!(run.ticks(), r);
+    let state = run.state();
+    let digger = state.digger(SECOND);
+    assert_eq!(state.lives(SECOND), 2);
+    assert!(digger.alive() && !digger.dead());
+    assert_eq!(digger.position(), Px::new(132, 180));
+    assert_eq!(digger.facing(), Some(Direction::Left));
+    assert_eq!(digger.death_stage(), Some(DeathStage::Bag));
+    assert!(digger.invincible());
+    assert_eq!(digger.invincibility(), 50);
+    assert_eq!(state.round(), 0, "the round goes on");
+    let sprite = digger_sprite(&run, SECOND).expect("shown");
+    assert_eq!(sprite.1, Px::new(132, 180));
+    // The music in effect is requested again.
+    assert!(has(
+        run.sounds(),
+        SoundCommand::Music {
+            tune: Tune::Main,
+            tempo: Tempo::Standard,
+        }
+    ));
+    // It blinks: hidden on the draws where the count left modulo 10 is
+    // below 5.
+    let mut shown = Vec::new();
+    for _ in 0..10 {
+        idle(&mut run, 1);
+        shown.push(digger_sprite(&run, SECOND).is_some());
+    }
+    assert_eq!(
+        shown,
+        [
+            true, true, true, true, true, false, false, false, false, false
+        ]
+    );
+}
+
+#[test]
+fn invincible_for_50_ticks_when_unblocked() {
+    let (mut run, r) = partner_killed(3);
+    idle(&mut run, r - 1);
+    assert!(run.state().digger(SECOND).invincible());
+    idle(&mut run, 49);
+    let digger = run.state().digger(SECOND);
+    assert!(digger.invincible(), "still invincible on R+49");
+    assert_eq!(digger.invincibility(), 1);
+    // A kill is ignored while it lasts.
+    run.kill_digger(SECOND, KillCause::Monster)
+        .expect("in play");
+    assert!(run.state().digger(SECOND).alive());
+    idle(&mut run, 1);
+    let digger = run.state().digger(SECOND);
+    assert!(!digger.invincible(), "over on R+50");
+    assert_eq!(digger.invincibility(), 0);
+    assert!(digger_sprite(&run, SECOND).is_some());
+}
+
+#[test]
+fn last_life_lost_removes_tombstone_next_tick() {
+    let (mut run, r) = partner_killed(1);
+    idle(&mut run, r - 1);
+    let state = run.state();
+    let digger = state.digger(SECOND);
+    assert_eq!(state.lives(SECOND), 0);
+    assert!(!digger.alive() && digger.dead());
+    assert_eq!(digger.death_stage(), Some(DeathStage::Tombstone));
+    assert_eq!(
+        digger_sprite(&run, SECOND),
+        Some((30 + 31, Px::new(132, 180))),
+        "the tombstone stays on tick R"
+    );
+    idle(&mut run, 1);
+    assert_eq!(digger_sprite(&run, SECOND), None, "removed on R+1");
+    let state = run.state();
+    assert_eq!(state.digger(SECOND).death_stage(), Some(DeathStage::Done));
+    assert_eq!(state.round(), 0, "digger 1 plays on");
+    assert!(state.digger(FIRST).alive());
+    idle(&mut run, 20);
+    assert_eq!(digger_sprite(&run, SECOND), None);
+    assert_eq!(run.state().lives(SECOND), 0);
 }

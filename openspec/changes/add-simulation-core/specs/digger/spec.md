@@ -238,8 +238,8 @@ A kill SHALL be ignored for an invincible digger and for a digger already in its
 A digger killed by a monster or a fireball SHALL spend one tick undrawn, then show the dead-digger image for 7 ticks at heights 3, 5, 6, 6, 5, 3 and 0 pixels above its position, emitting the death cue on the first of these ticks and stopping the music on the last if no digger is alive. The grave sequence SHALL follow. (research 02 §3.7)
 
 #### Scenario: Death arc
-- **WHEN** a digger at y = 100 is killed by a monster on tick T
-- **THEN** on ticks T+2 to T+8 the dead-digger image is drawn at y = 97, 95, 94, 94, 95, 97 and 100
+- **WHEN** a digger at y = 180 is killed by a monster on tick T
+- **THEN** on ticks T+2 to T+8 the dead-digger image is drawn at y = 177, 175, 174, 174, 175, 177 and 180
 
 ### Requirement: Death by falling bag
 A digger killed by a falling bag SHALL be shown with the dead-digger image and carried down with the bag, kept no higher than 6 pixels below the bag's top, for as long as the bag keeps falling. On the tick the bag has stopped or no longer exists the death cue SHALL be emitted, the digger SHALL be raised 6 pixels, and the grave sequence SHALL follow. No points are scored. (research 02 §3.7, §5.7)

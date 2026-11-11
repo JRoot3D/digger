@@ -232,6 +232,10 @@ pub(crate) struct Sim {
     emeralds: EmeraldMap,
     /// The two digger records.
     diggers: [Digger; DiggerId::COUNT],
+    /// Whether every digger's death sequence has finished, so the main
+    /// phase ends after this tick (the original's `alldead`); cleared when
+    /// the round's outcome has been decided.
+    all_dead: bool,
     /// Whether the diggers are shown and updated (hashed as `digvisible`);
     /// false from the end of the main phase to the next round start.
     diggers_visible: bool,
@@ -295,6 +299,7 @@ impl Sim {
             saved_fields: PlayerFields::default(),
             emeralds: EmeraldMap::EMPTY,
             diggers,
+            all_dead: false,
             diggers_visible: false,
             digger_frames: [AnimFrame::START; DiggerId::COUNT],
             fireball_frames: [FlameFrame::START; DiggerId::COUNT],
@@ -403,6 +408,9 @@ impl Ctx<'_> {
             Phase::LevelDraw(draw) => self.level_draw_frame(draw),
             Phase::Playing => {
                 self.tick_main(input);
+                if self.sim.all_dead {
+                    return (self.round_over(), FrameKind::Tick);
+                }
                 (Phase::Playing, FrameKind::Tick)
             }
             Phase::Finished(_) => (phase, FrameKind::Wait),
@@ -530,6 +538,43 @@ impl Ctx<'_> {
         self.sim.saved_fields.save(self.sim.turn, &self.sim.field);
         self.obs.round_end(StateView::new(self.sim, self.gfx));
         self.sim.round = self.sim.round.wrapping_add(1);
+    }
+
+    /// Ends a round whose diggers are all dead and decides what follows
+    /// (game-flow spec, "Round end", "Death outcome and passing the turn";
+    /// research 01 §3.2).
+    ///
+    /// Outside gauntlet mode every digger in play with lives left loses
+    /// one, and the lives are redrawn. While the current player has lives
+    /// the next round starts on the same field on the next frame; otherwise
+    /// the game is over.
+    ///
+    /// Task group 14 completes this: the wind-down runs before the round
+    /// end (14.2), a field without emeralds advances the level (14.4), the
+    /// turn passes in an alternating game (14.5), and game over shows its
+    /// notice and reports the player (14.6).
+    fn round_over(&mut self) -> Phase {
+        self.end_round();
+        let gauntlet = self.sim.cfg.mode.gauntlet().is_some();
+        for unit in self.sim.units() {
+            let digger = self.sim.record_of_unit(unit).of_mut(&mut self.sim.diggers);
+            if digger.lives > 0 && !gauntlet {
+                digger.lives -= 1;
+            }
+        }
+        self.draw_lives();
+        self.sim.all_dead = false;
+        let lives_left = self
+            .sim
+            .units()
+            .any(|unit| self.sim.record_of_unit(unit).of(&self.sim.diggers).lives > 0);
+        if !lives_left && !gauntlet {
+            let summary = self.sim.summary(FinishReason::AllPlayersOut);
+            self.obs.game_end(StateView::new(self.sim, self.gfx));
+            return Phase::Finished(summary);
+        }
+        self.begin_round(false);
+        Phase::Playing
     }
 
     /// Ends the game for `reason`: through the round end when a round is in
@@ -721,7 +766,11 @@ impl Game {
         }
         let (phase, frame) = cx.advance(self.phase, input);
         self.phase = phase;
-        StepOutcome::of(frame)
+        let mut outcome = StepOutcome::of(frame);
+        if let Phase::Finished(summary) = phase {
+            outcome.finished = Some(summary);
+        }
+        outcome
     }
 
     /// The picture: 640×400 palette indices with the current palette.

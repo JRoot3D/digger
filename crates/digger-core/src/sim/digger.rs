@@ -16,15 +16,16 @@
 
 use crate::assets::ImageId;
 use crate::geom::Px;
-use crate::sound_cmd::{EmeraldStep, SoundCommand};
-use crate::sprite::Collisions;
+use crate::sound_cmd::{EmeraldStep, SoundCommand, Tempo, Tune};
+use crate::sprite::{Collisions, SpriteClass};
 
 use super::draw::{self, Carve};
 use super::field::EmeraldMap;
 use super::fireball::Fireball;
+use super::fireball::FireballStage;
 use super::geom::{CellPos, Direction, Located, MAX_X, MAX_Y, MIN_X, MIN_Y, locate};
 use super::gfx::Gfx;
-use super::ids::{BagId, DiggerId, PlayerId};
+use super::ids::{BagId, DiggerId, MonsterSlot, PlayerId};
 use super::input::FrameInput;
 use super::penalty::{Penalty, PenaltySite};
 use super::score::{ScoreEvent, ScoreId};
@@ -54,6 +55,82 @@ const EMERALD_WINDOW: u8 = 9;
 /// Emeralds in a full run; the last of them scores the run bonus
 /// (research 02 §3.5).
 const EMERALD_RUN: u8 = 8;
+
+/// How far above its position a digger killed by a monster or a fireball
+/// is drawn on each of the 7 ticks of its death arc (digger spec, "Death by
+/// monster or fireball"; research 02 §3.7).
+const DEATH_ARC: [i32; 7] = [3, 5, 6, 6, 5, 3, 0];
+/// Ticks the grave sequence waits before its first tombstone frame
+/// (research 02 §3.7).
+const GRAVE_WAIT: u16 = 5;
+/// Ticks between two tombstone frames besides the tick of the frame itself,
+/// so the frames are drawn three ticks apart (research 02 §3.7).
+const TOMBSTONE_GAP: u16 = 2;
+/// The last of the five tombstone frames, counted from 0.
+const LAST_TOMBSTONE: u8 = 4;
+/// Ticks the resting tombstone stays after the last frame before the death
+/// is resolved, at G + 73 (research 02 §3.7).
+const TOMBSTONE_REST: u16 = 60;
+/// **Quirk Q23:** in a one-digger game the death is resolved no earlier
+/// than 89 ticks after the first tombstone frame, at G + 89, to leave time
+/// for the dirge; the wait is counted in ticks, never in real time (digger
+/// spec, "Grave sequence"; research 02 §3.7, §9 item 23).
+pub(crate) const DIRGE_TICKS: u16 = 89;
+/// Draws of invincibility a respawned digger is given (digger spec,
+/// "Invincibility"; research 02 §3.7).
+const RESPAWN_INVINCIBILITY: u16 = 50;
+/// **Quirk Q21 (digger side):** a digger crushed by a bag is held no higher
+/// than this many pixels below the bag's top while carried, and raised by
+/// as much when the bag stops (research 02 §3.7, §9 item 6).
+const CARRIED_BELOW_BAG: i32 = 6;
+
+/// What a dead digger's sprite shows (research 02 §2, `drawdigger`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeathPicture {
+    /// The dead digger, upside down.
+    Dead,
+    /// Tombstone frame 0..=4, growing.
+    Tombstone(u8),
+}
+
+/// The image of `picture` for the digger drawn by unit `unit`: the dead
+/// digger is image 25 and the tombstone frames are 26 to 30, each 31
+/// further on for the second digger (research 03 §5.2).
+fn death_image(unit: DiggerId, picture: DeathPicture) -> Option<ImageId> {
+    let dead = ImageId::DIGGER_DEAD.number();
+    let number = match picture {
+        DeathPicture::Dead => dead,
+        DeathPicture::Tombstone(frame) => dead + 1 + frame.min(LAST_TOMBSTONE),
+    };
+    let image = ImageId::new(number)?;
+    if unit.number() == 0 {
+        Some(image)
+    } else {
+        image.for_second_digger()
+    }
+}
+
+/// The start column and facing of digger record `record`: column 7 with
+/// one digger and 8 − 2 × record index with two; record 0 faces right and
+/// every other record left (digger spec, "Start position and facing";
+/// research 02 §3.2).
+///
+/// **Quirk Q24:** both use the absolute record index, so the second player
+/// of an alternating game starts facing left, and a respawn uses the same
+/// rule.
+fn start_of(solo: bool, record: DiggerId) -> (u8, Direction) {
+    let column = if solo {
+        SOLO_START_COLUMN
+    } else {
+        PAIR_START_COLUMN.saturating_sub(record.number().saturating_mul(2))
+    };
+    let facing = if record.number() == 0 {
+        Direction::Right
+    } else {
+        Direction::Left
+    };
+    (column, facing)
+}
 
 /// The remainders along the direction of travel at which an emerald in the
 /// cell being entered is redrawn and eaten.
@@ -187,6 +264,11 @@ pub struct Digger {
     pub(crate) bag_time: u16,
     /// The fireball recharge countdown (`rechargetime`).
     pub(crate) recharge_time: u16,
+    /// Ticks still to wait for the dirge before a one-digger death is
+    /// resolved (`dirgetime`; not hashed). Set at the first tombstone frame
+    /// and counted down on every tick of the death sequence; never reset
+    /// otherwise.
+    pub(crate) dirge_wait: u16,
     /// Whether no fireball of this digger is flying or exploding
     /// (`notfiring`).
     pub(crate) not_firing: bool,
@@ -244,6 +326,7 @@ impl Digger {
         },
         bag_time: 0,
         recharge_time: 0,
+        dirge_wait: 0,
         not_firing: false,
         fire_ready: false,
         death: None,
@@ -393,6 +476,7 @@ impl Digger {
             },
             bag_time: 0,
             recharge_time: 0,
+            dirge_wait: self.dirge_wait,
             not_firing: true,
             fire_ready: true,
             death: Some(DeathStage::Bag),
@@ -423,6 +507,41 @@ impl Digger {
         self.not_firing = true;
         self.recharge_time = 0;
         self.emerald_window = 0;
+    }
+
+    /// Brings a digger back at its start cell in a two-digger game, alive and
+    /// invincible for 50 draws, with no push pause, a ready fireball, no
+    /// emerald run and an eat multiplier of 1 (digger spec, "Respawn with
+    /// invincibility in two-digger games"; research 02 §3.7).
+    ///
+    /// **Quirk Q25:** the fire-ready look is not restored, and the death
+    /// counters, the dirge wait and the fireball's last position keep their
+    /// values.
+    fn respawn(&mut self, column: u8, facing: Direction) {
+        let cell = CellPos::new(column, START_ROW).unwrap_or_else(|| {
+            debug_assert!(false, "start columns lie inside the grid");
+            self.located.cell
+        });
+        self.position = cell.to_px();
+        self.facing = Some(facing);
+        self.moving = Some(Direction::Left);
+        self.located = Located {
+            cell,
+            rem_x: 0,
+            rem_y: 0,
+        };
+        self.bag_time = 0;
+        self.alive = true;
+        self.dead = false;
+        self.invincible = true;
+        self.invincibility = RESPAWN_INVINCIBILITY;
+        self.death = Some(DeathStage::Bag);
+        self.not_firing = true;
+        self.emerald_window = 0;
+        self.fireball.stage = FireballStage::Flying;
+        self.recharge_time = 0;
+        self.emerald_run = 0;
+        self.eat_multiplier = 1;
     }
 
     /// Stores the cell and remainders of the current position.
@@ -567,8 +686,11 @@ impl Sim {
     /// Nothing happens to an invincible digger or to one in its grave
     /// stages (waiting or growing tombstone, the undrawn tick, the resting
     /// tombstone); a digger carried by a bag or in its death arc dies again
-    /// in the new manner. Task group 10 adds the death sequences that
-    /// follow.
+    /// in the new manner (quirk Q20). The death sequence then runs in the
+    /// digger's updates.
+    ///
+    /// **Quirk Q20:** the kill is applied only outside the grave stages
+    /// (2 to 4); stage 1 (carried by a bag) and stage 5 (the arc) restart.
     pub(crate) fn kill_digger(&mut self, record: DiggerId, stage: DeathStage, bag: BagId) {
         let digger = record.of_mut(&mut self.diggers);
         if digger.invincible {
@@ -583,6 +705,27 @@ impl Sim {
         digger.alive = false;
         digger.death = Some(stage);
         digger.death_bag = bag;
+    }
+
+    /// Whether the digger of any unit in play is alive and controllable
+    /// (research 02 §3.1, `isalive`).
+    pub(crate) fn any_alive(&self) -> bool {
+        self.units()
+            .any(|unit| self.record_of_unit(unit).of(&self.diggers).alive)
+    }
+
+    /// Whether every digger's death sequence has finished, for the end of a
+    /// round (research 02 §3.7).
+    ///
+    /// **Quirk Q24:** the records tested are 0 up to the number of diggers,
+    /// whoever's turn it is, so for the second player of an alternating
+    /// game it is the first player's record that is tested. That record is
+    /// always dead by then, because the turn passes only after a death.
+    pub(crate) fn all_records_dead(&self) -> bool {
+        DiggerId::ALL
+            .into_iter()
+            .take(usize::from(self.cfg.mode.diggers()))
+            .all(|record| record.of(&self.diggers).dead)
     }
 
     /// The record played by `unit` on this turn: record `turn + unit`.
@@ -633,16 +776,7 @@ impl Ctx<'_> {
                 self.gfx.erase(unit.fireball().sprite());
                 continue;
             }
-            let column = if solo {
-                SOLO_START_COLUMN
-            } else {
-                PAIR_START_COLUMN.saturating_sub(record.number().saturating_mul(2))
-            };
-            let facing = if record.number() == 0 {
-                Direction::Right
-            } else {
-                Direction::Left
-            };
+            let (column, facing) = start_of(solo, record);
             digger.start_round(column, facing);
             let at = digger.position;
             // The sprite shows the image it was reset to until its first
@@ -672,8 +806,9 @@ impl Ctx<'_> {
                     self.move_digger(unit, record);
                 } else if digger.alive {
                     self.push_pause(unit, record);
+                } else {
+                    self.digger_die(unit, record);
                 }
-                // A dead digger's sequence runs here from task group 10 on.
             }
             let digger = record.of_mut(&mut self.sim.diggers);
             digger.emerald_window = digger.emerald_window.saturating_sub(1);
@@ -762,6 +897,198 @@ impl Ctx<'_> {
             self.add_score(score, ScoreEvent::EighthEmerald);
         }
         record.of_mut(&mut self.sim.diggers).emerald_window = EMERALD_WINDOW;
+    }
+
+    /// One tick of a dead digger's sequence (digger spec, "Death by monster
+    /// or fireball", "Death by falling bag", "Grave sequence"; research 02
+    /// §3.7, `diggerdie`). The dirge wait counts down first, on every tick
+    /// of the sequence.
+    fn digger_die(&mut self, unit: DiggerId, record: DiggerId) {
+        let digger = record.of_mut(&mut self.sim.diggers);
+        digger.dirge_wait = digger.dirge_wait.saturating_sub(1);
+        match digger.death {
+            Some(DeathStage::Bag) => self.carried_by_bag(unit, record),
+            Some(DeathStage::Monster) => {
+                // The undrawn tick.
+                digger.death = Some(DeathStage::Arc);
+                digger.death_frame = 0;
+                digger.death_timer = 0;
+            }
+            Some(DeathStage::Arc) => self.death_arc(unit, record),
+            Some(DeathStage::Grave) => self.grave(unit, record),
+            Some(DeathStage::Tombstone) => self.tombstone(unit, record),
+            Some(DeathStage::Done) | None => {}
+        }
+    }
+
+    /// Draws `unit`'s sprite at `at` showing `picture`, advancing its
+    /// animation counter as every digger draw does, and returns the
+    /// collisions of the draw. No invincibility countdown applies.
+    fn draw_dead(&mut self, unit: DiggerId, picture: DeathPicture, at: Px) -> Collisions {
+        unit.of_mut(&mut self.sim.digger_frames).advance();
+        if let Some(image) = death_image(unit, picture) {
+            self.gfx.move_digger(unit, image, at)
+        } else {
+            debug_assert!(false, "every death picture has an image");
+            Collisions::EMPTY
+        }
+    }
+
+    /// A digger crushed by a bag: held no higher than 6 pixels below the
+    /// bag's top and drawn dead; once the bag has stopped or no longer
+    /// exists, the death cue sounds, the digger is raised 6 pixels and the
+    /// grave sequence begins (quirk Q21; research 02 §3.7, §5.7).
+    fn carried_by_bag(&mut self, unit: DiggerId, record: DiggerId) {
+        let digger = *record.of(&self.sim.diggers);
+        let bag = *digger.death_bag.of(&self.sim.bags);
+        let mut at = digger.position;
+        at.y = at.y.max(bag.position.y + CARRIED_BELOW_BAG);
+        record.of_mut(&mut self.sim.diggers).position = at;
+        self.draw_dead(unit, DeathPicture::Dead, at);
+        self.sim.penalty.charge(PenaltySite::CarriedDigger);
+        if bag.has_stopped() {
+            self.sound.push(SoundCommand::DiggerDeath);
+            let digger = record.of_mut(&mut self.sim.diggers);
+            digger.death_timer = GRAVE_WAIT;
+            digger.death = Some(DeathStage::Grave);
+            digger.death_frame = 0;
+            digger.position.y -= CARRIED_BELOW_BAG;
+        }
+    }
+
+    /// One tick of the 7-tick death arc: the dead digger is drawn 3, 5, 6,
+    /// 6, 5, 3 and 0 pixels above its position, the death cue sounds after
+    /// the first draw, the music stops at the last if no digger is alive,
+    /// and the grave sequence follows (research 02 §3.7).
+    fn death_arc(&mut self, unit: DiggerId, record: DiggerId) {
+        let digger = *record.of(&self.sim.diggers);
+        let Some(&lift) = DEATH_ARC.get(usize::from(digger.death_frame)) else {
+            return;
+        };
+        let at = Px::new(digger.position.x, digger.position.y - lift);
+        self.draw_dead(unit, DeathPicture::Dead, at);
+        let last = usize::from(digger.death_frame) + 1 == DEATH_ARC.len();
+        if last && !self.sim.any_alive() {
+            self.sim.main_tune = None;
+            self.sound.push(SoundCommand::MusicOff);
+        }
+        self.sim.penalty.charge(PenaltySite::DeathArc);
+        let digger = record.of_mut(&mut self.sim.diggers);
+        digger.death_frame += 1;
+        if digger.death_frame == 1 {
+            self.sound.push(SoundCommand::DiggerDeath);
+        }
+        if last {
+            digger.death_timer = GRAVE_WAIT;
+            digger.death_frame = 0;
+            digger.death = Some(DeathStage::Grave);
+        }
+    }
+
+    /// One tick of the grave sequence: 5 ticks of waiting, then five
+    /// growing tombstone frames three ticks apart, then the resting
+    /// tombstone (digger spec, "Grave sequence"; research 02 §3.7).
+    ///
+    /// With the first frame, on tick G, the dirge is requested (at the
+    /// quick tempo with two diggers) and the dirge wait of quirk Q23
+    /// starts. **Quirk Q22:** every monster the first frame's draw touches
+    /// is removed, and nobody scores for it.
+    fn grave(&mut self, unit: DiggerId, record: DiggerId) {
+        let digger = record.of_mut(&mut self.sim.diggers);
+        if digger.death_timer != 0 {
+            digger.death_timer -= 1;
+            return;
+        }
+        let frame = digger.death_frame;
+        let at = digger.position;
+        if frame == 0 {
+            digger.dirge_wait = DIRGE_TICKS;
+            let tempo = if self.sim.cfg.mode.diggers() == 1 {
+                Tempo::Standard
+            } else {
+                Tempo::Quick
+            };
+            self.sim.main_tune = None;
+            self.sound.push(SoundCommand::Music {
+                tune: Tune::Dirge,
+                tempo,
+            });
+        }
+        let hits = self.draw_dead(unit, DeathPicture::Tombstone(frame), at);
+        self.sim.penalty.charge(PenaltySite::TombstoneFrame);
+        if frame == 0 {
+            for sprite in hits.of(SpriteClass::Monster) {
+                if let Some(slot) = MonsterSlot::from_sprite(sprite) {
+                    self.remove_monster(slot);
+                }
+            }
+        }
+        let digger = record.of_mut(&mut self.sim.diggers);
+        if frame < LAST_TOMBSTONE {
+            digger.death_frame = frame + 1;
+            digger.death_timer = TOMBSTONE_GAP;
+        } else {
+            digger.death = Some(DeathStage::Tombstone);
+            digger.death_timer = TOMBSTONE_REST;
+        }
+    }
+
+    /// The resting tombstone and the resolution of the death (digger spec,
+    /// "Lives", "Respawn with invincibility in two-digger games"; research
+    /// 02 §3.7).
+    ///
+    /// After 60 ticks (and, with one digger, once the dirge wait of quirk
+    /// Q23 is over) the death sequence is finished. When every digger's has
+    /// finished (quirk Q24) the round is over. Otherwise, while the partner
+    /// is alive, the digger loses a life (never in gauntlet mode), the lives
+    /// are redrawn, a digger with a life left respawns, and the main music
+    /// is requested again; a digger without lives stays a tombstone for one
+    /// more tick and is then erased and taken out of play.
+    ///
+    /// The original also forgets a fire press reported since the last read
+    /// for the record's index here (`clearfire`). The slot's read earlier
+    /// in the same update has already taken any such press, so nothing is
+    /// left to forget.
+    fn tombstone(&mut self, unit: DiggerId, record: DiggerId) {
+        let solo = self.sim.cfg.mode.diggers() == 1;
+        let digger = record.of_mut(&mut self.sim.diggers);
+        if digger.death_timer != 0 {
+            digger.death_timer -= 1;
+            return;
+        }
+        if solo && digger.dirge_wait != 0 {
+            return;
+        }
+        digger.dead = true;
+        let lives = digger.lives;
+        if self.sim.all_records_dead() {
+            self.sim.all_dead = true;
+        } else if self.sim.any_alive() && lives > 0 {
+            let lives = if self.sim.cfg.mode.gauntlet().is_some() {
+                lives
+            } else {
+                lives - 1
+            };
+            record.of_mut(&mut self.sim.diggers).lives = lives;
+            self.draw_lives();
+            if lives > 0 {
+                let (column, facing) = start_of(solo, record);
+                let digger = record.of_mut(&mut self.sim.diggers);
+                digger.respawn(column, facing);
+                let at = digger.position;
+                // Shown with the image it was last given until its first
+                // move draw.
+                let sprite = unit.sprite();
+                let image = self.gfx.sprites().pending_image(sprite);
+                self.gfx.erase(sprite);
+                self.gfx.place(sprite, image, at);
+            }
+            // Task group 13 requests the bonus music here in bonus mode.
+            self.request_main_music();
+        } else {
+            self.gfx.erase(unit.sprite());
+            record.of_mut(&mut self.sim.diggers).death = Some(DeathStage::Done);
+        }
     }
 
     /// Draws `record` through `unit`'s sprite at its position, then applies
@@ -1013,6 +1340,206 @@ mod tests {
         assert_eq!(digger.invincibility(), 0);
         assert!(!digger.invincible());
         assert!(game.gfx.sprites().is_enabled(first.sprite()));
+    }
+
+    /// A game in `mode` stepped to its first tick.
+    fn playing(mode: GameMode) -> Box<Game> {
+        let config = GameConfig {
+            mode,
+            ..GameConfig::default()
+        };
+        let mut game = Game::new(config, 0);
+        to_first_tick(&mut game);
+        game
+    }
+
+    /// Steps `game` by `n` frames with no input.
+    fn steps(game: &mut Game, n: u32) {
+        for _ in 0..n {
+            game.step(&FrameInput::NONE);
+        }
+    }
+
+    #[test]
+    fn quirk_q20_kill_ignored_in_grave_stages() {
+        let mut game = playing(GameMode::OnePlayer);
+        let first = DiggerId::ALL[0];
+        let [bag_a, _, _, _, _, bag_b, _] = BagId::ALL;
+        for stage in [
+            DeathStage::Grave,
+            DeathStage::Monster,
+            DeathStage::Tombstone,
+        ] {
+            {
+                let digger = first.of_mut(&mut game.sim.diggers);
+                digger.alive = false;
+                digger.death = Some(stage);
+                digger.death_bag = bag_a;
+            }
+            game.sim.kill_digger(first, DeathStage::Bag, bag_b);
+            game.sim.kill_digger(first, DeathStage::Monster, bag_b);
+            let digger = first.of(&game.sim.diggers);
+            assert_eq!(digger.death_stage(), Some(stage));
+            assert_eq!(digger.death_bag(), bag_a);
+        }
+
+        // An invincible living digger is not killed either.
+        let digger = first.of_mut(&mut game.sim.diggers);
+        digger.alive = true;
+        digger.death = Some(DeathStage::Bag);
+        digger.invincible = true;
+        digger.invincibility = 20;
+        game.sim.kill_digger(first, DeathStage::Monster, bag_a);
+        let digger = first.of(&game.sim.diggers);
+        assert!(digger.alive());
+        assert_eq!(digger.death_stage(), Some(DeathStage::Bag));
+    }
+
+    #[test]
+    fn quirk_q20_carried_digger_can_be_rekilled() {
+        let mut game = playing(GameMode::OnePlayer);
+        let first = DiggerId::ALL[0];
+        let bag = BagId::ALL[3];
+        // Carried by a bag, then touched by a monster.
+        game.sim.kill_digger(first, DeathStage::Bag, bag);
+        let digger = first.of(&game.sim.diggers);
+        assert!(!digger.alive());
+        assert_eq!(digger.death_stage(), Some(DeathStage::Bag));
+        assert_eq!(digger.death_bag(), bag);
+        game.sim
+            .kill_digger(first, DeathStage::Monster, BagId::ALL[0]);
+        let digger = first.of(&game.sim.diggers);
+        assert_eq!(digger.death_stage(), Some(DeathStage::Monster));
+        assert_eq!(digger.death_bag(), BagId::ALL[0]);
+
+        // In the arc, then crushed by a bag.
+        first.of_mut(&mut game.sim.diggers).death = Some(DeathStage::Arc);
+        game.sim.kill_digger(first, DeathStage::Bag, bag);
+        let digger = first.of(&game.sim.diggers);
+        assert_eq!(digger.death_stage(), Some(DeathStage::Bag));
+        assert_eq!(digger.death_bag(), bag);
+    }
+
+    #[test]
+    fn quirk_q22_grave_removal_scores_nothing() {
+        let mut game = playing(GameMode::OnePlayer);
+        steps(&mut game, 1);
+        let first = DiggerId::ALL[0];
+        game.sim
+            .kill_digger(first, DeathStage::Monster, BagId::ALL[0]);
+        // A monster stub on the digger, which never moves.
+        let slot = MonsterSlot::ALL[2];
+        let at = first.of(&game.sim.diggers).position();
+        {
+            let mut obs = super::super::NoopObserver;
+            let mut cx = Ctx {
+                sim: &mut game.sim,
+                gfx: &mut game.gfx,
+                sound: &mut game.sound,
+                obs: &mut obs,
+            };
+            cx.put_nobbin(slot, at);
+        }
+        // The undrawn tick, the 7-tick arc and the 5-tick wait.
+        steps(&mut game, 13);
+        assert!(slot.of(&game.sim.monsters).occupied());
+        let score = game.sim.scores.visible(ScoreId::ALL[0]);
+        // Tick G: the first tombstone frame removes it.
+        steps(&mut game, 1);
+        assert_eq!(first.of(&game.sim.diggers).death_frame(), 1);
+        let monster = slot.of(&game.sim.monsters);
+        assert!(!monster.occupied() && !monster.alive());
+        assert!(!game.gfx.sprites().is_enabled(slot.sprite()));
+        assert_eq!(game.sim.scores.visible(ScoreId::ALL[0]), score);
+        let penalty = game.state().penalty();
+        assert_eq!(penalty.count_of(PenaltySite::ScoreCall), 0);
+        assert_eq!(penalty.count_of(PenaltySite::TombstoneFrame), 1);
+    }
+
+    #[test]
+    fn quirk_q24_all_dead_uses_absolute_indices() {
+        // The second player's turn of an alternating game: only record 0
+        // is tested.
+        let mut game = playing(GameMode::TwoPlayers);
+        game.sim.turn = PlayerId::ALL[1];
+        let [first, second] = DiggerId::ALL;
+        first.of_mut(&mut game.sim.diggers).dead = false;
+        second.of_mut(&mut game.sim.diggers).dead = true;
+        assert!(!game.sim.all_records_dead());
+        first.of_mut(&mut game.sim.diggers).dead = true;
+        second.of_mut(&mut game.sim.diggers).dead = false;
+        assert!(game.sim.all_records_dead());
+
+        // With two diggers both records are tested.
+        let mut game = playing(GameMode::TwoDiggers);
+        first.of_mut(&mut game.sim.diggers).dead = true;
+        assert!(!game.sim.all_records_dead());
+        second.of_mut(&mut game.sim.diggers).dead = true;
+        assert!(game.sim.all_records_dead());
+    }
+
+    #[test]
+    fn quirk_q25_respawn_keeps_fire_look() {
+        let mut game = playing(GameMode::TwoDiggers);
+        steps(&mut game, 1);
+        let second = DiggerId::ALL[1];
+        {
+            // As after a shot whose recharge would outlast the death.
+            let digger = second.of_mut(&mut game.sim.diggers);
+            digger.fire_ready = false;
+            digger.recharge_time = 500;
+        }
+        game.sim
+            .kill_digger(second, DeathStage::Monster, BagId::ALL[0]);
+        // Resolved at G + 73 = T + 87.
+        steps(&mut game, 86);
+        assert!(!second.of(&game.sim.diggers).alive());
+        steps(&mut game, 1);
+        let digger = second.of(&game.sim.diggers);
+        assert!(digger.alive() && digger.invincible());
+        assert_eq!(digger.recharge_time(), 0);
+        assert!(digger.not_firing());
+        assert!(!digger.fire_ready(), "the fire-ready look is not restored");
+        // It is drawn without the look from then on, and can fire.
+        steps(&mut game, 1);
+        let image = game.gfx.sprites().image(second.sprite());
+        let without_look: Vec<_> = (0..=2)
+            .filter_map(|frame| walking_image(second, Some(Direction::Left), false, frame))
+            .collect();
+        assert!(without_look.contains(&image), "{image:?}");
+        assert!(!second.of(&game.sim.diggers).fire_ready());
+    }
+
+    #[test]
+    fn carried_digger_goes_to_grave_once_bag_rests() {
+        let mut game = playing(GameMode::OnePlayer);
+        let first = DiggerId::ALL[0];
+        let bag = BagId::ALL[1];
+        *bag.of_mut(&mut game.sim.bags) = crate::sim::Bag {
+            exists: true,
+            position: Px::new(152, 177),
+            direction: None,
+        };
+        game.sim.kill_digger(first, DeathStage::Bag, bag);
+        steps(&mut game, 1);
+        let digger = first.of(&game.sim.diggers);
+        // Held at the bag's top + 6 = 183 for the draw, then raised by 6.
+        assert_eq!(digger.death_stage(), Some(DeathStage::Grave));
+        assert_eq!(digger.death_timer(), GRAVE_WAIT);
+        assert_eq!(digger.position(), Px::new(152, 177));
+        assert_eq!(
+            game.gfx.sprites().position(first.sprite()),
+            Px::new(152, 183)
+        );
+        assert_eq!(
+            game.gfx.sprites().image(first.sprite()),
+            ImageId::DIGGER_DEAD
+        );
+        assert_eq!(
+            game.state().penalty().count_of(PenaltySite::CarriedDigger),
+            1
+        );
+        assert!(game.drain_sound().any(|s| s == SoundCommand::DiggerDeath));
     }
 
     #[test]

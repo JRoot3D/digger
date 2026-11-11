@@ -48,6 +48,7 @@ use crate::geom::Px;
 use crate::sound_cmd::SoundCommand;
 
 use super::config::{GameConfig, GameMode, StartLevel};
+use super::digger::DeathStage;
 use super::geom::{Direction, locate, within_limits};
 use super::ids::{BagId, DiggerId, MonsterSlot};
 use super::input::{Controls, FrameInput};
@@ -296,6 +297,18 @@ impl fmt::Display for ScriptError {
 }
 
 impl std::error::Error for ScriptError {}
+
+/// What kills a digger in [`Run::kill_digger`] (digger spec, "Who can be
+/// killed").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KillCause {
+    /// A monster's move: the digger dies in the arc.
+    Monster,
+    /// Another digger's fireball: the digger dies as by a monster.
+    Fireball,
+    /// A falling bag, which then carries the digger.
+    Bag(BagId),
+}
 
 /// A set-up that would put the game into a state it cannot reach.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -652,6 +665,33 @@ impl<O: Observer> Run<O> {
             obs: &mut obs,
         };
         f(&mut cx);
+    }
+
+    /// Kills the digger played by `unit` by `cause`, exactly as the game's
+    /// own kill does: the kill rule of quirk Q20 applies, so an invincible
+    /// digger or one in its grave stages is unaffected. Called between
+    /// frames, it acts as a kill at the end of the last tick, as a
+    /// monster's move would.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round,
+    /// [`SetupError::DiggerNotInPlay`] for a unit not in play.
+    pub fn kill_digger(&mut self, unit: DiggerId, cause: KillCause) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        let sim = &mut self.game.sim;
+        if unit.index() >= usize::from(sim.cfg.mode.diggers()) {
+            return Err(SetupError::DiggerNotInPlay { digger: unit });
+        }
+        let (stage, bag) = match cause {
+            KillCause::Monster | KillCause::Fireball => (DeathStage::Monster, BagId::ALL[0]),
+            KillCause::Bag(bag) => (DeathStage::Bag, bag),
+        };
+        let record = sim.record_of_unit(unit);
+        sim.kill_digger(record, stage, bag);
+        Ok(())
     }
 
     /// Sets the lives of digger record `digger`, which must be in play: the

@@ -643,6 +643,8 @@ mod tests {
             let dead = second.of_mut(&mut game.sim.diggers);
             dead.alive = false;
             dead.death = Some(DeathStage::Tombstone);
+            // A resting tombstone, so it stays for the whole test.
+            dead.death_timer = 60;
         }
         let tombstone = ImageId::new(30).unwrap_or_else(|| unreachable!());
         game.gfx
