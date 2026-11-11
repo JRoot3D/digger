@@ -77,6 +77,12 @@ impl Gfx {
         self.sprites.move_to(&mut self.fb, sprite, at)
     }
 
+    /// Empties the collision lists, as a draw that draws nothing does
+    /// (research 02 §1 rule 4).
+    pub(crate) fn clear_collisions(&mut self) {
+        self.sprites.clear_collisions();
+    }
+
     /// Erases the sprite if it is enabled.
     pub(crate) fn erase(&mut self, sprite: SpriteId) {
         self.sprites.erase(&mut self.fb, sprite);

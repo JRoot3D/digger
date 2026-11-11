@@ -44,16 +44,18 @@
 
 use std::fmt;
 
+use crate::geom::Px;
 use crate::sound_cmd::SoundCommand;
 
 use super::config::{GameConfig, GameMode, StartLevel};
+use super::geom::{Direction, locate, within_limits};
 use super::ids::DiggerId;
 use super::input::{Controls, FrameInput};
 use super::level::{LevelLayout, LevelSet};
 use super::observer::{NoopObserver, Observer};
 use super::score::ScoreId;
 use super::state::StateView;
-use super::{FrameKind, Game, GameSummary, StepOutcome};
+use super::{FrameKind, Game, GameSummary, Phase, StepOutcome};
 
 /// Consecutive frames without a tick after which [`Run::run_ticks`] gives
 /// up: far more than any waiting phase of the game lasts.
@@ -313,6 +315,14 @@ pub enum SetupError {
         /// The rejected value.
         value: i32,
     },
+    /// An entity can be placed only while a round is being played.
+    NotPlaying,
+    /// A digger position outside the playfield limits, off the 4-by-3
+    /// pixel step grid, or between cells on both axes.
+    BadDiggerPosition {
+        /// The rejected position.
+        at: Px,
+    },
 }
 
 impl fmt::Display for SetupError {
@@ -324,6 +334,14 @@ impl fmt::Display for SetupError {
             Self::ScoreNotInPlay { score } => write!(f, "score {} is not in play", score.number()),
             Self::ScoreOutOfRange { value } => {
                 write!(f, "visible score {value} is outside 0..=999999")
+            }
+            Self::NotPlaying => f.write_str("no round is being played"),
+            Self::BadDiggerPosition { at } => {
+                write!(
+                    f,
+                    "({}, {}) is not a position a digger can reach",
+                    at.x, at.y
+                )
             }
         }
     }
@@ -507,6 +525,70 @@ impl<O: Observer> Run<O> {
             self.frame();
         }
         done(self.state())
+    }
+
+    /// Steps waiting frames, with no input, until a round is being played
+    /// and its next frame is a tick; returns the number of frames stepped.
+    /// Does nothing when a round is already being played.
+    ///
+    /// # Panics
+    ///
+    /// When no round starts within 100,000 frames, or the game finishes.
+    pub fn start(&mut self) -> u32 {
+        let mut frames = 0;
+        while self.game.phase != Phase::Playing {
+            assert!(self.summary().is_none(), "the game finished");
+            assert!(
+                frames < MAX_IDLE_FRAMES,
+                "no round within {MAX_IDLE_FRAMES} frames"
+            );
+            self.step(&FrameInput::NONE);
+            frames += 1;
+        }
+        frames
+    }
+
+    /// Puts the digger played by `unit` (the first, or the second in a
+    /// two-digger game) at `at` with `facing`, as if it had walked there:
+    /// its stored cell and remainders and its sprite follow, nothing is
+    /// dug, and it is not moving. The position must be within the
+    /// playfield limits, on the 4-by-3 pixel step grid from (12, 18), and on
+    /// a cell boundary on at least one axis.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round, [`SetupError::DiggerNotInPlay`]
+    /// for a unit not in play, [`SetupError::BadDiggerPosition`] for a
+    /// position a digger cannot reach.
+    pub fn place_digger(
+        &mut self,
+        unit: DiggerId,
+        at: Px,
+        facing: Direction,
+    ) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        let sim = &mut self.game.sim;
+        if unit.index() >= usize::from(sim.cfg.mode.diggers()) {
+            return Err(SetupError::DiggerNotInPlay { digger: unit });
+        }
+        let located = locate(at)
+            .filter(|l| within_limits(at) && l.rem_x % 4 == 0 && l.rem_y % 3 == 0)
+            .filter(|l| l.rem_x == 0 || l.rem_y == 0)
+            .ok_or(SetupError::BadDiggerPosition { at })?;
+        let record = sim.record_of_unit(unit);
+        let digger = record.of_mut(&mut sim.diggers);
+        digger.position = at;
+        digger.located = located;
+        digger.facing = Some(facing);
+        digger.moving = None;
+        let gfx = &mut self.game.gfx;
+        let sprite = unit.sprite();
+        let image = gfx.sprites().image(sprite);
+        gfx.erase(sprite);
+        gfx.place(sprite, image, at);
+        Ok(())
     }
 
     /// Sets the lives of digger record `digger`, which must be in play: the

@@ -7,7 +7,9 @@
 )]
 
 use digger_core::testkit::{Run, Scenario, Script};
-use digger_core::{FinishReason, FrameInput, FrameKind, GameMode, LevelNumber, SoundCommand};
+use digger_core::{
+    FinishReason, FrameInput, FrameKind, GameMode, LevelNumber, ScoreId, SoundCommand,
+};
 
 const QUIT: FrameInput = FrameInput {
     quit: true,
@@ -31,6 +33,13 @@ fn quit_during_play_reports_300_ticks() {
         .script(Script::parse("R*40 D*40 L*40 .*180").expect("valid script"));
     assert_eq!(run.run_ticks(300), 300);
     let picture = run.game().framebuffer().clone();
+    let reached = ScoreId::ALL.map(|id| {
+        let scores = run.state().scores();
+        (scores.visible(id), scores.total(id))
+    });
+    // The script's walk along the bottom row eats emeralds, so the scores
+    // reached are not zero.
+    assert!(reached[0].0 > 0);
     run.take_sounds();
 
     let outcome = run.step(&QUIT);
@@ -44,9 +53,9 @@ fn quit_during_play_reports_300_ticks() {
     assert_eq!(summary.reason, FinishReason::Quit);
     assert_eq!(summary.ticks, 300);
     assert_eq!(summary.level, LevelNumber::FIRST);
-    for score in summary.scores {
-        assert_eq!(score.visible, 0);
-        assert_eq!(score.total, 0);
+    for (score, (visible, total)) in summary.scores.into_iter().zip(reached) {
+        assert_eq!(score.visible, visible);
+        assert_eq!(score.total, total);
     }
     assert_eq!(run.ticks(), 300);
     assert_eq!(run.summary(), Some(summary));

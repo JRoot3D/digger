@@ -62,8 +62,8 @@ A digger SHALL consume one movement sample (resolved direction plus that tick's 
 A digger SHALL adopt an up or down input as its facing only when its horizontal remainder is 0, and a left or right input only when its vertical remainder is 0. With any direction input it moves along its facing that tick; with no input it does not move, even between cells. Hence a perpendicular input given between cells keeps the digger moving along its current facing until it is aligned, and reversal along the current axis is immediate. (research 02 §3.4)
 
 #### Scenario: Turn requested between cells
-- **WHEN** a digger facing right at (20,18) receives up on consecutive ticks
-- **THEN** it moves right to (24,18), (28,18), (32,18), then turns and moves up on the tick after reaching (32,18)
+- **WHEN** a digger facing right at (20,36) receives up on consecutive ticks
+- **THEN** it moves right to (24,36), (28,36), (32,36), then turns and moves up to (32,33) on the tick after reaching (32,36)
 
 #### Scenario: No input
 - **WHEN** a digger at (20,18) receives no direction on a tick
@@ -89,7 +89,7 @@ On every tick a digger actually moves, it SHALL remove the earth slice ahead of 
 
 #### Scenario: Tunnelling through solid earth
 - **WHEN** a digger at a cell corner moves right for 5 ticks through an untouched cell
-- **THEN** it arrives at the next cell corner and the cell behind it has no horizontal slices
+- **THEN** it arrives at the corner of the cell it moved into, that cell has no horizontal slices, and the cell it started from is not dug
 
 ### Requirement: Eating emeralds
 After each move the cell being entered SHALL be tested: for right and down moves with a non-zero remainder, the next cell right or below; otherwise the digger's own cell. If it holds an emerald, the emerald SHALL be redrawn when the remainder along the direction of travel is 8 (right), 12 (up), 16 (left) or 6 (down), and eaten when it is 12 (right), 9 (up), 12 (left) or 9 (down). Eating scores 25 points and emits the emerald click and emerald note cues. (research 02 §3.5)

@@ -63,7 +63,8 @@ pub use timing::FrameLength;
 use crate::sound_cmd::{SoundCommand, SoundQueue, Tempo, Tune};
 use crate::video::{Framebuffer, LevelPlan, TextColor};
 
-use digger::{Digger, START_LIVES};
+use digger::{AnimFrame, START_LIVES};
+pub use digger::{DeathStage, Digger};
 use draw::{DrawProgress, LevelDraw};
 use field::PlayerFields;
 use gauntlet::GauntletClock;
@@ -227,6 +228,11 @@ pub(crate) struct Sim {
     emeralds: EmeraldMap,
     /// The two digger records.
     diggers: [Digger; DiggerId::COUNT],
+    /// Whether the diggers are shown and updated (hashed as `digvisible`);
+    /// false from the end of the main phase to the next round start.
+    diggers_visible: bool,
+    /// The animation counter of each digger sprite, by unit (not hashed).
+    digger_frames: [AnimFrame; DiggerId::COUNT],
     /// Both scores.
     scores: Scores,
     /// The gauntlet clock, in the gauntlet modes.
@@ -279,6 +285,8 @@ impl Sim {
             saved_fields: PlayerFields::default(),
             emeralds: EmeraldMap::EMPTY,
             diggers,
+            diggers_visible: false,
+            digger_frames: [AnimFrame::START; DiggerId::COUNT],
             scores,
             gauntlet: mode.gauntlet().map(GauntletClock::start),
             inputs: [SlotInput::new(); SlotId::COUNT],
@@ -372,7 +380,7 @@ pub(crate) struct Ctx<'a> {
 impl Ctx<'_> {
     /// Advances `phase` by one frame and returns the phase that follows and
     /// the kind of the frame.
-    fn advance(&mut self, phase: Phase) -> (Phase, FrameKind) {
+    fn advance(&mut self, phase: Phase, input: &FrameInput) -> (Phase, FrameKind) {
         match phase {
             Phase::Start => {
                 self.start_game();
@@ -381,7 +389,7 @@ impl Ctx<'_> {
             }
             Phase::LevelDraw(draw) => self.level_draw_frame(draw),
             Phase::Playing => {
-                self.tick_main();
+                self.tick_main(input);
                 (Phase::Playing, FrameKind::Tick)
             }
             Phase::Finished(_) => (phase, FrameKind::Wait),
@@ -406,12 +414,13 @@ impl Ctx<'_> {
 
     /// Starts the full draw of the current player's field: the saved field
     /// is put in play and the draw begins (design D3; research 01 §3.2,
-    /// `drawscreen`). The sprites are reset to their initial images by the
-    /// entity systems of task groups 8, 11 and 12.
+    /// `drawscreen`). The sprites are reset to their initial images: the
+    /// diggers' here, the bags' and monsters' by task groups 11 and 12.
     fn begin_level_draw(&mut self) -> LevelDraw {
         let turn = self.sim.turn;
         self.sim.field = self.sim.saved_fields.restore(turn);
         let plan: LevelPlan = self.sim.current_level().plan();
+        self.reset_digger_sprites();
         LevelDraw::begin(self.gfx, &mut self.sim.field, plan)
     }
 
@@ -439,8 +448,9 @@ impl Ctx<'_> {
     /// seeding"; research 01 §3.2).
     ///
     /// The generator is seeded with the round's seed as the observer
-    /// returns it; after a full draw both scores are drawn, otherwise the
-    /// sprites, diggers and monsters are reset (task groups 8 and 12); then
+    /// returns it; after a full draw the diggers are placed and both scores
+    /// drawn, otherwise the sprites are reset and the diggers placed (the
+    /// monsters are reset here from task group 12 on); then
     /// the `PLAYER n` label is erased, every digger's score is refreshed by
     /// a zero-point scoring call, the lives are drawn, the main music is
     /// requested and the control state is cleared.
@@ -451,7 +461,11 @@ impl Ctx<'_> {
         self.sim.rng.reseed(seed);
 
         if after_full_draw {
+            self.init_diggers();
             self.draw_scores();
+        } else {
+            self.reset_digger_sprites();
+            self.init_diggers();
         }
         status::erase_player_label(self.gfx.fb_mut());
         // The original refreshes scores 0..diggers, so in an alternating
@@ -468,10 +482,15 @@ impl Ctx<'_> {
         }
     }
 
-    /// One main-phase tick. This shell resets the penalty counter and
-    /// counts the tick; task 14.1 assembles the full update order.
-    fn tick_main(&mut self) {
+    /// One main-phase tick: the penalty counter is reset, the fire states
+    /// read on the previous tick are latched, the diggers are updated and
+    /// the tick is counted. Task 14.1 assembles the full update order.
+    fn tick_main(&mut self, input: &FrameInput) {
         self.sim.penalty.reset();
+        for slot in &mut self.sim.inputs {
+            slot.advance_fire();
+        }
+        self.update_diggers(input);
         self.end_tick();
     }
 
@@ -682,7 +701,7 @@ impl Game {
             self.phase = Phase::Finished(summary);
             return StepOutcome::finished(summary);
         }
-        let (phase, frame) = cx.advance(self.phase);
+        let (phase, frame) = cx.advance(self.phase, input);
         self.phase = phase;
         StepOutcome::of(frame)
     }

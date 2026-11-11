@@ -5,6 +5,7 @@ use core::fmt;
 
 use super::Sim;
 use super::config::GameMode;
+use super::digger::Digger;
 use super::field::{EmeraldMap, Field};
 use super::gauntlet::GauntletClock;
 use super::gfx::Gfx;
@@ -105,6 +106,18 @@ impl<'a> StateView<'a> {
         digger.of(&self.sim.diggers).lives
     }
 
+    /// Digger record `digger`: its position, movement, emerald run, death
+    /// and the other hashed digger variables. In an alternating game
+    /// record `n` is player `n`'s.
+    pub fn digger(self, digger: DiggerId) -> &'a Digger {
+        digger.of(&self.sim.diggers)
+    }
+
+    /// Whether the diggers are shown and updated (hashed as `digvisible`).
+    pub fn diggers_visible(self) -> bool {
+        self.sim.diggers_visible
+    }
+
     /// Both scores (their totals are hashed as `gettscore`).
     pub fn scores(self) -> &'a Scores {
         &self.sim.scores
@@ -135,9 +148,9 @@ impl<'a> StateView<'a> {
     /// generator state as eight hex digits, `pen` the penalty counter,
     /// `lv` both players' levels (0 for the Q06 placeholder), `li` both
     /// digger records' lives, `sc` both total scores, `em` the current
-    /// player's emeralds left, and `gt` the gauntlet clock in the gauntlet
-    /// modes. Later task groups append the positions of the entities they
-    /// add.
+    /// player's emeralds left, `dg` both digger records' positions as
+    /// `x,y,x,y`, and `gt` the gauntlet clock in the gauntlet modes. Later
+    /// task groups append the positions of the entities they add.
     ///
     /// # Errors
     ///
@@ -147,15 +160,21 @@ impl<'a> StateView<'a> {
         let [lv0, lv1] = sim.players.map(|p| p.level.map_or(0, LevelNumber::get));
         let [li0, li1] = sim.diggers.map(|d| d.lives);
         let [sc0, sc1] = ScoreId::ALL.map(|id| sim.scores.total(id));
+        let [d0, d1] = sim.diggers.map(|d| d.position);
         write!(
             out,
-            "t={} r={} p={} rng={:08X} pen={} lv={lv0},{lv1} li={li0},{li1} sc={sc0},{sc1} em={}",
+            "t={} r={} p={} rng={:08X} pen={} lv={lv0},{lv1} li={li0},{li1} sc={sc0},{sc1} em={} \
+             dg={},{},{},{}",
             sim.ticks,
             sim.round,
             sim.turn.number(),
             sim.rng.state().cast_unsigned(),
             sim.penalty.value(),
             sim.emeralds.count(sim.turn),
+            d0.x,
+            d0.y,
+            d1.x,
+            d1.y,
         )?;
         if let Some(clock) = sim.gauntlet {
             write!(out, " gt={}", clock.units())?;
@@ -182,7 +201,7 @@ mod tests {
         let game = Game::new(GameConfig::default(), 0);
         assert_eq!(
             trace(&game),
-            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30"
+            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 dg=0,0,0,0"
         );
 
         let config = GameConfig {
@@ -194,7 +213,7 @@ mod tests {
         let game = Game::new(config, 0);
         assert_eq!(
             trace(&game),
-            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 gt=143181720"
+            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 dg=0,0,0,0 gt=143181720"
         );
     }
 
@@ -206,7 +225,7 @@ mod tests {
         }
         assert_eq!(
             trace(&game),
-            "t=1 r=0 p=0 rng=7B1DCDAF pen=0 lv=1,0 li=3,0 sc=0,0 em=30"
+            "t=1 r=0 p=0 rng=7B1DCDAF pen=1 lv=1,0 li=3,0 sc=0,0 em=30 dg=152,180,0,0"
         );
     }
 }

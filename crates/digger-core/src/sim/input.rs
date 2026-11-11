@@ -128,10 +128,6 @@ pub(crate) struct SlotInput {
     fire_active: bool,
 }
 
-#[allow(
-    dead_code,
-    reason = "driven by the main-phase tick (task groups 7 and 8)"
-)]
 impl SlotInput {
     /// A slot with nothing remembered.
     pub(crate) const fn new() -> Self {
@@ -187,6 +183,7 @@ impl SlotInput {
     }
 
     /// The direction resolved by the last read.
+    #[allow(dead_code, reason = "read by the resolver's unit tests")]
     pub(crate) const fn resolved(&self) -> Option<Direction> {
         self.resolved
     }
@@ -216,6 +213,7 @@ impl SlotInput {
 
     /// The fire state that decides whether the slot's digger fires on this
     /// tick: the one read on the previous tick.
+    #[allow(dead_code, reason = "decides firing from task group 9 on")]
     pub(crate) const fn fire_active(&self) -> bool {
         self.fire_active
     }
