@@ -7,6 +7,9 @@
 //! (design D5): horizontal slices in bits 0–4, vertical slices in bits 6–11,
 //! the untouched mark in bit 13 and every other bit always set. No mask
 //! literal appears outside this module (research 01 §5.3, research 02 §0).
+//!
+//! [`EmeraldMap`] holds one bit per cell and player, so each player of an
+//! alternating game keeps their own emeralds (research 01 §5.4).
 
 use super::geom::{CellPos, Direction, locate};
 use super::ids::PlayerId;
@@ -312,6 +315,117 @@ impl PlayerFields {
     pub(crate) fn restore(&self, player: PlayerId) -> Field {
         *player.of(&self.saved)
     }
+}
+
+/// The emeralds of the grid: one bit per cell for each player of an
+/// alternating game, so each player keeps their own emeralds (research 01
+/// §5.4; playfield spec, "Emerald placement and counting").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EmeraldMap {
+    /// Per cell, row by row like [`Field`], bit `p` for player `p`.
+    cells: [u8; CELLS],
+}
+
+impl EmeraldMap {
+    /// A map without any emerald.
+    pub const EMPTY: Self = Self { cells: [0; CELLS] };
+
+    /// Sets `player`'s emeralds to the `C` cells of `layout` and clears
+    /// them everywhere else; the other player's emeralds are kept.
+    pub fn place(&mut self, player: PlayerId, layout: &LevelLayout) {
+        let mask = player_mask(player);
+        for cell in CellPos::all_column_major() {
+            let bits = self.bits_mut(cell);
+            if layout.cell_char(cell) == EMERALD_CHAR {
+                *bits |= mask;
+            } else {
+                *bits &= !mask;
+            }
+        }
+    }
+
+    /// Places `player`'s emeralds for `level` of `set` as played with one or
+    /// two diggers; `None`, a level number below 1, places none.
+    pub fn place_for_level(
+        &mut self,
+        player: PlayerId,
+        set: &LevelSet,
+        level: Option<LevelNumber>,
+        two_diggers: bool,
+    ) {
+        let layout = match level {
+            Some(level) => set.layout_as_played(level.plan(), two_diggers),
+            None => LevelLayout::EARTH,
+        };
+        self.place(player, &layout);
+    }
+
+    /// Whether `cell` holds one of `player`'s emeralds.
+    pub fn has(&self, player: PlayerId, cell: CellPos) -> bool {
+        self.bits(cell) & player_mask(player) != 0
+    }
+
+    /// Removes `player`'s emerald from `cell`; returns whether there was
+    /// one. An emerald is removed once only.
+    #[allow(
+        dead_code,
+        reason = "called by diggers, hobbins and bags (later task groups)"
+    )]
+    pub(crate) fn remove(&mut self, player: PlayerId, cell: CellPos) -> bool {
+        let mask = player_mask(player);
+        let bits = self.bits_mut(cell);
+        let had = *bits & mask != 0;
+        *bits &= !mask;
+        had
+    }
+
+    /// The number of cells still holding one of `player`'s emeralds.
+    pub fn count(&self, player: PlayerId) -> u8 {
+        let mask = player_mask(player);
+        let count = self.cells.iter().filter(|&&bits| bits & mask != 0).count();
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "at most 150 cells, so the count fits"
+        )]
+        let count = count as u8;
+        count
+    }
+
+    /// The bits of `cell`: bit `p` set when player `p`'s emerald is there.
+    /// This is the original's per-cell value, as the state hash reads it.
+    pub fn bits(&self, cell: CellPos) -> u8 {
+        match self.cells.get(index(cell)) {
+            Some(bits) => *bits,
+            None => unreachable!("a cell position is inside the 15x10 grid"),
+        }
+    }
+
+    /// Every cell's bits, row by row, cell (h, v) at index v×15 + h.
+    pub const fn cells(&self) -> &[u8; CELLS] {
+        &self.cells
+    }
+
+    /// The bits of `cell`, mutably.
+    fn bits_mut(&mut self, cell: CellPos) -> &mut u8 {
+        match self.cells.get_mut(index(cell)) {
+            Some(bits) => bits,
+            None => unreachable!("a cell position is inside the 15x10 grid"),
+        }
+    }
+}
+
+impl Default for EmeraldMap {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
+/// The layout character of a cell holding an emerald.
+const EMERALD_CHAR: u8 = b'C';
+
+/// The emerald bit of `player`: 1 for the first, 2 for the second.
+const fn player_mask(player: PlayerId) -> u8 {
+    1 << player.number()
 }
 
 /// The row-major index of `cell`: v×15 + h.
@@ -671,5 +785,91 @@ mod tests {
         assert_eq!(saves.restore(p1), in_play);
         assert!(!saves.restore(p1).cell(cell(6, 4)).is_untouched());
         assert!(initial.cell(cell(6, 4)).is_untouched());
+    }
+
+    #[test]
+    fn level_1_has_30_emeralds() {
+        let set = LevelSet::builtin();
+        let [p1, p2] = PlayerId::ALL;
+        let mut emeralds = EmeraldMap::default();
+        emeralds.place_for_level(p1, &set, level(1), false);
+        assert_eq!(emeralds.count(p1), 30);
+        assert_eq!(emeralds.count(p2), 0);
+        // Exactly the `C` cells hold one.
+        let layout = set.layout(LevelNumber::FIRST.plan());
+        for c in CellPos::all_column_major() {
+            assert_eq!(emeralds.has(p1, c), layout.cell_char(c) == b'C', "{c:?}");
+        }
+        // The first emerald of row 1 is at (3,1).
+        assert!(emeralds.has(p1, cell(3, 1)) && !emeralds.has(p1, cell(2, 1)));
+
+        let mut none = EmeraldMap::default();
+        none.place_for_level(p1, &set, None, false);
+        assert_eq!(none, EmeraldMap::EMPTY);
+    }
+
+    #[test]
+    fn emerald_removed_once() {
+        let set = LevelSet::builtin();
+        let [p1, _] = PlayerId::ALL;
+        let mut emeralds = EmeraldMap::default();
+        emeralds.place_for_level(p1, &set, level(1), false);
+        assert!(emeralds.remove(p1, cell(3, 1)));
+        assert_eq!(emeralds.count(p1), 29);
+        assert!(!emeralds.has(p1, cell(3, 1)));
+        assert!(!emeralds.remove(p1, cell(3, 1)));
+        assert_eq!(emeralds.count(p1), 29);
+        // A cell without an emerald has nothing to remove.
+        assert!(!emeralds.remove(p1, cell(0, 0)));
+        assert_eq!(emeralds.count(p1), 29);
+    }
+
+    #[test]
+    fn emeralds_are_per_player() {
+        let set = LevelSet::builtin();
+        let [p1, p2] = PlayerId::ALL;
+        let mut emeralds = EmeraldMap::default();
+        emeralds.place_for_level(p1, &set, level(1), false);
+        emeralds.place_for_level(p2, &set, level(2), false);
+        let level_2_count = emeralds.count(p2);
+        assert_eq!(emeralds.count(p1), 30);
+        assert!(level_2_count > 0);
+
+        // Player 1 eats an emerald that both players have.
+        let shared = CellPos::all_column_major()
+            .find(|&c| emeralds.has(p1, c) && emeralds.has(p2, c))
+            .unwrap_or_else(|| unreachable!("levels 1 and 2 share an emerald cell"));
+        assert_eq!(emeralds.bits(shared), 0b11);
+        assert!(emeralds.remove(p1, shared));
+        assert_eq!(emeralds.bits(shared), 0b10);
+        assert!(emeralds.has(p2, shared));
+        assert_eq!(emeralds.count(p1), 29);
+        assert_eq!(emeralds.count(p2), level_2_count);
+
+        // Placing player 1's next level leaves player 2's emeralds alone.
+        let before_p2: Vec<bool> = CellPos::all_column_major()
+            .map(|c| emeralds.has(p2, c))
+            .collect();
+        emeralds.place_for_level(p1, &set, level(3), false);
+        let after_p2: Vec<bool> = CellPos::all_column_major()
+            .map(|c| emeralds.has(p2, c))
+            .collect();
+        assert_eq!(before_p2, after_p2);
+    }
+
+    #[test]
+    fn q07_start_cells_hold_no_emerald() {
+        let set = LevelSet::builtin();
+        let [p1, _] = PlayerId::ALL;
+        for n in [3, 4] {
+            let mut emeralds = EmeraldMap::default();
+            emeralds.place_for_level(p1, &set, level(n), true);
+            assert!(!emeralds.has(p1, cell(6, 9)) && !emeralds.has(p1, cell(8, 9)));
+            let field = Field::for_level(&set, level(n), true);
+            for h in [6, 8] {
+                let c = field.cell(cell(h, 9));
+                assert!(c.has_no_h_slices() && c.has_all_v_slices() && !c.is_untouched());
+            }
+        }
     }
 }
