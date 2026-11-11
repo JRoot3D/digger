@@ -68,7 +68,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 - [x] 7.4 Implement `testkit`: `Scenario` builder on a custom one-layout level set, `Script::parse`, `run_ticks`, `run_until`, and validated entity setters; verify unit tests `script_parses_repeat_and_idle` and `scenario_runs_to_first_tick`
 - [x] 7.5 Implement quit handling and the `Finished` phase with `GameSummary` (reason, scores, level, ticks), absorbing further steps; verify scenario tests `quit_during_play_reports_300_ticks` and `stepping_a_finished_game_changes_nothing`
 - [x] 7.6 Write the crate-level documentation of the stepping interface with a compiled doc example of the loop from `docs/porting-plan.md` §4; verify `cargo test --doc -p digger-core` passes
-- [ ] 7.7 Fill the quirks-document columns for Q06; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 7.7 Fill the quirks-document columns for Q06; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 8. Digger movement, digging and emeralds
 
