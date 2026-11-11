@@ -8,3 +8,6 @@ repository.workspace = true
 authors.workspace = true
 description = "Developer tooling for the Digger workspace."
 publish = false
+
+[lints]
+workspace = true

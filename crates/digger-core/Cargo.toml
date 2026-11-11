@@ -8,3 +8,6 @@ repository.workspace = true
 authors.workspace = true
 description = "Deterministic Digger simulation: game state, framebuffer rendering and recordings, with no I/O."
 publish = false
+
+[lints]
+workspace = true

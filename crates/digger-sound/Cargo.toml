@@ -8,3 +8,6 @@ repository.workspace = true
 authors.workspace = true
 description = "Digger sound effects, music and sample synthesis: sound commands in, PCM samples out."
 publish = false
+
+[lints]
+workspace = true

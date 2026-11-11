@@ -12,3 +12,6 @@ publish = false
 [[bin]]
 name = "digger"
 path = "src/main.rs"
+
+[lints]
+workspace = true
