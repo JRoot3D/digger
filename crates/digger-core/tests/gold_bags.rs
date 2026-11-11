@@ -691,6 +691,23 @@ fn quirk_q17_push_pause_after_failed_push() {
 }
 
 #[test]
+fn quirk_q15_fire_pressed_during_push_pause_fires_without_a_sample() {
+    let mut run = started(&[(14, 0, b'B')]);
+    place(&mut run, 276, 18, Direction::Right);
+    assert!(run.state().digger(FIRST).not_firing());
+    tick(&mut run, "R");
+    assert_eq!(run.state().digger(FIRST).bag_time(), 1, "push pause next");
+    // Fire is held only on the push-pause tick, which takes no movement
+    // sample: the fire control is still read on that tick and fires on the
+    // next one, so a replay fed only movement samples would not fire here.
+    tick(&mut run, "F");
+    assert!(run.state().digger(FIRST).not_firing());
+    let sounds = tick(&mut run, ".");
+    assert!(!run.state().digger(FIRST).not_firing(), "fireball launched");
+    assert!(sounds.iter().any(|s| matches!(s, SoundCommand::Fire(_))));
+}
+
+#[test]
 fn quirk_q18_blocked_digger_faces_back() {
     let mut run = started(&[(3, 3, b'B')]);
     place(&mut run, 72, 90, Direction::Up);

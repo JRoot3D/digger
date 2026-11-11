@@ -228,11 +228,15 @@ At the start of every round the generator state SHALL be set to that round's see
 - **THEN** round 0 is seeded with 0x89025CC1
 
 ### Requirement: Externally supplied seeds and samples
-The game SHALL allow an outside party to observe each round's seed and each movement sample as it is consumed, and to replace them: a supplied seed is used instead of the derived one, and a supplied direction and fire state are used instead of the resolved controls for that movement sample. With the same supplied values the game SHALL behave exactly as the game in which they were observed. (research 01 §7.2, research 05 §1.6, §4.3)
+The game SHALL allow an outside party to observe each round's seed and each movement sample as it is consumed, and to replace them: a supplied seed is used instead of the derived one, and a supplied direction and fire state are used instead of the resolved controls for that movement sample. With the same supplied values the game SHALL behave exactly as the game in which they were observed, provided the fire control was not held on a tick in which a digger took no movement sample (a push pause, a dead or hidden digger): the fire state read on such a tick belongs to no sample, still comes from that tick's controls and takes effect on the next tick, as in the original, whose DRF playback reads it from the live controls. (research 01 §7.2, research 05 §1.6, §1.7, §4.3)
 
 #### Scenario: Re-running from observed values
 - **WHEN** a game's round seeds and movement samples are observed and a second game with the same configuration is fed those values instead of live controls
 - **THEN** the second game ends with the same scores, level and tick count
+
+#### Scenario: Fire held during a push pause
+- **WHEN** the fire control is held only on the tick of a push pause, in which the digger takes no movement sample
+- **THEN** the digger fires on the next tick, so a second game fed only the observed seeds and samples does not fire there
 
 ### Requirement: Pause
 A pause request on a main-phase tick frame SHALL take effect after that tick completes: the pause cue is emitted, the top line is cleared and `PRESS ANY KEY` is shown at (80,0) in text colour 1. While paused, frames are waiting frames and nothing in the simulation changes, including the gauntlet clock. Pause requests on frames that are not main-phase ticks SHALL be ignored. (research 01 §3.3)
