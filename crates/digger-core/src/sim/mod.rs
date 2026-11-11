@@ -27,3 +27,7 @@ mod status;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 mod timing;
+
+pub use geom::{CellPos, Direction, Located, locate, reverse_of, within_limits};
+pub(crate) use ids::index_id;
+pub use ids::{BagId, DiggerId, IdOutOfRange, MonsterSlot, PlayerId, SlotId};

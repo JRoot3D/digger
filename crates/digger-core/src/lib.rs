@@ -73,6 +73,11 @@ pub mod video;
 
 #[cfg(any(test, feature = "testkit"))]
 pub use sim::testkit;
+pub use sim::{
+    BagId, CellPos, DiggerId, Direction, IdOutOfRange, Located, MonsterSlot, PlayerId, SlotId,
+    locate, reverse_of, within_limits,
+};
+pub use sound_cmd::FireballId;
 
 pub use error::{AssetError, Error};
 
