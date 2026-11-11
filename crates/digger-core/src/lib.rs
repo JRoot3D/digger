@@ -9,6 +9,61 @@
 //! inputs it produces the same results on every platform; the frontend owns
 //! time and everything that talks to the outside world.
 //!
+//! # The stepping interface
+//!
+//! A game is one owning [`Game`] value, created from a [`GameConfig`] and a
+//! base seed and advanced by its caller exactly one frame per
+//! [`step`](Game::step). Each step takes that frame's [`FrameInput`]: the
+//! five controls of each of the two control slots (a control counts as on
+//! if it is held now or was pressed at any time since the previous frame)
+//! and a pause and a quit request. It returns a [`StepOutcome`] saying
+//! whether the frame was a [tick](FrameKind::Tick) — the simulation ran
+//! once and the tick count rose by 1 — or a [waiting](FrameKind::Wait) or
+//! [paused](FrameKind::Paused) frame, and carrying a [`GameSummary`] from
+//! the frame the game finishes on.
+//!
+//! After each step the caller drains the frame's [`SoundCommand`]s with
+//! [`drain_sound`](Game::drain_sound) and shows the
+//! [`framebuffer`](Game::framebuffer). [`state`](Game::state) gives a
+//! read-only [`StateView`] of the simulation, and
+//! [`step_observed`](Game::step_observed) lets an [`Observer`] see and
+//! replace round seeds, layouts, controls and movement samples, which is
+//! what recording and playback are built on.
+//!
+//! The caller owns time: it decides when to step, for example every
+//! [`FrameLength`] at the chosen speed, or as fast as possible for replays
+//! and tests. The results never depend on it.
+//!
+//! ```
+//! use digger_core::video::Framebuffer;
+//! use digger_core::{FinishReason, FrameInput, Game, GameConfig, SoundCommand};
+//!
+//! fn present(_picture: &Framebuffer) {}
+//! fn play(_command: SoundCommand) {}
+//!
+//! let config = GameConfig::default(); // one player, level 1
+//! let base_seed = 2026;
+//! let mut input = FrameInput::NONE;
+//! let mut frames = 0;
+//!
+//! let mut game = Game::new(config, base_seed);
+//! let summary = loop {
+//!     input.slots[0].right = frames % 50 < 25;
+//!     input.quit = frames == 400; // a frontend sets this from a key
+//!     let outcome = game.step(&input); // exactly one frame
+//!     for cmd in game.drain_sound() {
+//!         play(cmd); // sound commands produced this frame
+//!     }
+//!     present(game.framebuffer()); // 640x400 indices + palette
+//!     frames += 1;
+//!     if let Some(summary) = outcome.finished {
+//!         break summary;
+//!     }
+//! };
+//! assert_eq!(summary.reason, FinishReason::Quit);
+//! assert_eq!(summary.ticks, game.state().ticks());
+//! ```
+//!
 //! # Rendering and sprite layer
 //!
 //! The picture is game state: a [`Framebuffer`](video::Framebuffer) of
