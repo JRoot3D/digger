@@ -66,8 +66,13 @@
 pub mod assets;
 mod error;
 pub mod geom;
+mod sim;
+mod sound_cmd;
 pub mod sprite;
 pub mod video;
+
+#[cfg(any(test, feature = "testkit"))]
+pub use sim::testkit;
 
 pub use error::{AssetError, Error};
 

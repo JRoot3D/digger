@@ -4,7 +4,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 
 ## 1. Module skeleton, shared types and level assets
 
-- [ ] 1.1 Create `crates/digger-core/src/sim/` with the empty modules of design D1 and `src/sound_cmd.rs`, re-export the public names from the crate root, and add the `testkit` cargo feature; verify `cargo build -p digger-core` and `cargo build -p digger-core --features testkit` succeed
+- [x] 1.1 Create `crates/digger-core/src/sim/` with the empty modules of design D1 and `src/sound_cmd.rs`, re-export the public names from the crate root, and add the `testkit` cargo feature; verify `cargo build -p digger-core` and `cargo build -p digger-core --features testkit` succeed
 - [ ] 1.2 Implement `geom.rs`: `Direction` (with `reverse`), `CellPos`, playfield limits and cell/pixel conversion with remainders (pixel positions are phase 2's `Px`); verify unit tests `corner_cells_map_to_pixels`, `pixel_60_27_is_cell_2_0_rem_8_9` and `reverse_of_none_is_none` pass
 - [ ] 1.3 Add typed ids `PlayerId`, `DiggerId`, `SlotId`, `MonsterSlot`, `BagId`, `FireballId` with range-checked constructors and array-index helpers; verify unit test `ids_reject_out_of_range` passes
 - [ ] 1.4 Add the `Gfx` wrapper over phase 2's `Framebuffer` and `SpriteLayer`, with entity-draw helpers that hand back the `Collisions` value returned by `SpriteLayer::move_to`; verify unit test `collisions_report_lowest_slot_first_per_class` using two overlapping test sprites

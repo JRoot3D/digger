@@ -9,6 +9,11 @@ authors.workspace = true
 description = "Deterministic Digger simulation: game state, framebuffer rendering and recordings, with no I/O."
 publish = false
 
+[features]
+# Scenario builder, input scripts and validated entity setters for tests
+# (design D11). Off in normal builds.
+testkit = []
+
 [dependencies]
 miniz_oxide.workspace = true
 

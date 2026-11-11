@@ -40,6 +40,8 @@ All new code lives in `crates/digger-core/src/sim/` (plus two small top-level mo
 | `sim/config.rs` | `GameConfig`, `GameMode`, `StartLevel`, `GauntletSeconds`, `ConfigError` |
 | `sim/level.rs` | `LevelSet`, `LevelLayout`, `LevelNumber`, `Difficulty`, layout sequence, custom-level parser, two-digger start-cell substitution |
 | `sim/geom.rs` | `Direction`, `CellPos`, playfield limits, cell/pixel conversion (pixel positions are phase 2's `Px`) |
+| `sim/ids.rs` | Typed ids `PlayerId`, `DiggerId`, `SlotId`, `MonsterSlot`, `BagId` with range-checked constructors and array-index helpers (`FireballId` lives in `sound_cmd.rs`) |
+| `sim/gfx.rs` | `Gfx` (framebuffer and sprite layer) and the entity-draw helpers returning `Collisions` |
 | `sim/field.rs` | `Field`, `Cell` (earth slices), dig step, redraw normalisation, `EmeraldMap`, per-player saves |
 | `sim/draw.rs` | Background, tunnel openings, carving shapes, emeralds, progressive level draw |
 | `sim/status.rs` | Status line: scores, lives, gauntlet clock, top-line messages |
