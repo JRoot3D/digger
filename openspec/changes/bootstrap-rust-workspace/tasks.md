@@ -14,8 +14,8 @@
 
 - [x] 2.1 Add `[workspace.lints]` (rust and clippy tables from design.md) to the root manifest and `[lints] workspace = true` to every member; verify `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [x] 2.2 Add `rustfmt.toml` (`edition = "2024"`, `max_width = 100`, `use_field_init_shorthand = true`); verify `cargo fmt --all --check` passes
-- [ ] 2.3 Prove the unsafe ban works: temporarily add an `unsafe {}` block to `digger-core`, confirm the build fails with the `unsafe_code` lint, and remove it; record the observed error text in the commit message
-- [ ] 2.4 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 2.3 Prove the unsafe ban works: temporarily add an `unsafe {}` block to `digger-core`, confirm the build fails with the `unsafe_code` lint, and remove it; record the observed error text in the commit message
+- [x] 2.4 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 3. xtask
 
