@@ -139,9 +139,10 @@ uses the second digger. Values that the game keeps but never changes (the
 ### Requirement: Monster block layout
 The monster block SHALL hold the spawn-schedule values followed by all six
 monster slots in order. Each slot contributes 25 bytes always, and a further
-8 bytes only while the slot holds a monster body, that is from the tick the
-monster is spawned until it is removed from play. (research 01 §8;
-research 02 §4.1)
+8 bytes only while the slot holds a monster body, that is from the tick a
+monster is spawned into the slot until the monster reset at the start of the
+next round; a monster that was killed or removed keeps its body until then.
+(research 01 §8; research 02 §2, §4.1, §4.2, §4.7)
 
 #### Scenario: Schedule part
 - **WHEN** the monster block is produced
@@ -172,8 +173,12 @@ research 02 §4.1)
 - **THEN** the monster block is 13 + 6 × 25 + 3 × 8 = 187 bytes long
 
 #### Scenario: Slot whose monster was removed
-- **WHEN** a monster has been killed and removed from play
-- **THEN** its slot contributes 25 bytes, still carrying the slot's last cell, direction and timer values
+- **WHEN** a monster has been killed and removed from play and the round is still running
+- **THEN** its slot contributes 33 bytes: the slot's last cell, direction and timer values with "slot in use" as 00, then its last sprite position and facing, "alive" as 00 and its last nobbin value
+
+#### Scenario: Slot never used this round
+- **WHEN** a round has started and no monster has yet been spawned into a slot
+- **THEN** that slot contributes 25 bytes
 
 ### Requirement: Bag block layout
 The bag block SHALL hold the shared push counter and gold timer followed by

@@ -374,7 +374,7 @@ Sound SHALL be switchable on and off at any time, with an initial state chosen w
 - **THEN** the tune requested at the start of the round is heard at the position it has reached
 
 ### Requirement: Pause
-While sound is paused the output SHALL be silent and every effect, the jingle and every tune SHALL be frozen: none advances. Commands received during a pause SHALL still take effect at the next tick. Resuming SHALL continue each from the exact tick at which it was frozen. Pausing when already paused, or resuming when not paused, SHALL do nothing. (research 04 §2)
+Between a pause command and the next resume command from the simulation the sound is paused. While sound is paused the output SHALL be silent and every effect, the jingle and every tune SHALL be frozen: none advances. Commands received during a pause SHALL still take effect at the next tick. Resuming SHALL continue each from the exact tick at which it was frozen. Pausing when already paused, or resuming when not paused, SHALL do nothing. (research 04 §2)
 
 #### Scenario: Freeze and resume
 - **WHEN** sound is paused on tick 10 of a gold effect and resumed 500 ticks later
@@ -455,7 +455,7 @@ The engine SHALL report two events to the program's frontend: level-done jingle 
 - **THEN** the engine's output is unaffected and later events are discarded without error
 
 ### Requirement: Sound command boundary
-The simulation SHALL emit only these sound commands, in game order within a frame: stop-all; fall-start, fall-stop; wobble-start, wobble-stop; break; fire-start, fire-stop, explode (each naming fireball 0 or 1); bonus-start, bonus-stop; emerald-click; emerald (step 0 to 7); gold; eat-monster; death; extra-life; level-done; play-music (tune normal, bonus, dirge or battle; tempo standard or quick); stop-music. (research 04 §1.1, §2, §3.1)
+The simulation SHALL emit only these sound commands, in game order within a frame: stop-all; fall-start, fall-stop; wobble-start, wobble-stop; break; fire-start, fire-stop, explode (each naming fireball 0 or 1); bonus-start, bonus-stop; emerald-click; emerald (step 0 to 7); gold; eat-monster; death; extra-life; level-done; play-music (tune normal, bonus, dirge or battle; tempo standard or quick); stop-music; pause; resume. (research 04 §1.1, §2, §3.1)
 
 #### Scenario: Eating an emerald
 - **WHEN** a digger eats its third consecutive emerald
@@ -463,10 +463,10 @@ The simulation SHALL emit only these sound commands, in game order within a fram
 
 #### Scenario: Fireball hits
 - **WHEN** fireball 0 hits a monster
-- **THEN** the simulation emits explode for fireball 0 and the sound engine needs no separate fire-stop
+- **THEN** the simulation emits explode for fireball 0, which alone ends that fireball's flight effect; the fire-stop it emits later, when the fireball is removed, changes nothing
 
 ### Requirement: Frontend sound controls
-The sound switch, the music switch, pause and resume, the master volume and the filter switch SHALL be controls sent by the program's frontend. They SHALL NOT be emitted by the simulation, SHALL NOT appear in recordings, and SHALL take effect at the next tick like commands. The frontend SHALL be able to read whether sound and music are currently on. (research 04 §3.4, §6)
+The sound switch, the music switch, the master volume and the filter switch SHALL be controls sent by the program's frontend. They SHALL NOT be emitted by the simulation, SHALL NOT appear in recordings, and SHALL take effect at the next tick like commands. The frontend SHALL be able to read whether sound and music are currently on. (research 04 §3.4, §6)
 
 #### Scenario: Toggle during a replay
 - **WHEN** the music switch is toggled while a recording is replayed

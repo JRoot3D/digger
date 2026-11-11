@@ -86,4 +86,4 @@ task of each group is the quality gate and the commit.
 ## Workflow follow-up
 
 - Archive the change with `/opsx:archive add-assets-and-renderer` after review, so that `game-assets`, `rendering` and `sprite-layer` become main specs before `add-simulation-core` is applied.
-- `add-simulation-core` extends `xtask import-assets` with the level tables and appends to `docs/compat-quirks.md`; `add-sound-engine` extends the importer with the music tables.
+- `add-simulation-core` extends `xtask import-assets` with the level tables (`assets/levels.bin`) and appends to `docs/compat-quirks.md`; `add-sound-engine` extends the importer with the music tables (`assets/music.bin`). Both keep this change's flags (`--upstream`, `--out`, `--check`), validate-then-write rule and `manifest.txt` format.

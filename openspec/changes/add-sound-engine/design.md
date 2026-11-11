@@ -81,30 +81,31 @@ Three closed enums; none carries an acknowledgement id.
 | `FallStart`, `FallStop` | fall-start, fall-stop | `soundfall`, `soundfalloff` |
 | `WobbleStart`, `WobbleStop` | wobble-start, wobble-stop | `soundwobble`, `soundwobbleoff` |
 | `Break` | break | `soundbreak` |
-| `FireStart(FireballId)`, `FireStop(FireballId)` | fire-start, fire-stop | `soundfire`, `soundfireoff` |
+| `Fire(FireballId)`, `FireStop(FireballId)` | fire-start, fire-stop | `soundfire`, `soundfireoff` |
 | `Explode(FireballId)` | explode | `soundexplode` |
-| `BonusStart`, `BonusStop` | bonus-start, bonus-stop | `soundbonus`, `soundbonusoff` |
+| `BonusPulseStart`, `BonusPulseStop` | bonus-start, bonus-stop | `soundbonus`, `soundbonusoff` |
 | `EmeraldClick` | emerald-click | `soundem` |
-| `Emerald(EmeraldStep)` | emerald | `soundemerald` |
+| `EmeraldNote(EmeraldStep)` | emerald | `soundemerald` |
 | `Gold` | gold | `soundgold` |
 | `EatMonster` | eat-monster | `soundeatm` |
-| `Death` | death | `soundddie` |
+| `DiggerDeath` | death | `soundddie` |
 | `ExtraLife` | extra-life | `sound1up` |
 | `LevelDone` | level-done | `soundlevdone` |
-| `PlayMusic { tune: Tune, tempo: Tempo }` | play-music | `music`, `musicwithack`, `musicrefresh` |
-| `StopMusic` | stop-music | `musicoff` |
+| `Music { tune: Tune, tempo: Tempo }` | play-music | `music`, `musicwithack`, `musicrefresh` |
+| `MusicOff` | stop-music | `musicoff` |
+| `Pause`, `Resume` | pause, resume | `soundpause`, `soundpauseoff` |
 
-Supporting types: `FireballId` (`Zero`, `One`, or a newtype over the digger index that cannot hold other values), `EmeraldStep` (0..=7, constructed with a checked function, so upstream's unchecked table index cannot occur), `Tune { Normal, Bonus, Dirge, Battle }`, `Tempo { Standard, Quick }` (`Quick` is upstream's `dfac = 0.7`; a two-valued enum replaces the `f64` argument because those are the only two values ever passed, and it keeps the command `Copy + Eq` and free of floats).
+Supporting types: `FireballId` (`Zero`, `One`, or a newtype over the digger index that cannot hold other values), `EmeraldStep` (0..=7, constructed with a checked function, so upstream's unchecked table index cannot occur), `Tune { Main, LastLife, Bonus, Dirge }` (the spec's normal, battle, bonus and dirge tunes), `Tempo { Standard, Quick }` (`Quick` is upstream's `dfac = 0.7`; a two-valued enum replaces the `f64` argument because those are the only two values ever passed, and it keeps the command `Copy + Eq` and free of floats).
 
-The simulation chooses the tune (`Battle` on the last life) because it owns the lives count; upstream's `music_request_to_tune` and `musicrefresh` logic therefore lives in `digger-core`. If the enum delivered by `add-simulation-core` differs in naming from this table, the first task group aligns it; it is a rename, not a behaviour change.
+The simulation chooses the tune (`LastLife` on the last life) because it owns the lives count; upstream's `music_request_to_tune` and `musicrefresh` logic therefore lives in `digger-core`. The names in this table are those of `add-simulation-core` (its design D8), which owns the enum; this change does not rename anything in `digger-core`, and the first task group only checks that the table still matches.
 
-`SoundControl` is what the frontend sends: `ToggleSound`, `ToggleMusic`, `SetPaused(bool)`, `SetVolume(Volume)`, `SetFilter(bool)`. Pause is a control and not a simulation command because pausing is not part of a recording and the frontend owns time.
+`SoundControl` is what the frontend sends: `ToggleSound`, `ToggleMusic`, `SetVolume(Volume)`, `SetFilter(bool)`. Pause is not among them: the pause phase belongs to the simulation, which emits `Pause` and `Resume` itself, so there is exactly one source for the pause state.
 
 `SoundEvent` is what the engine reports: `LevelDoneFinished`, `DirgeFinished`.
 
 The queue item is `enum Input { Game(SoundCommand), Control(SoundControl) }`.
 
-Alternative rejected: toggles and pause inside `SoundCommand`. They would then appear in the simulation's deterministic output although they do not come from it.
+Alternative rejected: the toggles inside `SoundCommand`. They would then appear in the simulation's deterministic output although they do not come from it.
 
 ### D3. Effects are state machines that offer a divisor
 
@@ -124,7 +125,7 @@ pub struct Effects {
 - "Inactive" is `None`, not a flag next to stale fields. Starting an effect constructs a fresh state, which is what makes restarts deterministic.
 - Each state type has `fn tick(&mut self) -> Step`, where `Step { offer: Option<Divisor>, done: bool }`. `done` on the same tick as an offer covers the effects that sound on the tick they end (gold, death).
 - `Effects::tick` calls the slots in upstream's updater order (emerald, wobble, death, break, gold, click, explode, fire, eat, fall, extra life, bonus) and keeps the last `Some` offer. The order is one array literal of method calls in one function, with the spec's priority list in its doc comment; a test asserts every adjacent pair.
-- `FireSlot { flight: Option<Fire>, cadence: bool }`: the cadence bit lives outside the `Option` because a restart must not reset it (kept quirk Q4), while `FireStop` resets both.
+- `FireSlot { flight: Option<Fire>, cadence: bool }`: the cadence bit lives outside the `Option` because a restart must not reset it (kept quirk SQ4), while `FireStop` resets both.
 - Death needs to stop the music on its first tick. `Death::tick` returns that as a flag in an effect-specific result; `Synth::tick` acts on it. Effects never hold a reference to the music player.
 - All arithmetic is on `u16`/`u32` with plain operators; the sequences stay far below overflow (largest value 30500). The only wrapping arithmetic is `NoiseRng` (`wrapping_mul`, `wrapping_add`), named as such.
 
@@ -150,7 +151,7 @@ pub enum Voice {
 pub struct TickTrace { pub voice: Voice, pub effect_offer: Option<Divisor>, pub music_level: Level }
 ```
 
-`tick()` returns the `TickTrace`. This is the seam for tests: every spec scenario about divisors, levels and tick counts is asserted on traces, with no samples involved. The divisor gate (41..=16383), the music clamp (>= 1000) and "level 1 is silent" are applied in one function, `Voice::tone() -> Option<Tone { hz, peak }>`, so the death effect's shape (kept quirk Q1) is isolated there.
+`tick()` returns the `TickTrace`. This is the seam for tests: every spec scenario about divisors, levels and tick counts is asserted on traces, with no samples involved. The divisor gate (41..=16383), the music clamp (>= 1000) and "level 1 is silent" are applied in one function, `Voice::tone() -> Option<Tone { hz, peak }>`, so the death effect's shape (kept quirk SQ1) is isolated there.
 
 Upstream's `spkrmode`, `wavetype`, `soundt0flag` and per-band mute flags are not ported. Their whole observable effect is "which voice sounds", plus the silent-jingle bug, which is fixed.
 
@@ -216,7 +217,7 @@ Upstream allocates an ack id, the game thread polls for it in a real-time loop, 
 
 ### D11. Music tables as imported data
 
-`xtask import-assets` is extended to read four initialiser lists from upstream's `sound_backend.c` as data (integer tokens only; the file is never compiled or translated): `bonusjingle`, `backgjingle`, `dirge`, `battlejingle`. It writes `assets/music.bin`:
+`xtask import-assets` is extended (a new `xtask/src/import/music.rs` on phase 2's table reader, with the same `--upstream`, `--out` and `--check` flags and validate-then-write rule) to read four initialiser lists from upstream's `sound_backend.c` as data (integer tokens only; the file is never compiled or translated): `bonusjingle`, `backgjingle`, `dirge`, `battlejingle`. It writes `assets/music.bin`:
 
 ```
 magic "DGMU", version u8 = 1, tune count u8 = 4
@@ -224,9 +225,9 @@ per tune, in the order normal, bonus, dirge, battle:
   note count u16 LE, then note count x (divisor u16 LE, duration u16 LE)
 ```
 
-The `0x7d64` end marker is checked and stripped (the note count replaces it). Battle notes are stored as upstream stores them, untransposed; the transposition is applied when the blob is decoded, so the blob stays a faithful copy and the formula is tested in Rust. The importer verifies shapes while writing: normal 145 notes, bonus 160, dirge 24 with the first 12 summing to 50 units and the last 12 being rests; the battle length is measured and written into the generated index.
+The `0x7d64` end marker is checked and stripped (the note count replaces it). Battle notes are stored as upstream stores them, untransposed; the transposition is applied when the blob is decoded, so the blob stays a faithful copy and the formula is tested in Rust. The importer verifies shapes while writing: normal 145 notes, bonus 160, dirge 24 with the first 12 summing to 50 units and the last 12 being rests; the battle length is measured, printed and stored in the blob's own header. The blob is listed in `assets/manifest.txt` like every other asset, so phase 2's manifest test and `--check` cover it; `assets/index.rs` is not changed.
 
-`digger-sound` embeds the blob with `include_bytes!` and decodes it once, off the audio thread, into `TuneTables` (four boxed slices of `Note { divisor, units }`); `AudioSource` holds them, so the audio path never allocates. Decoding returns `Result<TuneTables, TableError>` (bad magic, truncated, zero-length tune, zero-duration note); a hash test pins the blob.
+`digger-sound` embeds the blob with `include_bytes!` (the same relative path scheme `digger-core` uses for `assets/`) and decodes it once, off the audio thread, into `TuneTables` (four boxed slices of `Note { divisor, units }`); `AudioSource` holds them, so the audio path never allocates. Decoding returns `Result<TuneTables, TableError>` (bad magic, truncated, zero-length tune, zero-duration note); the manifest digest pins the blob.
 
 The two tiny tables given in full in research 04 (the 8 emerald divisors and the 11 jingle divisors) are `const` arrays in the code; importing 19 numbers would add machinery for no benefit.
 
@@ -237,7 +238,7 @@ Alternative rejected: generating a Rust source file with the tables. The project
 1. **Tick-trace tests** (`tests/effects_trace.rs`, `tests/music_trace.rs`, `tests/switches.rs`): one test per spec scenario, driving `ManualDriver::advance_ticks` and asserting `TickTrace` sequences against the numbers in the spec. These are the fidelity tests; they are exact.
 2. **Unit tests** next to the code: `NoiseRng` first values, `samples_per_tick` table, divisor gate, peak table for levels 1..=50, envelope stage transitions, table decoding errors.
 3. **Property tests** (`proptest`, `tests/generator_props.rs`): for any rate in range and any `hz` with `2 * hz < rate`, one second of output has exactly `2 * hz` sign changes and every half period is within one sample of `rate / (2 * hz)`; a frequency change mid-stream adds no transition at the change point; output is always `+peak` or `-peak`; `render` in arbitrary chunk sizes equals `render` in one call.
-4. **Golden sample hashes** (`tests/golden.rs`, `tests/golden/hashes.toml`): about ten scripted renders at 44100 Hz, filter off, volume 100 (each effect alone; normal tune 10 s; bonus tune 10 s; battle tune 10 s; dirge to its finish; jingle; a mixed script with effects over music). The SHA-256 of the little-endian sample bytes is stored. The hashes are generated by the port (`UPDATE_GOLDEN=1 cargo test -p digger-sound --test golden`), and before they are committed each render is written to WAV with `cargo xtask render-sound` and listened to once against the reference game; the review is recorded in `tests/golden/REVIEW.md` (date, reviewer, what was compared). After that the hashes guard against unintended change.
+4. **Golden sample hashes** (`tests/golden.rs`, `tests/golden/hashes.toml`): about ten scripted renders at 44100 Hz, filter off, volume 100 (each effect alone; normal tune 10 s; bonus tune 10 s; battle tune 10 s; dirge to its finish; jingle; a mixed script with effects over music). The SHA-256 of the little-endian sample bytes is stored. The hashes are generated by the port (`UPDATE_GOLDEN=1 cargo test -p digger-sound --test golden`), and before they are committed each render is written to WAV with `cargo xtask render-sound` and listened to once and checked against the notes, durations, effect shapes and priorities documented in research 04 (no upstream build is run); the review is recorded in `tests/golden/REVIEW.md` (date, reviewer, what was compared). After that the hashes guard against unintended change.
 5. **Filter tests**: coefficient values at 44100 Hz against the closed form to 1e-12; step response decays to 0; a 2 kHz sine passes within 3 dB; output never leaves the `i16` range for a full-amplitude 79 Hz square. No hashes of filtered output (the coefficients depend on the platform's `tan`).
 6. **Non-interference test**: run a scripted `digger-core` game twice, once forwarding commands to a `ManualDriver` and once dropping them, and compare final state hashes.
 7. **Queue tests**: overflow drops and counts; events arrive once; a two-thread smoke test pushes commands while another thread calls `fill`.
@@ -269,37 +270,37 @@ Kept (audible shape of the original):
 
 | # | Quirk | Isolated in | Test |
 |---|---|---|---|
-| Q1 | Divisors >= 0x4000 are silent, so the death effect is heard only on ticks 4..22 of 51 while displacing music on all 51 | `Voice::tone()` | `death_is_audible_on_ticks_4_to_22` |
-| Q2 | Frequency is `1193181 / divisor` with integer division | `Divisor::hertz()` | `divisor_division_truncates` |
-| Q3 | Effect priority is upstream's updater order; effects that are silent on a tick let lower ones through | `Effects::tick` | `effect_priority_pairs` |
-| Q4 | Fire restart resets the divisor but not the two-tick cadence | `FireSlot` | `fire_restart_keeps_cadence` |
-| Q5 | Gold and death still sound on the tick on which they end (31 and 51 ticks) | `Step { offer, done }` | `gold_lasts_31_ticks`, `death_lasts_51_ticks` |
-| Q6 | Music level is carried across notes and tunes, starts at 8, and is left at 50 by the jingle | `MusicPlayer::level` | `level_carries_across_tunes` |
-| Q7 | Normal tune uses a fixed 2-unit gate; a note occupies duration x units + 1 ticks | `TuneParams` | `normal_tune_two_unit_note_levels` |
-| Q8 | Quick tempo is 0.7 of the standard ticks per unit, truncated (4, 2, 7, 1) | `Tempo::ticks_per_unit` (integer table) | `tempo_table` |
-| Q9 | Sound-only LCG with wrapping 32-bit arithmetic, seed 0, never reseeded by stop-all | `NoiseRng` | `noise_first_values` |
-| Q10 | Switching sound on switches music on | `Synth::apply` | `sound_on_forces_music_on` |
-| Q11 | Music switched off freezes the tune position | `Synth::tick` | `music_off_freezes_position` |
-| Q12 | The dirge loops through silent rests after its audible part until stopped | `MusicPlayer` | `dirge_finishes_on_tick_513` |
+| SQ1 | Divisors >= 0x4000 are silent, so the death effect is heard only on ticks 4..22 of 51 while displacing music on all 51 | `Voice::tone()` | `death_is_audible_on_ticks_4_to_22` |
+| SQ2 | Frequency is `1193181 / divisor` with integer division | `Divisor::hertz()` | `divisor_division_truncates` |
+| SQ3 | Effect priority is upstream's updater order; effects that are silent on a tick let lower ones through | `Effects::tick` | `effect_priority_pairs` |
+| SQ4 | Fire restart resets the divisor but not the two-tick cadence | `FireSlot` | `fire_restart_keeps_cadence` |
+| SQ5 | Gold and death still sound on the tick on which they end (31 and 51 ticks) | `Step { offer, done }` | `gold_lasts_31_ticks`, `death_lasts_51_ticks` |
+| SQ6 | Music level is carried across notes and tunes, starts at 8, and is left at 50 by the jingle | `MusicPlayer::level` | `level_carries_across_tunes` |
+| SQ7 | Normal tune uses a fixed 2-unit gate; a note occupies duration x units + 1 ticks | `TuneParams` | `normal_tune_two_unit_note_levels` |
+| SQ8 | Quick tempo is 0.7 of the standard ticks per unit, truncated (4, 2, 7, 1) | `Tempo::ticks_per_unit` (integer table) | `tempo_table` |
+| SQ9 | Sound-only LCG with wrapping 32-bit arithmetic, seed 0, never reseeded by stop-all | `NoiseRng` | `noise_first_values` |
+| SQ10 | Switching sound on switches music on | `Synth::apply` | `sound_on_forces_music_on` |
+| SQ11 | Music switched off freezes the tune position | `Synth::tick` | `music_off_freezes_position` |
+| SQ12 | The dirge loops through silent rests after its audible part until stopped | `MusicPlayer` | `dirge_finishes_on_tick_513` |
 
 Fixed (presentation bugs, with the reason):
 
 | # | Upstream behaviour | Port | Test |
 |---|---|---|---|
-| F1 | Level-done jingle silent until some music has played | Always audible | `jingle_audible_before_any_music` |
-| F2 | Volume setting read and ignored | Master volume 0..=100 % | `half_volume_peak` |
-| F3 | Sound cannot be enabled after starting quiet | Engine always exists; sound off is a mute | `started_quiet_can_be_enabled` |
-| F4 | With sound off, effect state freezes and resumes stale; music requests are dropped | State advances silently; requests are honoured | `mute_does_not_freeze_state` |
-| F5 | Dirge with music off flips the music flag and restores it later | Dirge ignores the music switch; the switch is never changed by it | `dirge_plays_with_music_off` |
-| F6 | Fall effect's on/off phase survives stop and restart | Restart always begins the same cycle (at most 2 ticks, 27 ms, different) | `fall_first_three_tones` |
-| F7 | Game thread blocks until jingle/dirge acknowledgements | Fixed frame counts; events are informational | `simulation_unaffected_by_sound` |
-| F8 | Cross-thread unsynchronised state; per-sample spinlock | Single owner, lock-free queues | `two_thread_smoke` |
-| F9 | Unchecked table index for the emerald step; division by zero hazard in the jingle gate | Checked types; 0 Hz beat = ungated | `emerald_step_range`, `zero_beat_is_ungated` |
-| F10 | Filter is a compile-time choice that differs between upstream build systems | Runtime switch, on by default (as in upstream's CMake build) | `filter_toggle` |
+| SF1 | Level-done jingle silent until some music has played | Always audible | `jingle_audible_before_any_music` |
+| SF2 | Volume setting read and ignored | Master volume 0..=100 % | `half_volume_peak` |
+| SF3 | Sound cannot be enabled after starting quiet | Engine always exists; sound off is a mute | `started_quiet_can_be_enabled` |
+| SF4 | With sound off, effect state freezes and resumes stale; music requests are dropped | State advances silently; requests are honoured | `mute_does_not_freeze_state` |
+| SF5 | Dirge with music off flips the music flag and restores it later | Dirge ignores the music switch; the switch is never changed by it | `dirge_plays_with_music_off` |
+| SF6 | Fall effect's on/off phase survives stop and restart | Restart always begins the same cycle (at most 2 ticks, 27 ms, different) | `fall_first_three_tones` |
+| SF7 | Game thread blocks until jingle/dirge acknowledgements | Fixed frame counts; events are informational | `simulation_unaffected_by_sound` |
+| SF8 | Cross-thread unsynchronised state; per-sample spinlock | Single owner, lock-free queues | `two_thread_smoke` |
+| SF9 | Unchecked table index for the emerald step; division by zero hazard in the jingle gate | Checked types; 0 Hz beat = ungated | `emerald_step_range`, `zero_beat_is_ungated` |
+| SF10 | Filter is a compile-time choice that differs between upstream build systems | Runtime switch, on by default (as in upstream's CMake build) | `filter_toggle` |
 
 ## Risks / Trade-offs
 
-- [Research 04 was derived by reading code, not by tracing a run, so a tick sequence could be off by one] → The spec's sequences were recomputed from the documented update rules; the one-off listening review of the golden renders against the reference game is the check. A disagreement found there is fixed in spec, test and `docs/compat-quirks.md` together.
+- [Research 04 was derived by reading code, not by tracing a run, so a tick sequence could be off by one] → The spec's sequences were recomputed from the documented update rules; the one-off listening review of the golden renders against research 04 and the reviewer's knowledge of the original game is the check. A disagreement found there is fixed in spec, test and `docs/compat-quirks.md` together.
 - [The music tables are not in the research report, so tune content cannot be reviewed from the spec] → Shape checks in the importer (note counts, dirge unit sum), a blob hash test, and the listening review.
 - [Fixed frame counts versus real-time sound: at non-default game speeds the level-done wait is shorter or longer than the jingle] → Accepted. A faster game cuts the jingle with the next round's stop-all; `add-desktop-app` may use `LevelDoneFinished` for pacing if that proves unpleasant.
 - [Replay at maximum speed with a device attached floods the queue; a dropped stop command could leave an effect running] → Overflow is counted and exposed; `add-desktop-app` is told (in the crate docs) to use `NullDriver` during fast-forward and send `StopAll` when returning to real time.
@@ -309,7 +310,7 @@ Fixed (presentation bugs, with the reason):
 
 ## Migration Plan
 
-New crate and new asset; nothing existing changes behaviour. Rollback is removing the crate from the workspace and the `music.bin` entry from the asset index.
+The crate skeleton from phase 1 is filled and one asset is added; nothing existing changes behaviour. Rollback is emptying the crate again and removing `music.bin` and its manifest line.
 
 ## Open Questions
 

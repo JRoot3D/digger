@@ -46,7 +46,7 @@ blank or frozen without explanation. (port decision; research 05 §8.4)
 
 ### Requirement: Canvas presentation and scaling
 The web build SHALL show the 640×400 picture on one canvas by the desktop
-scaling rule, applied to the browser viewport in device pixels: the largest
+`integer` scaling rule, applied to the browser viewport in device pixels: the largest
 whole-number scale that fits, at least 1, centred on black, with no smoothing
 between pixels. A viewport smaller than 640×400 SHALL show the whole picture
 reduced to fit with its 8:5 shape kept. The scale SHALL be recomputed when
@@ -169,8 +169,8 @@ The web build SHALL advance the game only from the browser's animation
 callback, running one game frame each time one frame length of real time has
 accumulated. The frame length SHALL be the desktop value: 80,000 microseconds
 (12.5 frames per second) at default speed. Game speed SHALL NOT depend on the
-display refresh rate. At most 4 game frames SHALL run in one callback; any
-further backlog SHALL be discarded. (research 05 §6.3)
+display refresh rate. As on the desktop, at most 3 game frames SHALL run in
+one callback; any further backlog SHALL be discarded. (research 05 §6.3)
 
 #### Scenario: 60 Hz display
 - **WHEN** the game runs at default speed for 60 seconds on a 60 Hz display
@@ -182,7 +182,7 @@ further backlog SHALL be discarded. (research 05 §6.3)
 
 #### Scenario: Long stall
 - **WHEN** the browser delivers no animation callback for 2 seconds while the page stays visible and then resumes
-- **THEN** at most 4 game frames run in the first callback and the game then continues at normal speed without fast-forwarding
+- **THEN** at most 3 game frames run in the first callback and the game then continues at normal speed without fast-forwarding
 
 ### Requirement: Hidden tab pauses the game
 When the page becomes hidden (tab switched, window minimised), the web build
@@ -278,8 +278,8 @@ reason, leaving the title screen running. (port decision; research 07 §A.6)
 
 ### Requirement: Start-up options from URL query parameters
 In place of a command line the web build SHALL read the query parameters
-`speed`, `level` (both as the desktop options), `mode` (`one`, `two`,
-`together`, `gauntlet`, `gauntlet-together`) and `quiet` (present, or `1`:
+`speed`, `level` (both as the desktop options), `mode` (the desktop mode
+names, `one-player` to `two-digger-gauntlet`) and `quiet` (present, or `1`:
 start with sound off). They SHALL apply to that page load only and SHALL NOT
 be stored. A value outside the allowed set SHALL be ignored with a visible
 warning naming parameter and value. Unknown parameters SHALL be ignored.
@@ -291,11 +291,11 @@ warning naming parameter and value. Unknown parameters SHALL be ignored.
 
 #### Scenario: Start level and quiet start
 - **WHEN** the page is opened with `?level=5&quiet` and a game is started
-- **THEN** the game begins on level 5, its score is not entered in the high-score table (as on the desktop), no sound prompt is shown, and pressing the sound toggle key turns sound on
+- **THEN** the game begins on level 5, no sound prompt is shown, and pressing the sound toggle key turns sound on
 
 #### Scenario: Invalid values
-- **WHEN** the page is opened with `?speed=fast&mode=two&colour=red`
-- **THEN** a warning names `speed` and `fast`, the stored or default speed is used, the two-player mode is applied, and `colour` causes no warning
+- **WHEN** the page is opened with `?speed=fast&mode=two-players&colour=red`
+- **THEN** a warning names `speed` and `fast`, the stored or default speed is used, the two-players mode is applied, and `colour` causes no warning
 
 ### Requirement: No command line and no exit
 The web build SHALL have no command line and SHALL never close or navigate

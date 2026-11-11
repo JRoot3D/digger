@@ -176,14 +176,14 @@ On each tick after launch a flying fireball SHALL move 8 pixels horizontally or 
 - **THEN** on the following ticks it is at x = 168, 176, 184 and so on
 
 ### Requirement: Earth probe for fireballs
-Earth SHALL be detected by reading non-black pixels from the game picture after the move and before the fireball is redrawn. Horizontal shots read the row y+4 across logical x..x+7; upward shots read column x+4 over rows y..y+6; downward shots read the left half of logical pixel x+3 over rows y..y+6. Any non-black pixel there (earth, emerald, text) counts; positions off the screen count as earth. (research 02 §3.6)
+Earth SHALL be detected by reading non-black pixels from the game picture after the move and before the fireball is redrawn. Horizontal shots read the row y+4 across logical x..x+7; upward shots read column x+4 over rows y..y+6; downward shots read the left half of logical pixel x+3 over rows y..y+6. Any non-black pixel there (earth, emerald, text) counts; positions past the right or bottom edge count as earth; others outside the picture read as the `rendering` probe defines. (research 02 §3.6)
 
 #### Scenario: Background counts as earth
 - **WHEN** a fireball moving right is moved so that row y+4 of its new position lies on background pixels
 - **THEN** the probe reports earth
 
 #### Scenario: Probe outside the screen
-- **WHEN** a probe position lies outside the 320×200 logical screen
+- **WHEN** a probe position lies beyond the right or bottom edge of the 320×200 logical screen
 - **THEN** the probe reports earth and no error occurs
 
 ### Requirement: Earth stops a fireball only when it touches no sprite
@@ -245,7 +245,7 @@ A digger killed by a falling bag SHALL be shown with the dead-digger image and c
 - **THEN** the digger is drawn at y = 186 while carried and its grave sequence takes place at y = 180
 
 ### Requirement: Grave sequence
-The grave sequence SHALL wait 5 ticks, then draw five growing tombstone frames at ticks G, G+3, G+6, G+9 and G+12, then rest. On tick G the dirge SHALL be requested (reduced volume with two diggers) and every monster overlapping the new grave SHALL be removed without score. The death SHALL be resolved on tick G+73, except in a one-digger game, where it is resolved on tick G+89 to leave time for the dirge. (research 02 §3.7, §9 items 14, 23)
+The grave sequence SHALL wait 5 ticks, then draw five growing tombstone frames at ticks G, G+3, G+6, G+9 and G+12, then rest. On tick G the dirge SHALL be requested (at the standard tempo; at the quick tempo with two diggers) and every monster overlapping the new grave SHALL be removed without score. The death SHALL be resolved on tick G+73, except in a one-digger game, where it is resolved on tick G+89 to leave time for the dirge. (research 02 §3.7, §9 items 14, 23)
 
 #### Scenario: One-digger timing
 - **WHEN** the first tombstone frame of a one-digger game is drawn on tick G
@@ -325,7 +325,7 @@ In bonus mode, a living digger whose move brings it to overlap one or more monst
 - **THEN** both are removed and the digger scores 200 and then 400
 
 ### Requirement: Two-digger interaction rules
-With two simultaneous diggers: both SHALL be updated every tick, digger 1 first; a fireball SHALL kill the other digger and collide with the other fireball; a round SHALL end only when both are dead; every living digger overlapping gold scores for it; and the dirge is requested at reduced volume without the extended one-digger wait. (research 02 §3.10)
+With two simultaneous diggers: both SHALL be updated every tick, digger 1 first; a fireball SHALL kill the other digger and collide with the other fireball; a round SHALL end only when both are dead; every living digger overlapping gold scores for it; and the dirge is requested at the quick tempo without the extended one-digger wait. (research 02 §3.10)
 
 #### Scenario: Friendly fire
 - **WHEN** digger 1's flying fireball overlaps living, non-invincible digger 2

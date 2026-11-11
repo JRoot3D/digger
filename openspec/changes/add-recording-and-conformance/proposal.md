@@ -35,7 +35,8 @@ would be built on an unproven core.
   result files into `tests/recordings/` with a documented
   `cargo xtask import-recordings` command, and run all 50 as a conformance
   suite in cargo tests and CI.
-- Add triage tooling (per-tick state dump, checkpoint-window bisection) and a
+- Add triage tooling (per-tick state dump, checkpoint-window report, trace
+  comparison; no upstream binary is ever built or run) and a
   tracked per-recording checklist; simulation defects found by the suite are
   fixed in `digger-core` within this change and logged in
   `docs/compat-quirks.md`.
@@ -52,7 +53,7 @@ would be built on an unproven core.
 | Item | Picked up by |
 |---|---|
 | Command-line options of the game binary for play, record, verify, take-over (`--play`, `--record`, `/E:file` aliases, exit codes of the binary) | `add-desktop-app` |
-| The "save recording" key, the take-over key, writing files in the user's directories, entering initials | `add-desktop-app` |
+| The "save recording" key, the take-over option (`--take-over-at`, `/T:n`), writing files in the user's directories, entering initials | `add-desktop-app` |
 | Running the sound engine during verification (upstream's `long` test tier) | `add-sound-engine` adds its own golden tests; `add-desktop-app` wires sound into replays |
 | Real-time replays (upstream's `xlong` tier) and frame pacing | `add-desktop-app` |
 | The eDRF NetSim feed, control cross-checks between peers, anything networked | not planned (see porting plan, non-goals) |
@@ -85,13 +86,14 @@ that point and the finding is recorded in `docs/compat-quirks.md`.
 ## Impact
 
 - `crates/digger-core`: new modules for the DRF codec, the eDRF codec, the
-  state hash, the recorder, the replay driver and the state dump. New
-  read-only accessors on the simulation state for the hash. Defect fixes in
+  state hash, the recorder, the replay driver and the state dump. The hash
+  reads the simulation through the `StateView` of `add-simulation-core`.
+  Defect fixes in
   the simulation modules as the suite demands.
 - `crates/digger-core/Cargo.toml`: adds `md-5` (already named in the porting
   plan). No other new runtime dependency.
 - `xtask`: new subcommands `import-recordings`, `verify`, `conformance`,
-  `convert`, `dump-state`, `bisect`.
+  `convert`, `dump-state`, `cut`, `bisect`, `trace-diff`.
 - `tests/recordings/`: 50 recordings, 27 expected-result files, a manifest
   with SHA-256 sums, and a README stating origin (sobomax/digger at commit
   `638125e`) and licence (GPL-2.0-or-later, the same as this repository).
@@ -103,5 +105,5 @@ that point and the finding is recorded in `docs/compat-quirks.md`.
   `docs/conformance.md` (how to run, triage procedure, tracking checklist),
   additions to `docs/compat-quirks.md`.
 - Later phases: `add-desktop-app` builds its play/record/verify options on
-  the library entry points defined here; the simulation interface gains the
-  input-source and observer seams described in design.md.
+  the library entry points defined here; the simulation interface is used
+  as `add-simulation-core` defines it (`step_observed` and its `Observer`).

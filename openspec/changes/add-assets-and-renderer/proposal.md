@@ -50,7 +50,7 @@ model-based tests and golden framebuffer checksums.
 | The scripted title-screen animation and the high-score table layout | `add-desktop-app` |
 | Music and sound-effect tables and their import | `add-sound-engine` (it extends `xtask import-assets` with the music tables) |
 | Showing the framebuffer in a window, scaling, fullscreen, frame pacing, using the icon | `add-desktop-app` |
-| Recording golden frames of real gameplay (level 1 drawn, status line) | `add-simulation-core` and `add-recording-and-conformance`, using the checksum defined here |
+| Recording golden frames of real gameplay (level 1 drawn, status line) | `add-desktop-app`, once replay conformance passes, using the checksum defined here |
 | CGA graphics data and CGA mode | Not ported (porting plan §2) |
 
 ## Capabilities
@@ -79,8 +79,8 @@ None. No specs exist yet.
   `xtask`. `digger-sound` and `digger` are untouched.
 - **Repository contents**: new `assets/` directory with committed binary blobs
   (about 190 KB in total), a generated index and a digest manifest; new
-  `docs/assets.md`; `docs/compat-quirks.md` is created here, earlier than the
-  porting plan states, and extended by `add-simulation-core`.
+  `docs/assets.md`; `docs/compat-quirks.md` is created here (porting plan
+  §3) and extended by every later change.
 - **Dependencies**: `miniz_oxide` in `digger-core` (inflating the title
   picture; pure Rust, already named in the porting plan); `sha2` in `xtask`
   only (asset digests). No platform dependency is added.

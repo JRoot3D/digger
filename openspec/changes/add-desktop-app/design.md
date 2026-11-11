@@ -4,7 +4,7 @@
 
 See `proposal.md` for the motivation. The state before this change:
 
-- `digger-core` (phases 2–4) offers a deterministic `Game` advanced by `step(controls)`, a 640×400 indexed framebuffer with a 16-colour palette, public drawing primitives (text, sprites, title picture), recording writers and readers for DRF and eDRF, and a replay verifier.
+- `digger-core` (phases 2–4) offers a deterministic `Game` advanced by `step(&FrameInput)`, a 640×400 indexed framebuffer with a 16-colour palette, public drawing primitives (text, sprites, title picture), recording writers and readers for DRF and eDRF, and a replay verifier.
 - `digger-sound` (phase 5) turns `SoundCommand`s into PCM samples and is pure.
 - `crates/digger` is a binary skeleton from phase 1.
 
@@ -50,10 +50,10 @@ src/
     state.rs         `InputState`: held/sticky flags per control, action and text queues
     gamepad.rs       pad slot assignment, stick → virtual direction keys
   shell/             device-free program logic (reused by the web build)
-    mod.rs           `Shell`, `Scene`, `FrameInput`, `FrameOutput`
+    mod.rs           `Shell`, `Scene`, `ShellInput`, `FrameOutput`
     title.rs         title scene, animation script, mode cycle
-    play.rs          live game and playback scenes, pause overlay
-    game_over.rs     TIME UP / GAME OVER banners
+    play.rs          live game and playback scenes, pause and resume requests
+    game_over.rs     end-of-game hand-over: `player_out` → initials entry → back to the core's notice
     initials.rs      new-high-score scene
     redefine.rs      key redefinition scene
     recording.rs     when and where recordings are saved, auto names
@@ -66,7 +66,7 @@ src/
     window.rs        window attributes, icon, fullscreen, softbuffer surface
     audio.rs         cpal stream lifecycle
     pads.rs          gilrs polling
-  headless.rs        `--verify --headless` runner
+  headless.rs        `--verify --headless` runner (phase 4's `verify`)
 ```
 
 Dependency direction: `platform` → `shell`, `pacing`, `present`, `input`, `config`, `scores`; none of those depend on `platform`. Only `platform/*` and `config/paths.rs` are compiled out or replaced for the browser.
@@ -81,42 +81,41 @@ Upstream's nested blocking loops become one enum owned by `Shell`:
 enum Scene {
     Title(TitleScene),                 // animation frame, selected mode
     Redefine(RedefineScene),           // cursor over the action list, pending bindings
-    Playing(PlayScene),                // Game + recorder + paused: Option<PauseReason>
-    Playback(PlaybackScene),           // Game + replay source + verify flag
-    Banner(BannerScene),               // TIME UP / GAME OVER, frames left, what follows
-    Initials(InitialsScene),           // digger index, letters so far, closing frames
+    Playing(PlayScene),                // Game + recorder + pending pause request
+    Playback(PlaybackScene),           // phase 4 `Replay` + verify flag + take-over tick
+    Initials(InitialsScene),           // digger index, letters so far, closing frames; holds the suspended PlayScene
 }
 ```
 
-The platform calls `shell.frame(&FrameInput) -> FrameOutput` once per pacing deadline. `FrameInput` carries what the input layer collected since the last frame (per-slot controls, a list of `Action`s, typed letters, "any key" and "any button" flags, `close_requested`, `focus_lost`, pad connect/disconnect). `FrameOutput` carries a borrowed picture (`&[u8; 640*400]` indices plus palette), the sound commands of this frame, the frame time to use next, and requests to the platform: `ToggleFullscreen`, `RetryAudio`, `Exit(ExitCode)`.
+The platform calls `shell.frame(&ShellInput) -> FrameOutput` once per pacing deadline. `ShellInput` (named so as not to clash with the core's `FrameInput`, which the play scene builds from it) carries what the input layer collected since the last frame (per-slot controls, a list of `Action`s, typed letters, "any key" and "any button" flags, `close_requested`, `focus_lost`, pad connect/disconnect). `FrameOutput` carries a borrowed picture (`&[u8; 640*400]` indices plus palette), the sound commands of this frame, the frame time to use next, and requests to the platform: `ToggleFullscreen`, `RetryAudio`, `Exit(ExitCode)`.
 
 Scene transitions are values returned by each scene's `frame` method (`Transition::Stay | To(Scene) | Exit(code)`), so no scene reaches into another and no flag outlives the frame that set it. The upstream latches map as follows:
 
 | Upstream global | Here |
 |---|---|
 | `escape` | `Action::Quit` in the frame's action list; each scene decides what it means |
-| `pausef` + blocking `getkey` | `PlayScene.paused = Some(reason)`; the scene returns without calling `step` |
+| `pausef` + blocking `getkey` | the play scene sets `FrameInput::pause`; the core's own pause phase holds the game (frames report `Paused`), and any key or button sets `pause` again to resume |
 | `start` | computed per frame by `TitleScene` from "any key" minus excluded actions |
 | `mode_change`, `keyredef`, `savedrf` | `Action::ChangeMode`, `RedefineKeys`, `SaveRecording` |
 | `gotgame`, `gotname` | `Shell.last_game: Option<FinishedRecording>`, `Settings.record_path: Option<PathBuf>` |
 | `soundflag`, `musicflag`, `quiet` | `Shell.sound_on`, `Shell.music_on`; the device is separate state in `platform::audio` |
 
-**Overlays never touch simulation pixels.** The simulation's framebuffer is game state (a fireball reads pixels back). The pause text, and anything else the shell draws over a running game, is drawn on a copy: `PlayScene` keeps a scratch picture, copies the game's framebuffer into it, erases 26 character cells at (0, 0) and one at (308, 0), writes `PRESS ANY KEY`, and hands the scratch picture to the platform. On resume it simply presents the game's own framebuffer again; no "redraw scores and lives" step is needed and nothing can desynchronise a recording.
+**The shell draws nothing over a running game.** The simulation's framebuffer is game state (a fireball reads pixels back), so every text shown during play comes from the core itself, as in the original: `PRESS ANY KEY` while paused, with scores and lives restored on resume, and `GAME OVER` / `TIME UP` for 50 frames at the end (`add-simulation-core`, game-flow). The shell only presents the core's picture. A pause request is honoured by the core on a main-phase tick only, so the play scene keeps `pause` set on every frame until a frame reports `Paused` (this matters for focus loss during a level draw).
 
-Title, banners, initials and redefinition draw into a shell-owned screen with the core's public text and sprite primitives. The title animation is a data table (`&[ScriptEntry]`, frames 0–286) interpreted by `TitleScene`; it uses core sprite drawing but no simulation objects.
+Title, initials and redefinition draw into a shell-owned screen with the core's public text and sprite primitives. The title animation is a data table (`&[ScriptEntry]`, frames 0–286) interpreted by `TitleScene`; it uses core sprite drawing but no simulation objects.
 
-*Alternative considered:* letting `digger-core` own title, game-over and initials as further phases of `Game`. Rejected: those screens depend on the score tables, text input and files, which the core must not know about, and they consume no ticks, so keeping them outside costs nothing in replay fidelity.
+*Alternative considered:* letting `digger-core` own title and initials as further phases of `Game`. Rejected: those screens depend on the score tables, text input and files, which the core must not know about, and they consume no ticks, so keeping them outside costs nothing in replay fidelity.
 
 ### D3. Interfaces assumed from earlier changes
 
 These are the points where this design meets phases 2–5. Task group 1 checks each against the code as merged and records any difference in this file before further work.
 
-1. `Game::step(controls) -> StepOutcome` takes, per input slot, five booleans (up, down, left, right, fire) meaning "held now or pressed since the previous frame". The direction-resolution state (rising edges, one-tick pulse, release fallback) and the one-tick fire delay live inside the core, because eDRF recordings store exactly those raw booleans and replay must run through the same logic. The frontend supplies the booleans; the `input-controls` requirements on resolution are then proven end to end by tests in this change. If the core instead expects a resolved direction, the resolver is written in `input/resolve.rs` against the same tests.
-2. `StepOutcome` reports: whether the game is finished; "player n is out" events with each digger's displayed six-digit score and full total, level and tick count; whether the last tick was a simulated tick; and optionally a pacing hint for sub-frame steps (upstream paces level redraw steps at one third of a frame). Without the hint all frames are full length.
-3. The core does **not** draw `TIME UP`, `GAME OVER` or the high-score screens; the game ends at the point where upstream calls `endofgame`.
+1. `Game::step(&FrameInput) -> StepOutcome`. `FrameInput { slots: [Controls; 2], pause, quit }` carries, per input slot, five booleans (up, down, left, right, fire) meaning "held now or pressed since the previous frame", plus the pause and quit requests. The direction-resolution state (rising edges, one-tick pulse, release fallback) and the one-tick fire delay live inside the core, because eDRF recordings store exactly those raw booleans and replay must run through the same logic. The frontend supplies the booleans; the `input-controls` requirements on resolution are then proven end to end by tests in this change.
+2. `StepOutcome { frame, player_out, finished }` reports the kind of frame (`Tick`, `Wait`, `Paused`), a "player n is out" result on the frame a player's game ends (each digger's displayed six-digit score and full total), and, once the whole game is over, the summary (reason, scores, level, tick count). There is no pacing hint: every frame is one full frame time (the core reveals three level-draw items per frame).
+3. The core **does** show `GAME OVER` (104, 0) and `TIME UP` (120, 0) itself, for 50 waiting frames, in every game. It does not know about score tables: initials entry is the shell's job and hangs off `player_out` (D2, `Initials`). On the frame that reports `player_out` the shell checks eligibility and qualification; if an entry is due it suspends the play scene, runs `InitialsScene` once per qualifying digger, then resumes stepping, and the core's 50-frame notice follows. This differs from upstream only in that `GAME OVER` is also shown after an initials entry (a presentation deviation recorded by phase 3).
 4. The core exposes drawing on a free-standing screen: clear, title picture, opaque text at (x, y) in a colour, erase text cells, draw and erase a sprite frame by id, palette selection.
-5. Recording: a recorder attached to a live game with `finish(initials: Option<[u8; 3]>) -> bytes` for DRF and eDRF, and a replay source that drives a `Game` and yields the result `Ok | Diverged | Truncated | BadFile`.
-6. `digger-sound` exposes a synthesiser created for a sample rate, a wait-free command sender/receiver pair, and commands for effects on/off, music on/off and pause/resume. Master volume is applied by this change in the audio callback if the synthesiser has no gain control.
+5. Recording and playback are phase 4's library: `DrfRecorder`/`EdrfRecorder` attached to a live game through the observer seam, with `take_pending()` and the initials line; `Replay::new(recording, ReplayOptions)`, `Replay::step(input, extra)`, `Replay::finish() -> ReplayReport` with `Outcome { Verified, Completed, Failed, Stopped, Truncated, TakenOver }`, `result_line()` and `exit_status()` (0–4); `verify(bytes, options)` for headless runs. `ReplayOptions::take_over_after` implements `--take-over-at`.
+6. `digger-sound` exposes `sound_link(config, tables) -> (SoundHandle, AudioSource)`: the handle takes each frame's `SoundCommand`s (including the simulation's `Pause`/`Resume`) and the frontend's `SoundControl`s (`ToggleSound`, `ToggleMusic`, `SetVolume`, `SetFilter`), reports `status()`, and `AudioSource::fill(&mut [i16])` runs in the device callback. `NullDriver` stands in when no device is open. Master volume is the engine's own.
 
 ### D4. winit application handler and frame pacing
 
@@ -124,7 +123,7 @@ These are the points where this design meets phases 2–5. Task group 1 checks e
 
 - `resumed`: create the window and softbuffer surface (required order on Wayland and for the later browser build), open audio, start the pacer.
 - `window_event`: translate `KeyboardInput` (physical key → `KeyName`, ignoring `repeat`; `text` → letters for initials), `ModifiersChanged` (Alt state for the Alt+Enter chord, which is consumed here and never reaches `InputState`), `Focused(false)`, `CloseRequested`, `Resized`/`ScaleFactorChanged` (recompute the viewport), `RedrawRequested` (present).
-- `about_to_wait`: drain gilrs events; ask the pacer how many frames are due; for each, build `FrameInput`, call `shell.frame`, forward sound commands, apply platform requests; `request_redraw()` if a frame ran; finally `event_loop.set_control_flow(ControlFlow::WaitUntil(pacer.next_deadline()))`.
+- `about_to_wait`: drain gilrs events; ask the pacer how many frames are due; for each, build `ShellInput`, call `shell.frame`, forward sound commands, apply platform requests; `request_redraw()` if a frame ran; finally `event_loop.set_control_flow(ControlFlow::WaitUntil(pacer.next_deadline()))`.
 
 The event loop therefore sleeps in the operating system between frames and wakes for input at once; nothing blocks inside a callback.
 
@@ -155,24 +154,24 @@ Unpaced mode (speed 0): `ControlFlow::Poll`; each `about_to_wait` runs frames fo
 
 On resize, `scale.rs` also builds `col_map: Vec<u16>` (`sx = dx * 640 / w`) and `row_map: Vec<u16>`. Presenting a frame: resize the softbuffer surface to the window's physical size, fill with 0 (black), and for each destination row either expand the source row through a 16-entry `[u32; 16]` palette table using `col_map` or copy the previous destination row when `row_map` repeats. Pixel format is softbuffer's `0x00RRGGBB`. At 4K this is about 8 million writes 12.5 times a second, far below one core.
 
-HiDPI: sizes are physical pixels throughout; the default window is requested as `PhysicalSize(1280, 800)` with minimum `PhysicalSize(640, 400)`. Fullscreen is `Fullscreen::Borderless(None)`; the cursor is hidden while fullscreen. The icon is the 64×64 ARGB asset from phase 2, set through winit where the platform supports it (Windows, X11); Wayland and macOS take icons from packaging (phase 7).
+HiDPI: sizes are physical pixels throughout; the default window is requested as `PhysicalSize(1280, 800)` with minimum `PhysicalSize(640, 400)`. Fullscreen is `Fullscreen::Borderless(None)`; the cursor is hidden while fullscreen. The icon is the 64×64 RGBA asset from phase 2 (`assets/icon.rgba`), set through winit where the platform supports it (Windows, X11); Wayland and macOS take icons from packaging (phase 7).
 
 ### D6. Audio with cpal
 
-`platform::audio::Audio` is an enum: `Closed { reason }`, `Open { stream, sender, rate }`.
+`platform::audio::Audio` is an enum: `Closed { reason }`, `Open { stream, handle, rate }`.
 
 - Opening: default host and output device; look for a supported configuration with the configured rate, preferring one channel, else the fewest channels; request the configured buffer size as `BufferSize::Fixed`, falling back to `Default` on error; if the rate is unsupported use the device default configuration. Each fallback prints one `digger: notice:` line.
-- The synthesiser is created for the rate actually obtained and **moved into the stream callback**, which owns it exclusively. Per callback: drain the command receiver, render mono `i16` samples, apply the volume gain, convert to the device sample format (`i16`, `u16` or `f32`), write the same value to every channel. No locks, no allocation, no I/O in the callback.
-- The shell's sound commands of each frame are pushed to the sender by the platform; when `Audio` is `Closed` they are dropped. Pause sends the pause command; scene changes that upstream silenced (`soundstop`, `killsound`) are explicit commands from the scene.
+- `sound_link` is called for the rate actually obtained and its `AudioSource` is **moved into the stream callback**, which owns it exclusively. Per callback: `fill` a mono `i16` buffer (the engine drains its command queue and applies the volume itself), convert to the device sample format (`i16`, `u16` or `f32`), write the same value to every channel. No locks, no allocation, no I/O in the callback.
+- The shell's sound commands of each frame are pushed to the `SoundHandle` by the platform; when `Audio` is `Closed` they go to a `NullDriver`. Pause and resume need nothing extra: the core emits those commands itself. Scene changes that upstream silenced (`soundstop`, `killsound`) are explicit commands from the scene.
 - The stream's error callback sets an `AtomicBool`; the next frame turns `Open` into `Closed`, prints a notice, and the game carries on.
-- `--quiet` and `sound.enabled = false` only set `Shell.sound_on = false`; the device is still opened if present, so the toggle works at once (this is the fix for upstream's "cannot re-enable after `/Q`"). When `Audio` is `Closed`, toggling sound on returns `RetryAudio`, and the platform tries to open again.
+- `--quiet` and `sound.enabled = false` only set the engine's initial sound switch to off; the device is still opened if present, so the toggle works at once (this is the fix for upstream's "cannot re-enable after `/Q`"). When `Audio` is `Closed`, toggling sound on returns `RetryAudio`, and the platform tries to open again.
 - The stream is created, kept and dropped on the main thread (cpal streams are not `Send` on every host). Dropping it on exit stops the device.
 
 ### D7. Input mapping layer
 
 ```
 winit key events ─┐
-gilrs events ─────┼─► InputState ──(once per frame)──► FrameInput ─► Shell
+gilrs events ─────┼─► InputState ──(once per frame)──► ShellInput ─► Shell
 typed text ───────┘
 ```
 
@@ -188,9 +187,9 @@ typed text ───────┘
 
 `cli::legacy::translate(args) -> Result<Vec<OsString>, CliError>` runs before clap and rewrites only tokens that match the upstream grammar; everything else passes through untouched.
 
-- A token is a legacy option if it is `/L` or `-L` followed by nothing, by `:value`, or (numeric options only) directly by digits, where `L` is one of `S I G 2 U Q M F L R P E O K V ? H C N X T` in either case. `/KA` is the one two-letter form. `-h` and `-V` are left to clap (help and version); `/V` and `/v` are dropped (upstream's no-op).
+- A token is a legacy option if it is `/L` or `-L` followed by nothing, by `:value`, or (numeric options only) directly by digits, where `L` is one of `S I G 2 U Q M F L R P E O K V ? H C N X T` in either case (`/T:n` becomes `--take-over-at n`). `/KA` is the one two-letter form. `-h` and `-V` are left to clap (help and version); `/V` and `/v` are dropped (upstream's no-op).
 - File-valued options (`L R P E`) require the colon. This keeps Unix absolute paths such as `/Library/x.dlf` or `/Users/...` from being read as `/L` or `/U`.
-- `C N X T` produce `CliError::Unsupported { option, reason }` immediately.
+- `C N X` produce `CliError::Unsupported { option, reason }` immediately.
 - Each rewritten token remembers its original spelling in a side table so that range and conflict errors can quote what the user typed (`/I:abc`, not `--start-level`).
 - Tokens after `--` are not translated.
 
@@ -281,7 +280,8 @@ entries = [
 
 - `PlayScene` owns the recorder for a live game. When the game ends (any way), the finished bytes and metadata (initials if entered, score, format) become `Shell.last_game`.
 - With `--record`, `last_game` is written to that path at once and cleared. Otherwise `Action::SaveRecording` on the title writes it to `<data dir>/recordings/<initials><score>.drf` and clears it. Initials are those just entered, else `___`; if the name exists, `-2`, `-3`, … is appended before the extension. Upstream's 8.3 squeezing and its current-directory target are dropped.
-- `--verify`: `PlaybackScene` with `verify = true`; on end the scene returns `Exit(code)` with the status mapped from the replay result (0 ok, 1 bad file, 2 diverged, 3 stopped, 4 truncated) and, for 0, the result line is printed by `main` just before returning. `headless.rs` runs the same replay source in a plain loop without creating an event loop.
+- `--verify`: `PlaybackScene` with `verify = true`; on end the scene returns `Exit(code)` with phase 4's `ReplayReport::exit_status()` (0 verified or completed, 1 bad file, 2 failed, 3 stopped, 4 truncated) and, for 0, `ReplayReport::result_line()` is printed by `main` just before returning. `headless.rs` calls phase 4's `verify` without creating an event loop.
+- `--take-over-at <tick>` (alias `/T:n`), valid with `--play` only: the scene passes the tick as `ReplayOptions::take_over_after`. After that tick the play controls are live, the game continues as an ordinary game that is never eligible for a high score, and a recording made with `--record` covers both parts.
 
 ### D12. Errors and messages
 
@@ -302,9 +302,9 @@ Windows: the binary is built for the console subsystem in this change, so `--hel
 ### D13. How the design stays idiomatic Rust
 
 - **Ownership instead of globals.** `App` owns the window, surface, audio and pads; `Shell` owns the scene, settings, score tables and the last recording; `PlayScene` owns its `Game`. The audio callback owns the synthesiser outright. The only shared state is one command queue and one `AtomicBool`.
-- **Enums and state machines instead of flag integers and blocking loops.** `Scene`, `Transition`, `Action`, `GameMode`, `ScaleMode`, `Audio`, `LoadStatus`, `PauseReason`; every `match` is exhaustive, so adding a scene or action forces each handler to consider it.
+- **Enums and state machines instead of flag integers and blocking loops.** `Scene`, `Transition`, `Action`, `GameMode`, `ScaleMode`, `Audio`, `LoadStatus`; every `match` is exhaustive, so adding a scene or action forces each handler to consider it.
 - **Types for units.** `FrameTime(Duration)` versus `Speed(u16)`; `KeyName` and `PadButton` newtypes that only exist for valid names; physical-pixel `Rect`.
-- **`Result` and `ExitCode` instead of `exit()` inside callbacks.** Upstream calls `exit(0)` from its event filter; here a close request is data in `FrameInput` and the single exit path runs the saves.
+- **`Result` and `ExitCode` instead of `exit()` inside callbacks.** Upstream calls `exit(0)` from its event filter; here a close request is data in `ShellInput` and the single exit path runs the saves.
 - **Injected time and files.** `Clock` for pacing; score and config stores take a directory path, so tests use temporary directories; no test reads the real user profile.
 
 ### D14. Compatibility quirks reproduced, and upstream defects fixed
@@ -318,12 +318,12 @@ Reproduced (each named in code, listed in `docs/compat-quirks.md`, with the test
 | Fire sampled on tick N acts on tick N+1 | core fire latch | `fire_takes_effect_next_tick` |
 | Alternating players both use player-1 controls | core slot mapping | `alternating_uses_p1_controls` |
 | Speed keys step 10000 µs; no decrease at or below 10000 µs | `shell::play` | `speed_floor` |
-| Pause consumes no ticks (gauntlet clock stops) | `PlayScene.paused` | `pause_consumes_no_ticks` |
+| Pause consumes no ticks (gauntlet clock stops) | core pause phase, requested through `FrameInput::pause` | `pause_consumes_no_ticks` |
 | High-score test is strict `>` tenth place on the wrapped six-digit score; ties insert above | `scores::ScoreTable` | `qualify_strict`, `insert_tie_above` |
 | Alternating two-player games use the one-Digger table | `TableKey::from_mode` | `table_key_mapping` |
-| Game-over order: TIME UP 50 frames, entry per digger, GAME OVER 50 frames only if nobody entered and not gauntlet | `shell::game_over` | `game_over_sequences` |
+| Game-over order: entry per qualifying digger on `player_out`, then the core's `GAME OVER` / `TIME UP` notice for 50 frames (always shown; phase 3 deviation) | `shell::game_over` | `game_over_sequences` |
 | Title cycle of 287 frames with the documented key frames | `shell::title` script table | `title_script_keyframes`, golden frame CRCs |
-| Verification statuses 0–4 and the result line format | `shell::recording`, `main` | `tests/verify_cli.rs` |
+| Verification statuses 0–4 and the result line format | phase 4's `ReplayReport`, surfaced by `main` | `tests/verify_cli.rs` |
 
 Fixed, as the porting plan's "presentation or usability bug" class (each also listed in `docs/compat-quirks.md` as a deliberate difference): sound can be switched on after a quiet start; arrow keys do not type letters in initials entry and only letters are accepted; the volume setting works; function actions fire once per press; aborting key redefinition restores the old keys; closing the window saves instead of calling `exit`; a bad level file or invalid mode combination is an error instead of being ignored or indexing out of bounds; the result line no longer needs an environment variable.
 
@@ -335,13 +335,13 @@ Automated, no window or device (CI on all three operating systems):
 - `present::blit` — a 640×400 test pattern scaled 1×, 2×, non-integer; palette expansion.
 - `pacing` — fake clock: no drift over 7500 frames with jitter, stall re-anchor, speed change, unpaced budget.
 - `input` — binding lookup, sticky/held sampling, once-per-press actions, repeat suppression, focus loss, stick hysteresis and dead zone, pad slot assignment and removal.
-- `shell` — scripted `FrameInput` sequences against every scene: title start/exclusions, mode cycle, pause and resume, focus-loss pause, quit paths, game-over sequences, initials entry (keyboard and pad), redefinition including conflicts and abort; golden CRCs of the title frame and the initials screen.
+- `shell` — scripted `ShellInput` sequences against every scene: title start/exclusions, mode cycle, pause and resume, focus-loss pause, quit paths, game-over sequences, initials entry (keyboard and pad), redefinition including conflicts and abort; golden CRCs of the title frame and the initials screen.
 - `cli` — table tests for every alias, absolute-path cases, unsupported options, conflicts, ranges.
 - `config` — defaults, each key's range, unknown keys, precedence, save rules, round-trip of the default file.
 - `scores` — qualify/insert, mapping, load/recover/rename, atomic save.
 - Integration tests of the built binary: `--help`, `--version`, usage errors, config errors, `--verify --headless` against small upstream recordings for statuses 0, 1, 2 and 4.
 
-Manual, from `docs/testing/desktop-checklist.md`, once per platform (Linux X11, Linux Wayland, Windows, macOS) before the change is archived: window title, icon, resize and letterboxing; Alt+Enter and F11; pointer hidden in fullscreen; HiDPI display; pacing by stopwatch (750 frames per minute shown by a debug counter); sound on default device, with no device, device removed while playing, F9 after `--quiet`; one and two gamepads, hot-plug, stick drift; close button in each scene; files created in the documented directories; `--verify` status 3 by pressing F10.
+Manual, from `docs/testing/desktop-checklist.md`, once per platform (Linux X11, Linux Wayland, Windows, macOS) before the change is archived: window title, icon, resize and letterboxing; Alt+Enter and F11; pointer hidden in fullscreen; HiDPI display; pacing by stopwatch (750 frames per minute shown by a debug counter); sound on default device, with no device, device removed while playing, F9 after `--quiet`; one and two gamepads, hot-plug, stick drift; close button in each scene; files created in the documented directories; `--verify` status 3 by pressing F10; `--play <file> --take-over-at 200` hands the keys over after tick 200.
 
 ### D16. Alternatives rejected for the platform layer
 
@@ -366,4 +366,4 @@ Manual, from `docs/testing/desktop-checklist.md`, once per platform (Linux X11, 
 ## Open Questions
 
 - Should release builds on Windows use the GUI subsystem? Decided in `add-web-build-and-releases`; it changes no requirement here.
-- Should the pacing hint for sub-frame steps (D3.2) be honoured if the core provides it under a different shape? Resolved in task 1.1 by reading the merged interface; either answer leaves specs and tasks unchanged.
+- None beyond the Windows subsystem question above; the core gives no sub-frame pacing hint (D3.2).

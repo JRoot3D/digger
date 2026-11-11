@@ -68,6 +68,21 @@ The command line SHALL accept `--quiet` (start with all sound off), `--no-music`
 - **WHEN** the program is started with `--play a.drf --loop`
 - **THEN** the recording restarts each time it ends until the player presses F10, which ends the program
 
+### Requirement: Taking over a playback
+`--take-over-at <tick>` (alias `/T:<tick>`), given together with `--play`, SHALL hand the game being played back to the player once that tick has been played: from the next tick the player's controls drive the game and the recording supplies nothing more. The game then continues as a live game, is saved by `--record` in full, and SHALL NOT enter the high-score tables. Without `--play` the option SHALL be refused with exit status 64. (research 05 §3, §4.6)
+
+#### Scenario: Take over after tick 500
+- **WHEN** the program is started with `--play game.drf --take-over-at 500`
+- **THEN** ticks 1 to 500 follow the recording and from tick 501 the arrow keys move Digger
+
+#### Scenario: Upstream form
+- **WHEN** the program is started as `digger /P:game.drf /T:500`
+- **THEN** it behaves as with `--play game.drf --take-over-at 500`
+
+#### Scenario: Option without a playback
+- **WHEN** the program is started with `--take-over-at 500` and no `--play`
+- **THEN** standard error names `--take-over-at` and `--play`, and the exit status is 64
+
 ### Requirement: Play-and-verify
 `--verify <file>` SHALL play one recording and exit with status 0 if it ran to its end in agreement with the recording, 1 if the file cannot be opened or is not a recording, 2 if the game diverged from a checkpoint or a record is invalid, 3 if playback was stopped before the end, and 4 if an extended recording lacks its end marker. With `--record`, the replayed game is saved to that file before exiting. (research 01 §1.1, research 05 §3)
 
@@ -106,7 +121,7 @@ A verification run that ends with status 0 SHALL print exactly one line on stand
 - **THEN** the result line is printed and the exit status is 0
 
 ### Requirement: Upstream option aliases
-The command line SHALL also accept upstream's single-letter options, with `/` or `-`, in either letter case, value after `:`: `/S:n` speed, `/I:n` start level, `/G[:secs]` gauntlet, `/2` two diggers, `/U` unlimited lives, `/Q` quiet, `/M` no music, `/F` fullscreen, `/L:file` levels, `/R:file` record, `/P:file` play, `/E:file` verify, `/O` loop, `/K`, `/KA` redefine keys, `/?`, `/H` help. `/V` is ignored. A number may follow the letter directly (`/S40`). (research 01 §1.1, research 05 §3)
+The command line SHALL also accept upstream's one-letter options, with `/` or `-`, in either case, value after `:`: `/S:n` speed, `/I:n` start level, `/G[:secs]` gauntlet, `/2` two diggers, `/U` unlimited lives, `/Q` quiet, `/M` no music, `/F` fullscreen, `/L:file` levels, `/R:file` record, `/P:file` play, `/E:file` verify, `/T:n` take over, `/O` loop, `/K`, `/KA` redefine keys, `/?`, `/H` help. `/V` is ignored. A number may follow the letter directly (`/S40`). (research 01 §1.1, research 05 §3)
 
 #### Scenario: Classic command line
 - **WHEN** the program is started as `digger /S:40 /Q /G:120 /2 /U /I:3`
@@ -121,7 +136,7 @@ The command line SHALL also accept upstream's single-letter options, with `/` or
 - **THEN** the argument is taken as a level file name, not as the `/U` option
 
 ### Requirement: Unsupported upstream options
-The upstream options for features this port does not have SHALL be refused: `/C` (CGA graphics), `/N` (networked play), `/X` (embedding in an X11 window) and `/T` (taking over a playback). The program SHALL print `digger: error: option <opt> is not supported: <reason>` on standard error and exit with status 64 without opening a window. (port decision; porting plan non-goals)
+The upstream options for features this port does not have SHALL be refused: `/C` (CGA graphics), `/N` (networked play) and `/X` (embedding in an X11 window). The program SHALL print `digger: error: option <opt> is not supported: <reason>` on standard error and exit with status 64 without opening a window. (port decision; porting plan non-goals)
 
 #### Scenario: CGA requested
 - **WHEN** the program is started as `digger /C`
@@ -223,7 +238,7 @@ A command-line value that is not a number where one is needed, or is out of rang
 - **THEN** standard error names `/I` and `abc` and the exit status is 64
 
 ### Requirement: Invalid option combinations
-The program SHALL refuse, with exit status 64 and a message naming both options: `--players 2` with `--two-diggers` or with `--gauntlet` (there is no such game mode); `--verify` with `--play` or `--loop`; `--headless` without `--verify`; `--loop` without `--play`. (research 01 §1.2 describes the undefined upstream behaviour for the first case; rejecting is a port decision)
+The program SHALL refuse, with exit status 64 and a message naming both options: `--players 2` with `--two-diggers` or with `--gauntlet` (there is no such game mode); `--verify` with `--play`, `--loop` or `--take-over-at`; `--headless` without `--verify`; `--loop` without `--play`. (research 01 §1.2 describes the undefined upstream behaviour for the first case; rejecting is a port decision)
 
 #### Scenario: Two players and two diggers
 - **WHEN** the program is started with `--players 2 --two-diggers`

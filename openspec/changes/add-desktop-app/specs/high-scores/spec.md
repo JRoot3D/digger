@@ -25,7 +25,7 @@ Each table SHALL hold exactly ten entries ordered from highest to lowest, each m
 - **THEN** all four tables consist of ten `...` entries with score 0
 
 ### Requirement: Eligible games
-Only a game played by a person from start to end SHALL be considered for the tables: playback of a recording (`--play`, `--verify`) and games ended with the quit action or by closing the window never enter them. Games with unlimited lives are eligible, as upstream, because that setting only lifts the five-lives limit on bonus lives. (research 01 §2.1 and §6.3)
+Only a game played by a person from start to end SHALL be considered for the tables: playback of a recording (`--play`, `--verify`), a playback taken over by the player (`--take-over-at`) and games ended with the quit action or by closing the window never enter them. Games with unlimited lives are eligible, as upstream, because that setting only lifts the five-lives limit on bonus lives. (research 01 §2.1 and §6.3)
 
 #### Scenario: Playback of a record-breaking game
 - **WHEN** a recording that ends with 500000 points is played back with `--play`

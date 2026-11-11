@@ -96,20 +96,24 @@ outside with Playwright (decision 12).
 
 ### 4. Platform seam: same module names, two implementations
 
-The `digger` crate keeps its application logic (`app`: the `ApplicationHandler`
-that owns the `Game`, the presenter, the input mapper and the sound link) free
-of `cfg`. Everything target-specific sits under `platform/`, where `mod.rs`
-selects `native` or `web` by `cfg(target_arch = "wasm32")` and re-exports the
-same names:
+Phase 6 already split the `digger` crate for this: the device-free modules
+(`shell`, `input`, `pacing`, `present`, `config`, `scores`) hold all program
+logic and are free of `cfg`, and only `platform/` (`app`, `window`, `audio`,
+`pads`) and `config/paths.rs` touch devices and files. This change keeps
+that split and adds a second implementation behind the same names:
+`platform/mod.rs` selects `native` (phase 6's modules, moved) or `web` by
+`cfg(target_arch = "wasm32")`. `App` below is phase 6's `platform::app::App`,
+which owns the `Shell` (and through it the `Game`), the presenter, the input
+state and the sound handle. The seams:
 
 | Seam | Shared contract | Native | Web |
 |---|---|---|---|
-| `launch` | `fn launch_options() -> (LaunchOptions, Vec<LaunchWarning>)` | `clap` over `argv` | pure `parse_query(&str)` over `location.search` |
+| `launch` | `fn launch_layer() -> (Layer, Vec<LaunchWarning>)` (phase 6's command-line settings layer) | phase 6's `cli` (`clap` over `argv`) | pure `parse_query(&str)` over `location.search` |
 | `run` | `fn run(app: App) -> Result<(), RunError>` | `EventLoop::run_app`, returns at exit | `EventLoop::spawn_app`, returns at once |
 | `Store` | `load(StoreKey) -> Result<Option<String>, StoreError>`, `save(StoreKey, &str) -> Result<(), StoreError>` | files in the config and data directories | local storage keys `digger:settings`, `digger:scores` |
-| `AudioOutput` | state machine below | starts in `Running` | starts in `Locked` |
+| `AudioOutput` | state machine below (replaces phase 6's `Audio { Closed, Open }`) | starts in `Running` | starts in `Locked` |
 | `FileTransfer` | `export(name, bytes)`, `request_import()`; results arrive as `AppEvent`s | write to the recordings directory; import path from the command line | download; file picker |
-| `Shell` | `set_notice(Notice)`, `set_bindings(&Bindings)`, `set_status(&Status)` | log line / no-op | updates page elements |
+| `PageUi` | `set_notice(Notice)`, `set_bindings(&Bindings)`, `set_status(&Status)` | `digger: notice:` line / no-op | updates page elements |
 | time | `Instant` | `std::time` | `web_time` |
 
 `StoreKey` is an enum (`Settings`, `Scores`), not a string, so a caller cannot
@@ -134,21 +138,22 @@ unreadable and untestable.
 
 ### 5. Event loop and pacing
 
-Both targets drive the game from `WindowEvent::RedrawRequested`. On the web,
-`winit` ties redraw requests to `requestAnimationFrame`, which is the
-animation callback the spec requires; the handler asks for the next redraw
-before it returns. On the desktop the existing deadline-based wait stays.
+On the desktop phase 6's driver stays as it is: frames run from
+`about_to_wait` and the loop sleeps until the pacer's next deadline. On the
+web the game is driven from `WindowEvent::RedrawRequested`, which `winit`
+ties to `requestAnimationFrame`, the animation callback the spec requires;
+the handler asks for the next redraw before it returns.
 
-The pacing arithmetic is one pure type shared by both: `Pacer { frame_len,
-accumulated, last }` with `fn due(&mut self, now: Instant) -> Steps`, where
-`Steps` is `Run(n)` with `n` in `0..=4` or `Unthrottled`. It adds the elapsed
-time, returns how many whole frame lengths are due, caps at 4 and drops the
-rest. Speed 0 yields `Unthrottled`: the driver then steps repeatedly until 8
-ms of the callback have been used, which keeps the page responsive during
-fast playback. `Pacer::reset(now)` is called when the page becomes visible
-and when speed changes, so hidden time is never caught up. The type takes
-`now` as an argument and is tested with synthetic timestamps (60 Hz, 144 Hz,
-a 2-second stall).
+The pacing arithmetic is phase 6's `Pacer` (`pacing.rs`, already pure over
+an injected `Clock`), used unchanged by both drivers: absolute deadlines
+`anchor + k × frame time`, at most 3 frames due at once, and a re-anchor at
+the current time when more than three frame times behind, so a backlog is
+dropped rather than replayed. With speed 0 the web driver uses the same
+unpaced rule as the desktop: step repeatedly until 8 ms of the callback have
+been used, which keeps the page responsive during fast playback. The pacer
+is re-anchored when the page becomes visible and when speed changes, so
+hidden time is never caught up. The web `Clock` reads `web_time::Instant`;
+host tests feed synthetic timestamps (60 Hz, 144 Hz, a 2-second stall).
 
 Visibility comes from the document's `visibilitychange` event, forwarded as
 `AppEvent::Visibility(bool)`. On hidden, `App` stops stepping, tells
@@ -162,11 +167,14 @@ game frame per N callbacks" rule — wrong on any display that is not 60 Hz.
 
 ### 6. Presentation on a canvas
 
-The scale computation (`fit(viewport, picture) -> Scale`) is the desktop
-function, moved unchanged into shared code; it returns an integer factor or,
-below 640×400, a reduced size. On the web the canvas backing store is set to
-the scaled picture size in device pixels, the `softbuffer` surface is that
-size, and the CPU upscale of the 640×400 indexed picture is the shared one.
+The scale computation is phase 6's `present::scale::viewport(win_w, win_h,
+mode)`, already pure and shared: in the default `integer` mode it gives the
+largest whole-number scale or, below 640×400, the `fit` size; the stored
+`video.scale` setting (`integer`, `fit`, `stretch`) applies as on the
+desktop. On the web the viewport rectangle's size, computed for the browser
+viewport in device pixels, becomes the canvas backing store size, the
+`softbuffer` surface is that size, and the CPU upscale of the 640×400
+indexed picture is phase 6's `present::blit`.
 The page's style sheet centres the canvas on a black background, sets its CSS
 size to backing size divided by the device pixel ratio, and sets
 `image-rendering: pixelated` for the reduced case. Letterboxing is therefore
@@ -179,19 +187,21 @@ Viewport and pixel-ratio changes arrive as `winit` `Resized` and
 ```
 enum AudioOutput {
     Off,                       // quiet option, or sound switched off
-    Locked  { synth: Synth },  // web start state: frontend owns the synth
-    Running { stream: Stream },// synth moved into the audio callback
+    Locked  { source: AudioSource }, // web start state: frontend owns the engine's audio side
+    Running { stream: Stream },      // source moved into the audio callback
     Failed  { reason: AudioError },
 }
 ```
 
-While `Locked`, the frontend owns the `digger-sound` synthesiser, applies
-sound commands to it each frame and renders-and-discards the samples for the
-elapsed time, so tunes and effects progress silently. On the first pressed
+While `Locked`, the frontend owns the `AudioSource` half of
+`digger-sound`'s `sound_link` (phase 5), keeps sending each frame's commands
+through the `SoundHandle` as usual and calls `fill` into a scratch buffer
+for the elapsed time, discarding the samples, so tunes and effects progress
+silently. On the first pressed
 key, pointer button or gamepad button, `App` calls `unlock()`, which consumes
-`Locked`, opens the `cpal` output stream and moves the synthesiser into its
+`Locked`, opens the `cpal` output stream and moves the `AudioSource` into its
 callback, giving `Running`; a refusal gives `Failed` and a page notice. The
-same event is then processed as ordinary input. Because the synthesiser is
+same event is then processed as ordinary input. Because the source is
 moved, never shared, there is no lock and no "is audio ready" flag.
 Gamepad presses are not always counted as a user gesture by browsers; if the
 stream fails to start for that reason the state stays `Locked` and the next
@@ -200,7 +210,7 @@ key leads to `Locked`-then-`unlock()` in one step, since the key press is
 itself a gesture.
 
 The prompt is a page element shown while the state is `Locked`; it is set
-through `Shell::set_notice`, never drawn into the framebuffer.
+through `PageUi::set_notice`, never drawn into the framebuffer.
 
 In the browser `cpal` runs its callback on the main thread through Web Audio.
 The single-producer queue between game and synthesiser works unchanged with
@@ -229,12 +239,13 @@ forty lines of `web-sys`.
 
 ### 9. Launch options from the query string
 
-`parse_query(&str) -> (LaunchOptions, Vec<LaunchWarning>)` is a pure
-function compiled and tested on every target. `LaunchOptions` is the struct
-`clap` already fills on the desktop, so mode validation (for example
-rejecting combinations the simulation does not support) is one shared
-function returning `Result<GameConfig, ConfigError>`. Each rejected parameter
-is a `LaunchWarning { name, value, reason }` shown through `Shell`; nothing
+`parse_query(&str) -> (Layer, Vec<LaunchWarning>)` is a pure
+function compiled and tested on every target. It fills the same settings
+`Layer` that phase 6's command line fills on the desktop, so precedence
+(`Settings::resolve`), ranges and mode validation are phase 6's code, and
+the `mode` values are the `game.mode` names of the configuration file. Each
+rejected parameter
+is a `LaunchWarning { name, value, reason }` shown through `PageUi`; nothing
 panics on user-supplied text. Launch options are layered over stored settings
 in memory and are never passed to `Store::save`.
 
@@ -248,7 +259,7 @@ generated module, shows the failure message if the import or initialisation
 rejects, and installs `error`/`unhandledrejection` listeners that show the
 internal-error message; with `panic = "abort"` a Rust panic surfaces as such
 an error, and a panic hook first writes the message to the console. The page
-root carries `data-` attributes maintained through `Shell::set_status`
+root carries `data-` attributes maintained through `PageUi::set_status`
 (`data-phase`, `data-audio`, `data-scale`, `data-frames`, `data-result`);
 they double as the observation points for the browser tests. Version and
 revision are compiled in from `CARGO_PKG_VERSION` and an `option_env!` value
@@ -342,7 +353,11 @@ open a terminal. The manual explains the first-launch Gatekeeper step.
 
 **Windows** uses the MSVC target with the C runtime linked statically
 (`-C target-feature=+crt-static` for that target in `.cargo/config.toml`), so
-the archive needs no redistributable.
+the archive needs no redistributable. The release binary stays a console
+subsystem program, as phase 6 built it: `--help`, notices and the
+`--verify` result line and exit statuses must work from a terminal and in
+scripts, at the cost of a console window when started by double-click. This
+closes the question phase 6 left to this change.
 
 ### 14. Archive layout and reproducible `xtask dist`
 
@@ -396,9 +411,9 @@ allow-list.
 - **Ownership instead of globals.** Upstream's browser glue calls exported C
   functions that read global state (`Module._digger_get_keymap`, research 05
   §8.4). Here `App` owns the game and all platform objects; the page is
-  updated by `App` pushing typed values through `Shell`, and the browser
+  updated by `App` pushing typed values through `PageUi`, and the browser
   reaches the application only by sending `AppEvent`s.
-- **Enums and state machines instead of flags.** `AudioOutput`, `Steps`,
+- **Enums and state machines instead of flags.** `AudioOutput`,
   `AppEvent`, `Notice`, `StoreKey`, `Platform` (the `xtask dist` argument)
   are closed enums; the audio unlock is a consuming state transition.
 - **No blocking.** The web driver returns to the browser after every
@@ -418,7 +433,7 @@ to reproduce. Four documented behaviours touch it and are kept visible:
 
 | Behaviour | Class | Isolation | Test |
 |---|---|---|---|
-| Speed and pacing never change game results (research 05 §6.3) | Simulation invariant | `Pacer` only decides when `Game::step` is called, never what it is given | Playwright replay of an upstream recording at `speed=0` matches score, level and ticks; `pacer_*` unit tests |
+| Speed and pacing never change game results (research 05 §6.3) | Simulation invariant | phase 6's `Pacer` only decides when `Game::step` is called, never what it is given | Playwright replay of an upstream recording at `speed=0` matches score, level and ticks; `pacer_*` unit tests |
 | The picture is game state (porting plan §3) | Simulation invariant | Prompt, notices and letterbox are page elements; the canvas holds only game pixels | Playwright replay with the prompt visible still matches; canvas backing size test |
 | Exit from the title screen does not quit in a browser (research 05 §8.4) | Presentation, kept from upstream's web build | `run` on web never exits; the frontend ignores the game's exit outcome and re-enters the title | `web_exit_stays_on_title` (host test with the web policy) and a Playwright check |
 | Sound can be switched on after a quiet start (upstream bug, fixed in phase 6) | Presentation fix | `AudioOutput::Off -> Locked -> Running` on the toggle key | `audio_quiet_then_toggle_unlocks` host test; Playwright `?quiet` test |
@@ -459,7 +474,8 @@ row and the fact that the hidden-tab pause uses the game's own pause phase.
 ## Migration Plan
 
 Nothing existing is replaced. Order of introduction: platform seam refactor
-with desktop behaviour unchanged (all phase 6 tests stay green), web
+with desktop behaviour unchanged (all phase 6 tests stay green; the
+device-free modules are not touched), web
 implementations, page and tests, then distribution. The first release is cut
 from a pre-release tag (`v0.1.0-rc.1`) to exercise the workflow without
 deploying the site; the draft release is inspected and deleted or published.

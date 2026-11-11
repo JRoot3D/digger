@@ -80,7 +80,8 @@ never by resemblance of the code.
 ### Quirk policy
 
 Every deviation from "what a clean implementation would do" is listed in
-`docs/compat-quirks.md` (created by the simulation change) under one of these
+`docs/compat-quirks.md` (created by `add-assets-and-renderer`; every later
+change appends its own entries) under one of these
 classes:
 
 | Class | Examples | Policy |
@@ -118,12 +119,12 @@ many places. The port turns this inside out: the game is an explicit state
 machine advanced one frame at a time by its caller.
 
 ```rust
-let mut game = Game::new(config, seed_source);
+let mut game = Game::new(config, base_seed);
 loop {
-    let outcome = game.step(controls);      // exactly one frame
+    let outcome = game.step(&input);        // exactly one frame
     for cmd in game.drain_sound() { .. }    // sound commands produced this frame
     present(game.framebuffer());            // 640x400 indices + palette
-    if outcome.is_finished() { break; }
+    if outcome.finished.is_some() { break; }
 }
 ```
 
@@ -135,6 +136,9 @@ loop {
   original.
 - The frontend owns time. It decides when to call `step` (frame pacing) and
   may run it as fast as possible for replays and tests.
+- `step_observed` is the same step with an observer whose hooks see, and may
+  replace, each round seed, level layout, raw control value and movement
+  sample. Recording, playback and checkpoint verification are built on it.
 
 ### Rendering
 
@@ -150,7 +154,8 @@ The simulation emits typed `SoundCommand`s. `digger-sound` consumes them and
 renders samples on the audio thread; the two sides are joined by a lock-free
 single-producer queue. Sound never feeds back into the simulation: the two
 places where the original waits for a tune to finish are modelled as fixed
-frame counts.
+counts (40 frames after a completed level; the 89-tick wait of the death
+sequence).
 
 Sound is held to **audible** fidelity (same notes, durations, effect shapes,
 priorities), verified against the documented tick-level sequences and the
@@ -164,11 +169,13 @@ the C build.
 | Window and events | `winit` 0.30 | X11, Wayland, Windows, macOS, web |
 | Presenting the picture | `softbuffer` 0.4 | CPU framebuffer; integer scaling with letterboxing |
 | Audio device | `cpal` 0.18 | Callback model; pulls samples from `digger-sound` |
+| Sound command queue | `rtrb` | Lock-free single-producer ring between game and audio thread |
 | Gamepads | `gilrs` 0.11 | Replaces upstream's dead joystick code |
-| Command line | `clap` 4 | Idiomatic long options; upstream's `/X:value` forms accepted as aliases |
+| Command line | `clap` 4 | Idiomatic long options; upstream's `/X:value` forms accepted as aliases; exit statuses 1–4 reserved for verification results |
 | Configuration and paths | `serde` + `toml`, `directories` | Platform config and data directories |
 | Inflate (title picture) | `miniz_oxide` | Pure Rust |
 | State hash | `md-5` | Checkpoint compatibility with `.edrf` recordings |
+| Asset and corpus digests | `sha2` | `xtask` and tests only |
 
 Versions are pinned in `Cargo.lock`; all have a minimum Rust version at or
 below 1.88.
@@ -238,15 +245,15 @@ workspace building and its tests green.
 | # | Change | Delivers | Capabilities specified |
 |---|---|---|---|
 | 1 | `bootstrap-rust-workspace` | Workspace, toolchain pin, lints, CI, licence, `xtask` skeleton | none (tooling only) |
-| 2 | `add-assets-and-renderer` | Imported assets; indexed framebuffer; palettes; text; sprite layer with collisions | `game-assets`, `rendering`, `sprite-layer` |
+| 2 | `add-assets-and-renderer` | Imported assets; indexed framebuffer; palettes; text; sprite layer with collisions; start of `docs/compat-quirks.md` | `game-assets`, `rendering`, `sprite-layer` |
 | 3 | `add-simulation-core` | Levels and playfield, Digger, monsters, bags, scoring, rounds and modes, as a headless deterministic state machine | `playfield`, `digger`, `monsters`, `gold-bags`, `scoring`, `game-flow` |
 | 4 | `add-recording-and-conformance` | DRF and eDRF codecs, record and playback, state hash, replay runner, upstream recordings as a test suite | `game-recording`, `replay-verification` |
 | 5 | `add-sound-engine` | Effects, four tunes, synthesis, golden tests | `sound` |
 | 6 | `add-desktop-app` | Playable game: window, scaling, pacing, keyboard and gamepad, title screen, high scores, configuration, command line | `desktop-app`, `input-controls`, `configuration`, `high-scores` |
 | 7 | `add-web-build-and-releases` | Browser build; release archives for Linux, Windows, macOS | `web-build` |
 
-Phases 5 and 6 depend only on phase 3's interfaces, so phase 5 can proceed in
-parallel with phase 4.
+Phase 5 depends only on phase 3's interfaces, so it can proceed in parallel
+with phase 4; phase 6 needs both.
 
 ```
 1 bootstrap ── 2 assets+renderer ── 3 simulation ─┬─ 4 recording+conformance ─┐

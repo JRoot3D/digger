@@ -238,7 +238,7 @@ The sound toggle (default F9) SHALL switch all sound on and off; the music toggl
 - **THEN** the main tune stops and eating an emerald still makes its sound
 
 ### Requirement: Game-over sequence
-When a player's game ends, the program SHALL, in this order: in gauntlet mode show `TIME UP` at (120, 0) in colour 3 for 50 frames; run high-score entry for each digger of that player whose score qualifies; and, if nobody entered initials and the mode is not gauntlet, show `GAME OVER` at (104, 0) in colour 3 for 50 frames. Then the other player continues (alternating mode) or the title screen returns. (research 01 §6.3)
+When a player's game ends, the program SHALL run high-score entry for each digger of that player whose score qualifies, and then let the game show its own closing notice: `GAME OVER` at (104, 0), or `TIME UP` at (120, 0) in gauntlet mode, in colour 3 for 50 frames, whether or not initials were entered. Then the other player continues (alternating mode) or the title screen returns. (research 01 §6.3; the notice after an entry is a port decision of the `game-flow` capability)
 
 #### Scenario: Ordinary game over
 - **WHEN** a one-player game ends with a score that does not qualify
@@ -246,14 +246,14 @@ When a player's game ends, the program SHALL, in this order: in gauntlet mode sh
 
 #### Scenario: Gauntlet time-out with a qualifying score
 - **WHEN** the gauntlet clock reaches zero and the score qualifies
-- **THEN** `TIME UP` is shown for 50 frames, initials entry follows, and `GAME OVER` is not shown
+- **THEN** initials entry follows, then `TIME UP` is shown for 50 frames, and `GAME OVER` is not shown
 
 #### Scenario: First of two alternating players is out
 - **WHEN** player 1 loses the last life in a two-player game while player 2 has lives left
 - **THEN** player 1's game-over sequence runs and player 2's turn follows
 
 ### Requirement: Playback on screen
-A recording given for playback SHALL be shown in the window with picture and sound at the current speed. Player movement and fire controls SHALL be ignored during playback; pause, speed, sound, music, fullscreen and quit actions work. When the recording ends, the program SHALL go on without a game-over sequence and without high-score entry. (research 05 §3, research 01 §6.3)
+A recording given for playback SHALL be shown in the window with picture and sound at the current speed. Player movement and fire controls SHALL be ignored during playback; pause, speed, sound, music, fullscreen and quit actions work. When the recorded game ends, its closing notice is shown as in a live game and the program SHALL go on without high-score entry. (research 05 §3, research 01 §6.3)
 
 #### Scenario: Watching a recording
 - **WHEN** the program is started with `--play thevoid.drf`

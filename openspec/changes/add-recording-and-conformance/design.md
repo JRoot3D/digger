@@ -5,10 +5,12 @@
 See proposal.md for motivation. The state this design starts from:
 
 - `add-simulation-core` has delivered `digger-core` with `Game::new(config,
-  seed_source)` and `Game::step(controls)`: a deterministic state machine
-  advanced one frame at a time, with per-round seeds, raw control bits per
-  input slot, the direction resolver, the one-tick fire latch and
-  `docs/compat-quirks.md`. Nothing has yet checked it against the original.
+  base_seed)`, `Game::step(&FrameInput)` and `Game::step_observed(&FrameInput,
+  &mut dyn Observer)`: a deterministic state machine advanced one frame at a
+  time, with per-round seeds, raw controls per input slot, the direction
+  resolver, the one-tick fire latch, the `Observer` hooks, the read-only
+  `StateView` and its additions to `docs/compat-quirks.md`. Nothing has yet
+  checked it against the original.
 - Upstream's recordings are the only upstream file format the port reads and
   writes. Its recorder and player are woven through the game as global hooks
   (`recputdir`, `playgetdir`, `edrf_input`, `edrf_tick`, …) that read and set
@@ -62,12 +64,12 @@ crates/digger-core/src/
     edrf.rs       EdrfRecording, Record, ControlRuns, EdrfWriter
     naming.rs     default file name
   state_hash/
-    mod.rs        StateView, walk(), hash(), hash_at_round_end()
+    mod.rs        HashFields from the simulation's StateView, walk(), hash(), hash_at_round_end()
     layout.rs     the field table (names, widths, order, conditions)
     codes.rs      enum -> wire-code mappings
   replay/
     mod.rs        Replay, ReplayOptions, ReplayReport, Outcome, verify()
-    director.rs   PlaybackDirector (DRF and eDRF variants), take-over
+    playback.rs   PlaybackSource (DRF and eDRF variants), ReplayObserver, take-over
     verifier.rs   checkpoint comparison, Divergence
     recorder.rs   DrfRecorder, EdrfRecorder
     trace.rs      per-tick trace lines, decoded dump
@@ -127,65 +129,61 @@ dependency, and slower on the 240 KB bodies).
   Option<Direction>, fire: bool }`, `Record::{Input, Level, Seed, Checkpoint,
   RoundEnd, Quit, End}`, `LevelMap::{Inline(Map), Reuse(index)}`.
 
-### D4. The simulation seam: a `Director` supplies, an `Observer` watches
+### D4. The simulation seam: phase 3's `Observer`
 
-Upstream injects and records through global hooks. The port gives the
-simulation two narrow traits, used with static dispatch:
+Upstream injects and records through global hooks. `add-simulation-core`
+already provides the seam for this: `Game::step_observed(&FrameInput, &mut
+dyn Observer)`, whose hooks are called at the points the original consumed
+or produced each value and may replace it (its design D8):
 
 ```rust
-pub trait Director {
-    fn round_seed(&mut self, round: u32) -> u32;
-    fn level_map(&mut self, level: u16, plan: PlanIndex) -> LevelMapSource;   // BuiltIn | Recorded(Map) | Mismatch
-    fn raw_controls(&mut self, slot: Slot) -> Controls;                       // before direction resolution
-    fn unread_slot(&mut self, slot: Slot);                                    // slot not read this tick
-    fn control_read(&mut self, digger: DiggerIndex, resolved: Resolved) -> ControlRead;
-        // ControlRead::Use(Resolved) | ControlRead::EndOfRecording
-    fn quit_requested(&mut self) -> bool;                                     // polled once per frame
-}
-
 pub trait Observer {
-    fn level_started(&mut self, level: u16, map: &Map);
-    fn round_started(&mut self, seed: u32);
-    fn slot_controls(&mut self, slot: Slot, controls: Controls);
-    fn control_read(&mut self, digger: DiggerIndex, resolved: Resolved);
-    fn tick_ended(&mut self, tick: u32, state: &dyn StateView);
-    fn round_ended(&mut self, tick: u32, state: &dyn StateView);
-    fn quit(&mut self, slot: Slot);
-    fn game_ended(&mut self, ticks: u32, state: &dyn StateView);
+    fn round_seed(&mut self, round: u32, derived: i32) -> i32;
+    fn level_plan(&mut self, player: PlayerId, level: LevelNumber, layout: &LevelLayout) -> Option<LevelLayout>;
+    fn controls(&mut self, tick: u32, slot: SlotId, raw: Controls) -> Controls;   // once per slot per tick
+    fn movement(&mut self, slot: SlotId, sample: Movement) -> Movement;           // once per control read
+    fn tick_end(&mut self, tick: u32, state: StateView<'_>);
+    fn round_end(&mut self, state: StateView<'_>);                                // after clean-up
+    fn game_end(&mut self, state: StateView<'_>);
 }
 ```
 
-`Game::step_with(&mut self, director: &mut impl Director, observer: &mut impl
-Observer)` is the general form; the existing `Game::step(controls)` becomes a
-thin wrapper using a live director and a no-op observer, so phase 3's tests
-and the phase 5/6 interface are unaffected. `()` implements `Observer`;
-`(A, B)` implements it by forwarding to both, which is how "play back while
-verifying while re-recording" is composed without dynamic dispatch or shared
-mutable state.
+This change adds no trait and no entry point to the simulation. It supplies
+one implementation, `ReplayObserver`, owned by `Replay`. It holds the
+`PlaybackSource`, an optional `Verifier`, an optional recorder and an
+optional trace sink as plain fields and handles each hook in a fixed order:
+the playback source replaces the value, then the recorder, verifier and
+trace see the value actually used. That is how "play back while verifying
+while re-recording" is composed, with no shared mutable state. A live game
+being recorded uses the same struct without a playback source.
 
 Mapping to upstream's hook points:
 
 | Upstream hook | Port |
 |---|---|
-| `playgetrand` / `edrf_getrand` / `roundseed` | `Director::round_seed` |
-| `edrf_input` on playback | `Director::raw_controls` |
-| `edrf_tick` consuming unread slots | `Director::unread_slot` |
-| `playgetdir` in `getdirect` | `Director::control_read` |
-| `edrf_level` on playback | `Director::level_map` |
-| `edrf_quitting`, `playend → escape` | `Director::quit_requested`, `ControlRead::EndOfRecording` |
-| `recputrand`, `recputdir`, `recputeol`, `recputeog` | `Observer` callbacks → `DrfRecorder` |
-| `edrf_input`/`edrf_movement`/`edrf_tick`/`edrf_roundend`/`edrf_gameend` when recording | `Observer` callbacks → `EdrfRecorder` |
-| checkpoint comparison | `Observer` callbacks → `Verifier` |
+| `playgetrand` / `edrf_getrand` / `roundseed` | `Observer::round_seed` returns the recorded seed |
+| `edrf_input` on playback | `Observer::controls` returns the recorded raw controls |
+| `edrf_tick` consuming unread slots | the same hook: it is called for every slot on every tick, read or not |
+| `playgetdir` in `getdirect` | `Observer::movement` returns the DRF record's direction and fire |
+| `edrf_level` on playback | `Observer::level_plan` returns the recorded layout, or records a level-number mismatch |
+| `edrf_quitting`, `playend → escape` | the source sets an end flag; `Replay::step` puts `quit` into the next frame's `FrameInput` |
+| `recputrand`, `recputdir`, `recputeol`, `recputeog` | the same hooks, observed → `DrfRecorder` |
+| `edrf_input`/`edrf_movement`/`edrf_tick`/`edrf_roundend`/`edrf_gameend` when recording | the same hooks plus `tick_end`/`round_end`/`game_end` → `EdrfRecorder` (a slot counts as read on a tick when `movement` was called for it) |
+| checkpoint comparison | `tick_end`/`round_end`/`game_end` → `Verifier` |
 
-If phase 3 delivered a different seam, task group 1 adapts it to this shape
-before anything else; the simulation's behaviour does not change. Neither
-trait allocates on the hot path: recorders append to buffers they own, which
-is outside `Game`'s own no-allocation rule but is kept amortised (run-length
-state plus one `String`).
+Seeds are `i32` in the simulation; the codecs convert from and to the files'
+unsigned hex. Recorders append to buffers they own, which is outside
+`Game`'s own no-allocation rule but is kept amortised (run-length state plus
+one `String`). Task group 1 checks each row against the simulation as
+merged; if a hook is not called at the point a row needs, that is a
+simulation defect fixed there with a test, not a second seam.
 
 *Alternative rejected:* pre-decoding a recording into a per-tick control
-array and calling `step(controls)`. That works for eDRF but not DRF, whose
-records are per control read and can only be placed by running the game.
+array and calling `step`. That works for eDRF but not DRF, whose records are
+per control read and can only be placed by running the game.
+*Alternative rejected:* separate "director" and "observer" traits with a
+second `step` entry point — it duplicates what phase 3's hooks already do
+and gives the simulation two seams to keep in step.
 *Alternative rejected:* callbacks as boxed closures stored in `Game` — it
 puts borrowed, non-deterministic state inside the simulation value and
 defeats `Clone`/snapshotting.
@@ -196,34 +194,39 @@ The hash is a wire format shared with 27 files. It is defined in
 `state_hash/layout.rs` as an ordered table of entries
 `{ block, name, width, repeat, condition }` (for example `Digger /
 "bag_push_pause" / I16 / per digger`, `Monster / "sprite_x" / I16 / per slot
-/ when body present`). The simulation implements one trait:
+/ when body present`). Its input is phase 3's read-only `StateView<'_>`
+(typed getters for every hashed variable). One function per block turns the
+view into plain data:
 
 ```rust
-pub trait StateView {
-    fn field_cell(&self, index: usize) -> u16;
-    fn digger(&self, slot: usize) -> DiggerHashFields;     // plain integers and bools
-    fn monster(&self, slot: usize) -> MonsterHashFields;   // body: Option<MonsterBodyFields>
-    fn bag(&self, slot: usize) -> BagHashFields;
-    // … shared bonus/emerald values, rng state, scores, gauntlet clock
-}
+fn digger_fields(view: StateView<'_>, slot: usize) -> DiggerHashFields;     // plain integers and bools
+fn monster_fields(view: StateView<'_>, slot: usize) -> MonsterHashFields;   // body: Option<MonsterBodyFields>
+fn bag_fields(view: StateView<'_>, slot: usize) -> BagHashFields;
+// … field cells, shared bonus/emerald values, rng state, scores, gauntlet clock
 ```
 
 The `*HashFields` structs are plain data built for the purpose, with every
-enum already converted to its wire code by `codes.rs` (exhaustive `match`,
-so adding a variant is a compile error there). A single `walk(view, &mut impl
+enum converted to its wire code by `codes.rs` (exhaustive `match`, so adding
+a variant is a compile error there). A single `walk(view, &mut impl
 Visitor)` visits `(block, name, value)` in table order. Three visitors use
 it: the MD5 sink (the hash), a per-block MD5 sink (trace lines), and a
 collector (decoded dump). The hash, the trace and the documentation table in
 `docs/recording-formats.md` therefore cannot disagree.
 
 The optional monster part is `Option<MonsterBodyFields>`, not a flag plus
-garbage values. Values the original keeps but never changes (`firepressed`,
+garbage values. It is `Some` from the tick a monster is spawned into the
+slot until the round's monster reset at the next round start: a kill marks
+the upstream object dead and erases its sprite but does not release it
+(research 02 §2 and §4.7; slots are cleared only at round start, §4.2), and
+research 01 §8 hashes the extra values whenever the object exists. The
+condition is `StateView`'s "spawned this round" value for the slot, as
+settled in `add-simulation-core` (its design, Open Questions). Values the original keeps but never changes (`firepressed`,
 per-digger `levdone`) are fields of `DiggerHashFields` with a comment naming
 the quirk; the simulation returns the constant.
 
 Guards: a golden test of the table itself (names, widths, order, total
 lengths 903/908/951 bytes) so that a reorder is a visible diff; unit tests
-feeding a hand-built `StateView` and comparing against a byte string written
+feeding hand-built `*HashFields` values and comparing against a byte string written
 out in the test.
 
 MD5 comes from the `md-5` crate (pure Rust, already in the porting plan).
@@ -246,7 +249,7 @@ pub struct ReplayReport { pub outcome: Outcome, pub scores: [i32; 2], pub two_sc
 
 impl Replay {
     pub fn new(recording: &Recording, options: ReplayOptions) -> Result<Replay, RecordingError>;
-    pub fn step(&mut self, observer: &mut impl Observer) -> ReplayStep;   // one frame; Running | Finished
+    pub fn step(&mut self, input: &FrameInput, extra: &mut dyn Observer) -> ReplayStep;   // one frame; Running | Finished
     pub fn game(&self) -> &Game;                                          // framebuffer, sound commands
     pub fn finish(self) -> ReplayReport;
 }
@@ -254,7 +257,10 @@ pub fn verify(bytes: &[u8], options: ReplayOptions) -> Result<ReplayReport, Reco
 impl ReplayReport { pub fn result_line(&self) -> String; pub fn exit_status(&self) -> u8; }
 ```
 
-`Replay::step` advances exactly one frame, so the desktop app can pace and
+`input` carries the caller's pause and quit requests and, after a take-over,
+the live controls; before that its controls are ignored. `extra` is an
+additional observer called after the built-in ones (`()`-like no-op for
+plain replays). `Replay::step` advances exactly one frame, so the desktop app can pace and
 present a playback and a test can loop as fast as possible; the driver never
 sleeps and never reads a clock. `verify` is `parse` + loop + `finish`.
 `Outcome` replaces upstream's five global flags (`playend`, `edrf_failed`,
@@ -275,34 +281,35 @@ driver never touches; upstream's save-and-restore of globals has no
 counterpart. A test replays a recording once per corner of a deliberately
 hostile caller configuration and asserts identical reports.
 
-### D8. Take-over is a director state change
+### D8. Take-over is a playback-source state change
 
-`PlaybackDirector` is an enum-like state machine `Playing { cursor } |
-HandedOver { live }`. When the tick count passes `take_over_after` (or on
-`request_take_over()`), it switches state; from then on it forwards to the
-live director supplied by the caller, the `Verifier` stops comparing and the
-outcome becomes `TakenOver`. Recorders are observers and do not notice.
-The decision to support this now, rather than leave it to phase 6, is that
-it costs one state and three tests here, whereas adding it later would
-reopen the driver. The key binding and option that trigger it belong to
-`add-desktop-app`.
+`PlaybackSource` is a state machine `Playing { cursor } | HandedOver`. When
+the tick count passes `take_over_after` (or on `request_take_over()`), it
+switches state; from then on the `ReplayObserver` hooks return the
+simulation's own values (derived seeds, built-in or configured levels, the
+live controls of the caller's `FrameInput`), the `Verifier` stops comparing
+and the outcome becomes `TakenOver`. Recorders only observe and do not
+notice. The decision to support this now, rather than leave it to phase 6,
+is that it costs one state and three tests here, whereas adding it later
+would reopen the driver. `add-desktop-app` exposes it as the option
+`--take-over-at <tick>` (alias `/T:n`); there is no take-over key.
 
 ### D9. Writers
 
-- `DrfRecorder` implements `Observer`: header at construction, seed on
-  `round_started`, run-length state on `control_read`, `EOL`/`EOG` on
-  `round_ended`/`quit`. It reproduces upstream's 999 run cap and 60-column
+- `DrfRecorder` is fed by `ReplayObserver`: header at construction, seed on
+  `round_seed`, run-length state on `movement`, `EOL` on `round_end`, `EOG`
+  on `game_end` of a quit game. It reproduces upstream's 999 run cap and 60-column
   wrap so that files look familiar, but grows without limit (upstream's
   buffer silently wrapped at 256 KB — fixed).
-- `EdrfRecorder` implements `Observer`: 32-tick chunks per slot, each entry
+- `EdrfRecorder` is fed the same way: 32-tick chunks per slot, each entry
   `Read(bits) | Unread`; chunk form chosen as in research 05 §5.2 (no slot
   list when all slots agree, `Unread` agreeing with anything). It keeps the
   list of distinct maps for `L n m`. Finished lines accumulate in a `String`
   that the caller drains with `take_pending()`, which is how a frontend
   streams to disk and a killed game leaves a playable prefix.
 - During DRF playback `EdrfRecorder` takes a slot's bits from
-  `Observer::control_read` (direction and fire the DRF supplied) and 0
-  otherwise, instead of from `slot_controls`; this is upstream's
+  `Observer::movement` (direction and fire the DRF supplied) and 0
+  otherwise, instead of from `controls`; this is upstream's
   `edrf_movement` overwrite and is selected by the recorder's constructor,
   not by a global.
 - Version line written by the port: `RS DIG 20261111` — two fields and an
@@ -327,7 +334,8 @@ reopen the driver. The key binding and option that trigger it belong to
 | `cargo xtask convert <in> <out>` | Play `<in>` and record it in the format selected by `<out>`'s suffix |
 | `cargo xtask dump-state <file> --from <tick> --to <tick> [--fields] [--out <path>]` | Per-tick trace lines; with `--fields` the decoded value of every hashed field |
 | `cargo xtask cut <file.edrf> --at <tick> --out <path>` | Write an eDRF holding the same game up to that tick followed by `Q 0` |
-| `cargo xtask bisect <file.edrf> [--oracle <command>]` | Report the failing 256-tick window; with an oracle, binary-search the first diverging tick inside it (D12) |
+| `cargo xtask bisect <file.edrf>` | Report the failing 256-tick window, the last matching checkpoint, the round-end checkpoints inside the window and the `dump-state` command to run (D12) |
+| `cargo xtask trace-diff <a> <b>` | First differing tick and block between two `dump-state` outputs |
 
 `xtask` owns all file and process I/O. It parses its own arguments by hand
 or with `clap` as phase 1 set it up; nothing here constrains the game
@@ -383,28 +391,23 @@ The suite will fail at first; the design budgets for that.
 2. **Localise to a window.** The failure report names the first failing
    checkpoint and the last matching one: at most 256 ticks, usually fewer
    because round-end checkpoints fall in between.
-3. **Localise inside the window, port only.** `dump-state --fields` over the
+3. **Localise inside the window.** `dump-state --fields` over the
    window gives every hashed field per tick. Since the state at the window's
    start is known to be correct, the fault is an event in the window; the
    trace is read against the research reports (which events occur: deaths,
    bag falls, bonus mode, spawn, level end) and candidate fixes are compared
    by diffing traces before and after. First diverging *block* between two
    candidate traces narrows it to digger, monster, bag or playfield logic.
-4. **Localise inside the window, with an oracle (optional).** A developer
-   who has an upstream binary built from `638125e` elsewhere may pass it as
-   `--oracle`. `bisect` then binary-searches tick N in the window: `cut`
-   the recording at N with `Q 0`, let the oracle re-record it (`/Q /S:0
-   /R:out.edrf /E:cut.edrf`, the `quit_rec` recipe of research 05 §7.4) and
-   read the `Z N <hash>` it writes; compare with the port's own `Z` for the
-   same cut. Eight runs find the first tick whose post-quit state differs.
-   The oracle is an external black box used for measurement: it is never
-   linked, vendored, required by CI or read as source.
-5. **Fix and record.** Every fix lands in `digger-core` with a scenario or
+   No upstream binary is built or run at any point (porting plan, "No C"):
+   the only evidence is the recording's own checkpoints, the port's per-tick
+   dumps and the research reports. `cut` shortens a recording to the window
+   so that a candidate fix is re-checked in milliseconds.
+4. **Fix and record.** Every fix lands in `digger-core` with a scenario or
    unit test that fails without it. If the research report was wrong or
    silent, `docs/compat-quirks.md` gets an entry (class, description,
    recording and tick that exposed it, test name). If a simulation spec
    requirement was wrong, a MODIFIED delta is added to this change.
-6. **Track.** `docs/conformance.md` holds a table with one row per recording
+5. **Track.** `docs/conformance.md` holds a table with one row per recording
    (50 rows): status, first failing tick, cause, fixing commit. The rows are
    mirrored as checkboxes in tasks.md group 12.
 
@@ -412,8 +415,8 @@ The suite will fail at first; the design budgets for that.
 
 | Original | Port |
 |---|---|
-| Globals `playing`, `playend`, `escape`, `edrf_failed`, `edrf_stopped`, `edrf_truncated`, `edrf_checked`, `playtaken` | `Outcome` enum computed once; `ControlRead::EndOfRecording`; director state enum |
-| Hooks called from inside game code reading global buffers | `Director`/`Observer` traits passed to `step_with`, borrowed for the call only |
+| Globals `playing`, `playend`, `escape`, `edrf_failed`, `edrf_stopped`, `edrf_truncated`, `edrf_checked`, `playtaken` | `Outcome` enum computed once; an end flag in the playback source; `PlaybackSource` state enum |
+| Hooks called from inside game code reading global buffers | One `Observer` implementation passed to `step_observed`, borrowed for the call only |
 | Static cursor `plp`, static `rlleft` never reset | `DrfCursor` owned by one playback |
 | Direction as int with −1, fire encoded in letter case | `DrfRecord { direction: Option<Direction>, fire: bool }` |
 | Control bits as `int`, `0x80` meaning "unread" | `Controls` newtype over 5 bits; `SlotSample::{Read(Controls), Unread}` |
@@ -433,22 +436,22 @@ in code, and the listed test.
 
 | # | Quirk (class) | Isolated in | Test |
 |---|---|---|---|
-| R1 | One DRF record per control read, not per tick; none while dead, invisible or in bag-push pause; two diggers interleave in one stream (simulation) | `Director::control_read` call site in the digger update; `DrfCursor` | `drf_record_consumed_only_on_control_read`, `drf_two_diggers_interleave` |
-| R2 | A control read that finds `E`/end of data ends the game as quit, but the tick completes and is counted (simulation) | `ControlRead::EndOfRecording` handling | `drf_end_marker_counts_the_tick` |
-| R3 | On a DRF tick without a control read the fire input for the next tick is "not pressed" (simulation) | playback director's raw controls are all-zero during DRF playback | `drf_fire_does_not_linger_over_pause` |
-| R4 | eDRF injects raw bits before direction resolution; resolver state resets each round (simulation) | `Director::raw_controls` | `edrf_controls_pass_through_resolver` |
-| R5 | A slot not read on a tick still uses up one eDRF value (simulation) | `Director::unread_slot` | `edrf_unread_slot_consumes_value` |
-| R6 | Two-digger `H` patch on plans 3 and 4 applies live and for DRF, not for eDRF maps (simulation) | `LevelMapSource::Recorded` bypasses the patch | `two_digger_patch_drf_only` |
-| R7 | Short DRF map rows and non-map bytes mean earth (upstream stores a NUL) (format) | `drf.rs` map reader | `drf_short_map_row_is_earth` |
-| R8 | DRF body ignores every byte below 0x20, including inside seeds and counts (format) | body filter in `drf.rs` | `drf_body_ignores_control_bytes` |
-| R9 | `U` in the mode line is parsed and ignored; playback never has unlimited lives (simulation) | `header.rs`, `GameConfig` from header | `mode_u_ignored`, `isolation_unlimited_lives` |
-| R10 | Hash covers both digger slots, all six monster slots and all seven bag slots regardless of use, includes never-changing flags, and the monster body part only while a body exists (format) | `state_hash/layout.rs` | `layout_golden`, `monster_block_is_variable_length` |
-| R11 | Round-end hash is taken after bag clean-up, playfield save and monster removal, and appends the tick (format) | `Observer::round_ended` call site | `round_end_hash_after_cleanup` |
-| R12 | Tick checkpoints at multiples of 256 of the post-increment count; a round ending on such a tick writes `C` then `E` (format) | `EdrfRecorder`, `Verifier` | `checkpoint_then_round_end_order` |
-| R13 | The wrapped gauntlet clock is hashed as its unsigned 32-bit value (simulation) | simulation helper + `StateView` | `gauntlet_clock_wrap_hashed` |
-| R14 | eDRF `I` records: no slot list when slots agree with "unread" as wildcard; unread and 0 split runs but both print `@` (format) | `EdrfRecorder` chunk writer | `edrf_chunk_forms`, twin conversion test |
-| R15 | DRF writer: runs capped at 999, line wrap when the column counter reaches 60, seed as `%08X` (format) | `DrfRecorder` | `drf_writer_run_cap_and_wrap` |
-| R16 | Level records are produced only for participating players; in a one-player game the unused player two's level set-up produces none (format) | `Observer::level_started` call site | `one_player_game_has_single_level_record` |
+| P1 | One DRF record per control read, not per tick; none while dead, invisible or in bag-push pause; two diggers interleave in one stream (simulation) | `Observer::movement` call site in the digger update; `DrfCursor` | `drf_record_consumed_only_on_control_read`, `drf_two_diggers_interleave` |
+| P2 | A control read that finds `E`/end of data ends the game as quit, but the tick completes and is counted (simulation) | end flag set in `movement`, `quit` on the next frame | `drf_end_marker_counts_the_tick` |
+| P3 | On a DRF tick without a control read the fire input for the next tick is "not pressed" (simulation) | the playback source returns all-zero raw controls from `controls` during DRF playback | `drf_fire_does_not_linger_over_pause` |
+| P4 | eDRF injects raw bits before direction resolution; resolver state resets each round (simulation) | `Observer::controls` | `edrf_controls_pass_through_resolver` |
+| P5 | A slot not read on a tick still uses up one eDRF value (simulation) | `Observer::controls`, called for every slot on every tick | `edrf_unread_slot_consumes_value` |
+| P6 | Two-digger `H` patch on plans 3 and 4 applies live and for DRF, not for eDRF maps (simulation) | a layout returned from `Observer::level_plan` is used verbatim | `two_digger_patch_drf_only` |
+| P7 | Short DRF map rows and non-map bytes mean earth (upstream stores a NUL) (format) | `drf.rs` map reader | `drf_short_map_row_is_earth` |
+| P8 | DRF body ignores every byte below 0x20, including inside seeds and counts (format) | body filter in `drf.rs` | `drf_body_ignores_control_bytes` |
+| P9 | `U` in the mode line is parsed and ignored; playback never has unlimited lives (simulation) | `header.rs`, `GameConfig` from header | `mode_u_ignored`, `isolation_unlimited_lives` |
+| P10 | Hash covers both digger slots, all six monster slots and all seven bag slots regardless of use, includes never-changing flags, and the monster body part only while a body exists (format) | `state_hash/layout.rs` | `layout_golden`, `monster_block_is_variable_length` |
+| P11 | Round-end hash is taken after bag clean-up, playfield save and monster removal, and appends the tick (format) | `Observer::round_end` call site | `round_end_hash_after_cleanup` |
+| P12 | Tick checkpoints at multiples of 256 of the post-increment count; a round ending on such a tick writes `C` then `E` (format) | `EdrfRecorder`, `Verifier` | `checkpoint_then_round_end_order` |
+| P13 | The wrapped gauntlet clock is hashed as its unsigned 32-bit value (simulation) | simulation helper + `StateView` | `gauntlet_clock_wrap_hashed` |
+| P14 | eDRF `I` records: no slot list when slots agree with "unread" as wildcard; unread and 0 split runs but both print `@` (format) | `EdrfRecorder` chunk writer | `edrf_chunk_forms`, twin conversion test |
+| P15 | DRF writer: runs capped at 999, line wrap when the column counter reaches 60, seed as `%08X` (format) | `DrfRecorder` | `drf_writer_run_cap_and_wrap` |
+| P16 | Level records are produced only for participating players; in a one-player game the unused player two's level set-up produces none (format) | `Observer::level_plan` call site | `one_player_game_has_single_level_record` |
 
 Deliberate deviations (class "presentation or usability bug" or "dropped
 feature"), each also listed in `docs/compat-quirks.md`:
@@ -469,18 +472,19 @@ feature"), each also listed in `docs/compat-quirks.md`:
   change] → It is planned for: a dedicated task group, ordering from simplest
   recording to hardest, per-recording tracking, and tooling built before the
   first full run. Fixes found on short recordings usually clear long ones.
-- [The seam assumed in D4 differs from what phase 3 built] → Group 1 adapts
-  the simulation to the seam first and re-runs phase 3's tests; the seam is
-  additive (`step` keeps working).
-- [The "monster body exists" condition of the hash is under-specified in the
-  research: it does not say exactly when a body is released] → Treated as the
-  first suspect when only the monster block length differs; the trace prints
-  the stream length per block so this shows at a glance; the answer is fixed
-  by the recordings and noted in `docs/compat-quirks.md`.
-- [A divergence cannot be localised inside a window without an oracle] →
-  Round-end checkpoints usually cut windows well below 256 ticks; the decoded
-  dump shows every hashed field; the optional oracle bisect exists for the
-  stubborn cases.
+- [A hook of phase 3's `Observer` is not called exactly where a recording
+  needs it] → Group 1 maps every D4 row onto the simulation as merged and
+  fixes any gap in the simulation with a test before the codecs are written.
+- [The "monster body exists" condition of the hash is derived from the
+  research, not observed: body present from spawn until the round's monster
+  reset (D5)] → Treated as the first suspect when only the monster block
+  length differs; the trace prints the stream length per block so this shows
+  at a glance; the first round-end checkpoint of `dror0.edrf` confirms or
+  corrects it, and a correction is noted in `docs/compat-quirks.md`.
+- [A divergence is hard to localise inside a window, and no upstream binary
+  may be run for comparison] → Round-end checkpoints usually cut windows
+  well below 256 ticks; the decoded dump shows every hashed field per tick;
+  `cut` and `trace-diff` make comparing candidate fixes cheap.
 - [Stricter DRF validation rejects a genuine old recording] → All 23
   upstream DRFs are the acceptance test for the strictness; "recording wins".
 - [Full tier is too slow in debug builds] → Only the quick tier runs in

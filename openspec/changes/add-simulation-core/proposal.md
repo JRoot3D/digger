@@ -16,7 +16,8 @@ It is the largest phase because the original's behaviour is tightly coupled (the
 - Add game flow: the game modes (one player, two players alternating, two diggers simultaneously, gauntlet), rounds, the per-tick update order and the different wind-down order, level completion, death, game over, pause, the frame-versus-tick distinction, the speed-to-tick-length mapping, the random-number generator and per-round seeding, and the determinism guarantee.
 - Emit typed sound commands at the game events that have a sound cue. No sound is synthesised here.
 - Define the frame-stepping interface other phases use: one owning game value advanced one frame per call with that frame's control inputs, returning what kind of frame it was and whether the game has finished; read-only access to the framebuffer, the queued sound commands and the simulation state.
-- Create `docs/compat-quirks.md` with every simulation-affecting quirk reproduced by this change, the decisions taken for the original's undefined-behaviour cases, and the test that covers each.
+- Extend `xtask import-assets` with the eight built-in level layouts, committed as `assets/levels.bin` under the asset manifest of `add-assets-and-renderer`.
+- Extend `docs/compat-quirks.md` (started by `add-assets-and-renderer`) with every simulation-affecting quirk reproduced by this change, the decisions taken for the original's undefined-behaviour cases, and the test that covers each.
 - Reject mode combinations the original accepted by accident (two alternating players together with two simultaneous diggers; a start level outside 1..1000) when the game is configured, instead of misbehaving later.
 
 Nothing is removed and nothing existing changes behaviour; there are no breaking changes.
@@ -53,6 +54,7 @@ None. `game-assets`, `rendering` and `sprite-layer` are used as specified.
 
 - **Code**: new simulation modules in `crates/digger-core` (no new crate). `crates/digger-core` gains its public gameplay interface: game configuration and mode types, the game value with its frame step, per-frame control input, step outcome, sound command type, read-only state view, and an optional observer hook through which recordings will supply seeds and movement samples.
 - **Dependencies**: none added. `digger-core` keeps having no I/O, clock, thread or platform dependency.
-- **Documentation**: new `docs/compat-quirks.md`; crate-level documentation of the stepping interface.
+- **Assets and tooling**: `xtask import-assets` gains the level tables; new `assets/levels.bin` and its manifest line.
+- **Documentation**: new sections in `docs/compat-quirks.md`; crate-level documentation of the stepping interface.
 - **Downstream phases**: `add-recording-and-conformance` consumes the observer hook, the state view and the result summary; `add-sound-engine` consumes the sound command type; `add-desktop-app` consumes the stepping interface, the speed mapping, the pause and quit requests and the per-player results used for high scores.
 - **Tests**: unit tests beside each module and scenario tests under `crates/digger-core/tests/`; the whole suite runs headless.

@@ -365,9 +365,10 @@ the quirk id.
 - [`include_bytes!` paths reach outside the crate directory, so
   `digger-core` cannot be published to a registry as is] → Not a goal; if it
   becomes one, `assets/` moves under the crate.
-- [`docs/compat-quirks.md` is created here although the porting plan assigns
-  its creation to the simulation change] → Phase 3 appends instead of
-  creating; noted in the proposal's Impact section.
+- [`docs/compat-quirks.md` is shared by every later change] → This change
+  creates it (porting plan §3); phases 3 to 7 append their own sections and
+  use their own id prefixes (`Q` simulation, `P` recording and playback,
+  `SQ`/`SF` sound) so ids never collide with `R`, `S` and `A` here.
 
 ## Open Questions
 
