@@ -145,7 +145,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 
 ## 15. Integration checks
 
-- [ ] 15.1 Add the determinism test: one scripted game per mode run twice, comparing a framebuffer CRC and the trace line after every frame, and once more with the sound queue never drained; verify `cargo test -p digger-core --test determinism` passes
+- [x] 15.1 Add the determinism test: one scripted game per mode run twice, comparing a framebuffer CRC and the trace line after every frame, and once more with the sound queue never drained; verify `cargo test -p digger-core --test determinism` passes
 - [ ] 15.2 Add the observer round-trip test: record round seeds and movement samples from a live scripted game with a test observer, replay them into a second game with empty controls, and compare summaries and final trace lines; verify `cargo test -p digger-core --test observer_roundtrip` passes
 - [ ] 15.3 Add the soak test: each of the five modes for 50,000 frames on inputs from a test-local generator in a debug build; verify `cargo test -p digger-core --test soak` passes with no panic
 - [ ] 15.4 Add `quirks_doc_lists_every_quirk_test`, which checks that each id Q01–Q40 in `docs/compat-quirks.md` names an existing test and that every `quirk_q*` test is listed; verify it passes and that no "Implemented in" or "Test" cell is empty
