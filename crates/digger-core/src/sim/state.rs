@@ -4,13 +4,15 @@
 use core::fmt;
 
 use super::Sim;
+use super::bags::Bag;
 use super::config::GameMode;
 use super::digger::Digger;
 use super::field::{EmeraldMap, Field};
 use super::gauntlet::GauntletClock;
 use super::gfx::Gfx;
-use super::ids::{DiggerId, PlayerId};
+use super::ids::{BagId, DiggerId, MonsterSlot, PlayerId};
 use super::level::LevelNumber;
+use super::monster::Monster;
 use super::penalty::Penalty;
 use super::score::{ScoreId, Scores};
 
@@ -133,6 +135,16 @@ impl<'a> StateView<'a> {
     /// gauntlet modes).
     pub fn timed_out(self) -> bool {
         self.sim.gauntlet.is_some_and(GauntletClock::timed_out)
+    }
+
+    /// The monster in `slot`, with its last values when the slot is free.
+    pub fn monster(self, slot: MonsterSlot) -> &'a Monster {
+        slot.of(&self.sim.monsters)
+    }
+
+    /// Bag `id`, with its last values when it no longer exists.
+    pub fn bag(self, id: BagId) -> &'a Bag {
+        id.of(&self.sim.bags)
     }
 
     /// The picture, as it stands.

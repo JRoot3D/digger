@@ -16,14 +16,16 @@
 use crate::assets::ImageId;
 use crate::geom::Px;
 use crate::sound_cmd::SoundCommand;
-use crate::sprite::Collisions;
+use crate::sprite::{Collisions, SpriteClass};
 use crate::video::{Framebuffer, ProbeBits};
 
 use super::Ctx;
+use super::digger::DeathStage;
 use super::geom::Direction;
-use super::ids::DiggerId;
+use super::ids::{BagId, DiggerId, MonsterSlot};
 use super::level::Difficulty;
 use super::penalty::PenaltySite;
+use super::score::{ScoreEvent, ScoreId};
 
 /// Pixels a fireball travels per tick horizontally (research 02 §0, §3.6).
 const STEP_X: i32 = 8;
@@ -294,11 +296,16 @@ impl Ctx<'_> {
     /// One flight step (research 02 §3.6, `updatefire`).
     ///
     /// The fireball moves, the picture is probed for earth at the new
-    /// position, the fireball is drawn there and the penalty charged. It
-    /// explodes when out of range; otherwise earth stops it only if the
-    /// draw touched no sprite at all, the own digger included, and then it
-    /// is drawn back at its previous position and explodes there
-    /// (quirk Q19).
+    /// position, the fireball is drawn there and the penalty charged. Then
+    /// it acts on what its draw touched: every overlapped monster is
+    /// removed for 250 points to the owner, every other living,
+    /// non-invincible digger is killed, and the fireball explodes on any of
+    /// these and on the bonus, a bag or another fireball, every overlapped
+    /// flying fireball exploding too. It also explodes when out of range;
+    /// otherwise earth stops it only if the draw touched no sprite at all,
+    /// the own digger included, and then it is drawn back at its previous
+    /// position and explodes there (quirk Q19; digger spec, "What a
+    /// fireball hits").
     fn fly(&mut self, unit: DiggerId, record: DiggerId) {
         let fireball = record.of(&self.sim.diggers).fireball;
         let direction = fireball.direction;
@@ -309,6 +316,7 @@ impl Ctx<'_> {
         record.of_mut(&mut self.sim.diggers).fireball.position = to;
         let hits = self.draw_fireball(unit, record);
         self.sim.penalty.charge(PenaltySite::FireballFlight);
+        self.act_on_hits(unit, record, hits);
         let touching = !hits.is_empty();
         if out_of_range(to, direction) {
             record.of_mut(&mut self.sim.diggers).fireball.explode();
@@ -316,6 +324,52 @@ impl Ctx<'_> {
             record.of_mut(&mut self.sim.diggers).fireball.position = step_back(to, direction);
             self.draw_fireball(unit, record);
             record.of_mut(&mut self.sim.diggers).fireball.explode();
+        }
+    }
+
+    /// What a flying fireball does to the sprites its draw touched, in the
+    /// original's order: monsters, diggers, then the bonus, bags and
+    /// fireballs (research 02 §3.6).
+    fn act_on_hits(&mut self, unit: DiggerId, record: DiggerId, hits: Collisions) {
+        let owner = ScoreId::credited(self.sim.turn, unit);
+        for sprite in hits.of(SpriteClass::Monster) {
+            if let Some(slot) = MonsterSlot::from_sprite(sprite) {
+                self.remove_monster(slot);
+            }
+            self.add_score(owner, ScoreEvent::FireballKill);
+            record.of_mut(&mut self.sim.diggers).fireball.explode();
+        }
+        for sprite in hits.of(SpriteClass::Digger) {
+            let Some(other) = DiggerId::from_sprite(sprite) else {
+                continue;
+            };
+            let victim = self.sim.record_of_unit(other);
+            let target = victim.of(&self.sim.diggers);
+            if victim != record && !target.invincible && target.alive {
+                // Shot down: the death of a digger killed by a monster.
+                self.sim
+                    .kill_digger(victim, DeathStage::Monster, BagId::ALL[0]);
+                record.of_mut(&mut self.sim.diggers).fireball.explode();
+            }
+        }
+        let obstacle = [SpriteClass::Bonus, SpriteClass::Bag, SpriteClass::Fireball]
+            .into_iter()
+            .any(|class| hits.first(class).is_some());
+        if obstacle {
+            record.of_mut(&mut self.sim.diggers).fireball.explode();
+            for sprite in hits.of(SpriteClass::Fireball) {
+                let Some(other) = DiggerId::ALL
+                    .into_iter()
+                    .find(|unit| unit.fireball().sprite() == sprite)
+                else {
+                    continue;
+                };
+                let other = self.sim.record_of_unit(other);
+                let fireball = &mut other.of_mut(&mut self.sim.diggers).fireball;
+                if fireball.stage == FireballStage::Flying {
+                    fireball.explode();
+                }
+            }
         }
     }
 

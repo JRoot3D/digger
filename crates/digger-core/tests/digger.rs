@@ -9,8 +9,9 @@
 use digger_core::geom::Px;
 use digger_core::testkit::{Run, Scenario, Script};
 use digger_core::{
-    CellPos, Controls, DiggerId, Direction, EmeraldStep, FireballId, FireballStage, GameMode,
-    Movement, Observer, PenaltySite, ScoreId, SlotId, SoundCommand,
+    BagId, CellPos, Controls, DeathStage, DiggerId, Direction, EmeraldStep, FireballId,
+    FireballStage, GameMode, MonsterSlot, Movement, Observer, PenaltySite, ScoreId, SlotId,
+    SoundCommand,
 };
 
 const FIRST: DiggerId = DiggerId::ALL[0];
@@ -638,4 +639,115 @@ fn quirk_q19_probe_ignored_while_touching_a_sprite() {
             ),
         ]
     );
+}
+
+/// A two-digger run on `rows` with digger 1 at (`x1`, 180) facing right
+/// and digger 2 at (`x2`, 180) facing left.
+fn facing_pair(rows: [&str; 10], x1: i32, x2: i32) -> Run {
+    let mut run = Scenario::new(GameMode::TwoDiggers).rows(rows).build();
+    run.start();
+    run.place_digger(FIRST, Px::new(x1, 180), Direction::Right)
+        .expect("a reachable position");
+    run.place_digger(SECOND, Px::new(x2, 180), Direction::Left)
+        .expect("a reachable position");
+    run
+}
+
+#[test]
+fn fireball_kills_nobbin_for_250() {
+    let mut run = started(LONG_CORRIDOR);
+    let slot = MonsterSlot::ALL[2];
+    run.place_monster(slot, Px::new(200, 180))
+        .expect("inside the playfield");
+    let path = flight(&mut run, "F", 7);
+    // Launched at 160, the shot first overlaps the nobbin at x = 200.
+    assert_eq!(
+        path.get(5..).unwrap_or_default(),
+        [
+            (Px::new(192, 184), FireballStage::Flying),
+            (
+                Px::new(200, 184),
+                FireballStage::Exploding { next_frame: 1 }
+            ),
+        ]
+    );
+    let monster = run.state().monster(slot);
+    assert!(!monster.occupied() && !monster.alive(), "removed at once");
+    assert!(!run.state().sprites().is_enabled(slot.sprite()));
+    assert_eq!(run.state().scores().visible(ScoreId::ALL[0]), 250);
+}
+
+#[test]
+fn fireball_explodes_on_bag_without_harming_it() {
+    let mut run = started(LONG_CORRIDOR);
+    let bag = BagId::ALL[0];
+    run.place_bag(bag, Px::new(200, 180))
+        .expect("inside the playfield");
+    let path = flight(&mut run, "F", 7);
+    assert_eq!(
+        path.last().copied(),
+        Some((
+            Px::new(200, 184),
+            FireballStage::Exploding { next_frame: 1 }
+        ))
+    );
+    let state = run.state();
+    assert!(state.bag(bag).exists());
+    assert_eq!(state.bag(bag).position(), Px::new(200, 180));
+    assert!(state.sprites().is_enabled(bag.sprite()));
+    assert_eq!(state.sprites().position(bag.sprite()), Px::new(200, 180));
+    assert_eq!(state.scores().visible(ScoreId::ALL[0]), 0);
+}
+
+#[test]
+fn fireball_up_explodes_at_y_11() {
+    let mut rows = EARTH;
+    rows[0] = "HHHHHHHHHHHHHHH";
+    let mut run = placed(rows, 152, 18, Direction::Up);
+    let path = flight(&mut run, "F", 3);
+    assert_eq!(
+        path.get(1..).unwrap_or_default(),
+        [
+            (Px::new(156, 18), FireballStage::Flying),
+            (Px::new(156, 11), FireballStage::Exploding { next_frame: 1 }),
+        ]
+    );
+}
+
+#[test]
+fn two_fireballs_explode_each_other() {
+    let mut run = facing_pair(LONG_CORRIDOR, 52, 252);
+    run.set_script(Script::parse("F/F*14").expect("valid script"));
+    // Launched at 60 and 252 on tick 2; on tick 14 the first fireball
+    // moves to x = 156, just short of the second at 164, which then moves
+    // onto it, and both start exploding.
+    run.run_ticks(13);
+    let fireball = |run: &Run, unit: DiggerId| {
+        let fireball = run.state().digger(unit).fireball();
+        (fireball.position().x, fireball.stage())
+    };
+    assert_eq!(fireball(&run, FIRST), (148, FireballStage::Flying));
+    assert_eq!(fireball(&run, SECOND), (164, FireballStage::Flying));
+    run.run_ticks(1);
+    let exploding = FireballStage::Exploding { next_frame: 1 };
+    assert_eq!(fireball(&run, FIRST), (156, exploding));
+    assert_eq!(fireball(&run, SECOND), (156, exploding));
+    assert!(run.state().digger(FIRST).alive() && run.state().digger(SECOND).alive());
+}
+
+#[test]
+fn fireball_kills_other_digger() {
+    // Friendly fire: digger 1's shot, launched at x = 140 on tick 2,
+    // reaches digger 2 at x = 212 on tick 11.
+    let mut run = facing_pair(LONG_CORRIDOR, 132, 212);
+    run.set_script(Script::parse("F*11").expect("valid script"));
+    run.run_ticks(10);
+    assert!(run.state().digger(SECOND).alive());
+    run.run_ticks(1);
+    let victim = run.state().digger(SECOND);
+    assert!(!victim.alive());
+    assert_eq!(victim.death_stage(), Some(DeathStage::Monster));
+    let fireball = run.state().digger(FIRST).fireball();
+    assert_eq!(fireball.stage(), FireballStage::Exploding { next_frame: 1 });
+    assert!(run.state().digger(FIRST).alive());
 }

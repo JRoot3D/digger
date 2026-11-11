@@ -63,6 +63,7 @@ pub use timing::FrameLength;
 use crate::sound_cmd::{SoundCommand, SoundQueue, Tempo, Tune};
 use crate::video::{Framebuffer, LevelPlan, TextColor};
 
+pub use bags::Bag;
 use digger::{AnimFrame, START_LIVES};
 pub use digger::{DeathStage, Digger};
 use draw::{DrawProgress, LevelDraw};
@@ -72,6 +73,7 @@ pub use fireball::{Fireball, FireballStage};
 use gauntlet::GauntletClock;
 use gfx::Gfx;
 use input::SlotInput;
+pub use monster::Monster;
 use status::SecondSide;
 
 /// What kind of frame a step was (game-flow spec, "Frames and ticks").
@@ -237,6 +239,10 @@ pub(crate) struct Sim {
     digger_frames: [AnimFrame; DiggerId::COUNT],
     /// The animation counter of each fireball sprite, by unit (not hashed).
     fireball_frames: [FlameFrame; DiggerId::COUNT],
+    /// The six monster slots.
+    monsters: [Monster; MonsterSlot::COUNT],
+    /// The seven bags.
+    bags: [Bag; BagId::COUNT],
     /// Both scores.
     scores: Scores,
     /// The gauntlet clock, in the gauntlet modes.
@@ -292,6 +298,8 @@ impl Sim {
             diggers_visible: false,
             digger_frames: [AnimFrame::START; DiggerId::COUNT],
             fireball_frames: [FlameFrame::START; DiggerId::COUNT],
+            monsters: [Monster::default(); MonsterSlot::COUNT],
+            bags: [Bag::default(); BagId::COUNT],
             scores,
             gauntlet: mode.gauntlet().map(GauntletClock::start),
             inputs: [SlotInput::new(); SlotId::COUNT],

@@ -561,6 +561,30 @@ fn hit_emerald(
 }
 
 impl Sim {
+    /// Kills digger record `record`, dying in the manner of `stage`, by bag
+    /// `bag` when crushed (research 02 §3.7, `killdigger`).
+    ///
+    /// Nothing happens to an invincible digger or to one in its grave
+    /// stages (waiting or growing tombstone, the undrawn tick, the resting
+    /// tombstone); a digger carried by a bag or in its death arc dies again
+    /// in the new manner. Task group 10 adds the death sequences that
+    /// follow.
+    pub(crate) fn kill_digger(&mut self, record: DiggerId, stage: DeathStage, bag: BagId) {
+        let digger = record.of_mut(&mut self.diggers);
+        if digger.invincible {
+            return;
+        }
+        if matches!(
+            digger.death,
+            Some(DeathStage::Grave | DeathStage::Monster | DeathStage::Tombstone)
+        ) {
+            return;
+        }
+        digger.alive = false;
+        digger.death = Some(stage);
+        digger.death_bag = bag;
+    }
+
     /// The record played by `unit` on this turn: record `turn + unit`.
     pub(crate) fn record_of_unit(&self, unit: DiggerId) -> DiggerId {
         DiggerId::new(self.turn.number().saturating_add(unit.number())).unwrap_or_else(|| {

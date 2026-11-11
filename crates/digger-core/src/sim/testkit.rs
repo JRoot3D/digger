@@ -49,13 +49,13 @@ use crate::sound_cmd::SoundCommand;
 
 use super::config::{GameConfig, GameMode, StartLevel};
 use super::geom::{Direction, locate, within_limits};
-use super::ids::DiggerId;
+use super::ids::{BagId, DiggerId, MonsterSlot};
 use super::input::{Controls, FrameInput};
 use super::level::{LevelLayout, LevelSet};
 use super::observer::{NoopObserver, Observer};
 use super::score::ScoreId;
 use super::state::StateView;
-use super::{FrameKind, Game, GameSummary, Phase, StepOutcome};
+use super::{Ctx, FrameKind, Game, GameSummary, Phase, StepOutcome};
 
 /// Consecutive frames without a tick after which [`Run::run_ticks`] gives
 /// up: far more than any waiting phase of the game lasts.
@@ -317,6 +317,11 @@ pub enum SetupError {
     },
     /// An entity can be placed only while a round is being played.
     NotPlaying,
+    /// A monster or bag position outside the playfield limits.
+    OutsidePlayfield {
+        /// The rejected position.
+        at: Px,
+    },
     /// A digger position outside the playfield limits, off the 4-by-3
     /// pixel step grid, or between cells on both axes.
     BadDiggerPosition {
@@ -336,6 +341,9 @@ impl fmt::Display for SetupError {
                 write!(f, "visible score {value} is outside 0..=999999")
             }
             Self::NotPlaying => f.write_str("no round is being played"),
+            Self::OutsidePlayfield { at } => {
+                write!(f, "({}, {}) is outside the playfield limits", at.x, at.y)
+            }
             Self::BadDiggerPosition { at } => {
                 write!(
                     f,
@@ -589,6 +597,61 @@ impl<O: Observer> Run<O> {
         gfx.erase(sprite);
         gfx.place(sprite, image, at);
         Ok(())
+    }
+
+    /// Puts a living nobbin into monster slot `slot` at `at`, replacing
+    /// whatever was there, and places its sprite. Until monsters move (task
+    /// group 12) it stays where it is put.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round,
+    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// y 18..=180.
+    pub fn place_monster(&mut self, slot: MonsterSlot, at: Px) -> Result<(), SetupError> {
+        self.check_entity_position(at)?;
+        self.with_ctx(|cx| cx.put_nobbin(slot, at));
+        Ok(())
+    }
+
+    /// Puts resting bag `id` at `at`, replacing whatever was there, and
+    /// places its sprite. Until bags move (task group 11) it stays where it
+    /// is put.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round,
+    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// y 18..=180.
+    pub fn place_bag(&mut self, id: BagId, at: Px) -> Result<(), SetupError> {
+        self.check_entity_position(at)?;
+        self.with_ctx(|cx| cx.put_bag(id, at));
+        Ok(())
+    }
+
+    /// Checks that a round is being played and `at` is within the playfield
+    /// limits.
+    fn check_entity_position(&self, at: Px) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        if !within_limits(at) {
+            return Err(SetupError::OutsidePlayfield { at });
+        }
+        Ok(())
+    }
+
+    /// Runs `f` on a context of the game with no observer.
+    fn with_ctx(&mut self, f: impl FnOnce(&mut Ctx<'_>)) {
+        let game = &mut *self.game;
+        let mut obs = NoopObserver;
+        let mut cx = Ctx {
+            sim: &mut game.sim,
+            gfx: &mut game.gfx,
+            sound: &mut game.sound,
+            obs: &mut obs,
+        };
+        f(&mut cx);
     }
 
     /// Sets the lives of digger record `digger`, which must be in play: the
