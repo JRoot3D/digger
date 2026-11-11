@@ -78,7 +78,7 @@ columns are filled in as the quirks are implemented.
 | Id | Behaviour | Research reference | Implemented in | Test |
 |---|---|---|---|---|
 | Q01 | Penalty counter: every draw and scoring site of the scoring spec's penalty table raises it, a scoring call three times even for 0 points | research 01 §4, research 02 §6 |  |  |
-| Q02 | Penalty overflow delays monster slots 1..n−1 only; slot 0 is exempt, an excess of 1 does nothing, unoccupied slots are included | research 01 §4, research 02 §6, §9 item 1 | `Penalty::overflow_slots` (`crates/digger-core/src/sim/penalty.rs`), applied by `Monsters::apply_penalty_overflow` in the main-phase tick | `sim::penalty::tests::quirk_q02_overflow_table` |
+| Q02 | Penalty overflow delays monster slots 1..n−1 only; slot 0 is exempt, an excess of 1 does nothing, unoccupied slots are included | research 01 §4, research 02 §6, §9 item 1 | `Penalty::overflow_slots` (`crates/digger-core/src/sim/penalty.rs`), to be applied by `Monsters::apply_penalty_overflow` in the main-phase tick (task 12.9) | `sim::penalty::tests::quirk_q02_overflow_table` |
 | Q03 | Random draws are taken even when their result is unused: the noise draw at difficulty 6 and above, the double-move draw for hobbins | research 02 §4.3, §4.4, §8 |  |  |
 | Q04 | Wind-down updates bags, then diggers, then monsters; monsters and the generator keep running; it lasts 1 to 20 ticks by the moving-bag and penalty rule | research 01 §3.2, research 02 §6 |  |  |
 | Q05 | A full redraw opens every partly dug cell completely | research 01 §5.3, §10 item 8, research 03 §8.2 |  |  |
