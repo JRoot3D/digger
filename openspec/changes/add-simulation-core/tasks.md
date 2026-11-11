@@ -31,7 +31,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 - [x] 3.3 Implement `Field::normalise_for_redraw` (Q05) and the per-player field save and restore; verify unit tests `quirk_q05_redraw_opens_partly_dug_cells`, `untouched_cells_survive_redraw` and `players_have_separate_fields` pass
 - [x] 3.4 Implement `EmeraldMap`: per-player placement from `C` cells, counting, removal; verify unit tests `level_1_has_30_emeralds`, `emerald_removed_once` and `emeralds_are_per_player` pass
 - [x] 3.5 Implement the nobbin passability test (connected, not untouched, inside the grid) as a `Field` query; verify unit tests `passable_through_joined_cells`, `not_passable_into_untouched_cell`, `adjacent_unconnected_tunnel_not_passable` and `not_passable_off_grid` pass
-- [ ] 3.6 Fill the quirks-document columns for Q05; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 3.6 Fill the quirks-document columns for Q05; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 4. Playfield drawing and status line
 
