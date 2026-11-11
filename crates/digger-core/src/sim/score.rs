@@ -202,6 +202,13 @@ impl Scores {
         id.of(&self.by_id).next_bonus
     }
 
+    /// Sets score `id`'s visible value without a scoring call, for test
+    /// set-ups; the carried total and the threshold are left as they are.
+    #[cfg(any(test, feature = "testkit"))]
+    pub(crate) fn set_visible(&mut self, id: ScoreId, visible: i32) {
+        id.of_mut(&mut self.by_id).visible = visible;
+    }
+
     /// The scoring call for an event.
     #[allow(
         dead_code,

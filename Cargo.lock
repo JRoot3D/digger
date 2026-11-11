@@ -162,6 +162,7 @@ version = "0.1.0"
 name = "digger-core"
 version = "0.1.0"
 dependencies = [
+ "digger-core",
  "miniz_oxide",
 ]
 

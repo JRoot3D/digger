@@ -19,3 +19,8 @@ miniz_oxide.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# The scenario tests under tests/ and the test kit's doc example use the
+# test kit, so test builds enable it for this crate itself.
+digger-core = { path = ".", features = ["testkit"] }
