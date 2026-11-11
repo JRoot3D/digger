@@ -7,6 +7,7 @@
 
 mod ci;
 mod deps;
+mod import;
 
 use std::process::ExitCode;
 
@@ -25,12 +26,16 @@ enum Command {
     /// Run the same checks as continuous integration: formatting, Clippy,
     /// tests, documentation and the dependency-direction check.
     Ci,
+    /// Read the upstream sprite, font, title and icon tables as data and
+    /// write the asset files, index and manifest (or compare with --check).
+    ImportAssets(import::ImportArgs),
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let result = match cli.command {
-        Command::Ci => ci::run(),
+    let result: Result<(), Box<dyn std::error::Error>> = match cli.command {
+        Command::Ci => ci::run().map_err(Into::into),
+        Command::ImportAssets(args) => import::run(&args).map_err(Into::into),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

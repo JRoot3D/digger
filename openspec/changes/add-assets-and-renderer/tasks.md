@@ -7,11 +7,11 @@ task of each group is the quality gate and the commit.
 
 ## 1. Importer: reading upstream tables
 
-- [ ] 1.1 Add the `import-assets` subcommand to `xtask` with arguments `--upstream <dir>`, `--out <dir>` (default `assets/`) and `--check`, plus the `ImportError` enum from design D7; verify `cargo xtask import-assets --help` lists the three arguments and that running without `--upstream` exits non-zero with a usage message
-- [ ] 1.2 Implement the table reader (`xtask/src/import/ctable.rs`) for byte and 32-bit array initialisers with decimal and hexadecimal numbers, comments and qualifiers; verify with unit tests `ctable_reads_byte_array`, `ctable_reads_u32_array` and `ctable_skips_comments` on hand-written fixtures
-- [ ] 1.3 Extend the reader to pointer tables whose elements are identifiers, `NULL` or `0`, resolving identifiers against the arrays read from the same file; verify with `ctable_reads_pointer_table` and `ctable_unknown_symbol_is_error`
-- [ ] 1.4 Make every malformed input a `Syntax` error carrying file name and line, never a panic; verify with `ctable_reports_line_of_bad_token`, `ctable_unterminated_initialiser_is_error` and a test feeding 200 pseudo-random byte strings that must all return `Ok` or `Err`
-- [ ] 1.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(xtask): add upstream data table reader for import-assets`
+- [x] 1.1 Add the `import-assets` subcommand to `xtask` with arguments `--upstream <dir>`, `--out <dir>` (default `assets/`) and `--check`, plus the `ImportError` enum from design D7; verify `cargo xtask import-assets --help` lists the three arguments and that running without `--upstream` exits non-zero with a usage message
+- [x] 1.2 Implement the table reader (`xtask/src/import/ctable.rs`) for byte and 32-bit array initialisers with decimal and hexadecimal numbers, comments and qualifiers; verify with unit tests `ctable_reads_byte_array`, `ctable_reads_u32_array` and `ctable_skips_comments` on hand-written fixtures
+- [x] 1.3 Extend the reader to pointer tables whose elements are identifiers, `NULL` or `0`, resolving identifiers against the arrays read from the same file; verify with `ctable_reads_pointer_table` and `ctable_unknown_symbol_is_error`
+- [x] 1.4 Make every malformed input a `Syntax` error carrying file name and line, never a panic; verify with `ctable_reports_line_of_bad_token`, `ctable_unterminated_initialiser_is_error` and a test feeding 200 pseudo-random byte strings that must all return `Ok` or `Err`
+- [x] 1.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(xtask): add upstream data table reader for import-assets`
 
 ## 2. Importer: producing the asset files
 

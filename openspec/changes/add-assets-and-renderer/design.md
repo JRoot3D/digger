@@ -265,15 +265,25 @@ pub struct Collisions(u32);         // bit n set = slot n collided; iterated per
   `expect` on anything derived from input; the blob/index consistency is a
   `const` assertion plus a test, not a runtime check.
 - `xtask`: an `ImportError` enum with file, line and table name
-  (`MissingFile`, `Syntax`, `UnknownSymbol`, `Length { expected, got }`,
-  `Count`, `TitleInflate`, `Io`). The importer reads and validates
+  (`MissingFile`, `MissingTable`, `Syntax`, `UnknownSymbol`,
+  `Length { expected, got }`, `Count`, `TitleInflate`, `Io`); `MissingTable`
+  covers a source file that exists but does not define a table the import
+  needs. The importer reads and validates
   everything, builds all outputs in memory, and only then writes, each file
   through a temporary file and rename, so a failure never leaves a
   half-written `assets/`. `--check` stops before the write step and compares.
 - The table reader handles exactly the grammar the upstream data files use:
   comments, `static`/`const` qualifiers, `NAME[N] = { number, … };` with
   decimal or hexadecimal numbers, and pointer tables whose elements are
-  identifiers, `NULL` or `0`. Anything else is a `Syntax` error with a line
+  identifiers, `NULL` or `0`. The size `N` may be empty, a number or a name
+  from a `#define NAME <number>` line (`title_gz[CTITLELEN]`); when given it
+  must equal the number of initialisers. Upstream data files also contain
+  preprocessor lines and, in `title_gz.c`, a function definition: such
+  top-level items without an array initialiser are skipped as balanced
+  token runs. Anything malformed inside an array declaration or initialiser
+  (a non-number where a value is expected, a value too large for the element
+  type, an octal-looking literal such as `012`, a missing separator), and
+  anything unbalanced or unterminated, is a `Syntax` error with a line
   number. It never panics on malformed text.
 
 ### D8. Test strategy
