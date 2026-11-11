@@ -517,11 +517,16 @@ impl Ctx<'_> {
     }
 
     /// The round-end transition (game-flow spec, "Round end"): all sound is
-    /// stopped and the field saved for the player, then the observer sees
-    /// the state and the round counter rises. Task 14.3 adds the removal of
-    /// fireballs, bonus and monsters and the bag tidy in their places.
+    /// stopped, every fireball removed and the field saved for the player,
+    /// then the observer sees the state and the round counter rises. Task
+    /// 14.3 adds the removal of the bonus and monsters and the bag tidy in
+    /// their places.
     fn end_round(&mut self) {
         self.sound.push(SoundCommand::StopAll);
+        for unit in self.sim.units() {
+            let record = self.sim.record_of_unit(unit);
+            self.remove_fireball(unit, record);
+        }
         self.sim.saved_fields.save(self.sim.turn, &self.sim.field);
         self.obs.round_end(StateView::new(self.sim, self.gfx));
         self.sim.round = self.sim.round.wrapping_add(1);

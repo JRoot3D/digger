@@ -238,10 +238,39 @@ impl Ctx<'_> {
     /// The fireball part of a digger's update: the explosion while one is
     /// under way, otherwise [`update_fire`](Self::update_fire) (research 02
     /// §3.3, `dodigger`).
+    ///
+    /// An exploding fireball draws its next explosion frame and charges the
+    /// penalty; once the third frame has been drawn it is removed on the
+    /// next update (digger spec, "Fireball explosion"; research 02 §3.6,
+    /// `drawexplosion`).
     pub(crate) fn update_fireball(&mut self, unit: DiggerId, record: DiggerId) {
         match record.of(&self.sim.diggers).fireball.stage {
             FireballStage::Flying => self.update_fire(unit, record),
-            FireballStage::Exploding { .. } | FireballStage::Spent => {}
+            FireballStage::Exploding { .. } => {
+                // The explosion's collisions are not used.
+                let _ = self.draw_fireball(unit, record);
+                self.sim.penalty.charge(PenaltySite::ExplosionFrame);
+            }
+            FireballStage::Spent => self.remove_fireball(unit, record),
+        }
+    }
+
+    /// Removes `record`'s fireball if one is in play: the digger's recharge
+    /// countdown may run again, the sprite is erased, the fire cue stops
+    /// once the explosion has shown a frame, and the stage returns to 0
+    /// (research 02 §2 `remove`, §3.6 `killfire`). Also called for every
+    /// digger at round end.
+    pub(crate) fn remove_fireball(&mut self, unit: DiggerId, record: DiggerId) {
+        let digger = record.of_mut(&mut self.sim.diggers);
+        if digger.not_firing {
+            return;
+        }
+        digger.not_firing = true;
+        let shown = digger.fireball.stage.number() > 1;
+        digger.fireball.stage = FireballStage::Flying;
+        self.gfx.erase(unit.fireball().sprite());
+        if shown {
+            self.sound.push(SoundCommand::FireStop(unit.fireball()));
         }
     }
 
@@ -420,7 +449,7 @@ impl Ctx<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{Controls, FrameInput, Game, GameConfig, Phase};
+    use crate::sim::{Controls, FrameInput, Game, GameConfig, LevelNumber, Phase};
 
     #[test]
     fn launch_offsets_per_facing() {
@@ -488,6 +517,61 @@ mod tests {
         // from x = 99.
         assert!(!probe_earth(&fb, Px::new(100, 44), Direction::Up));
         assert!(probe_earth(&fb, Px::new(99, 44), Direction::Up));
+    }
+
+    #[test]
+    fn recharge_table_63_to_90() {
+        let ticks: Vec<u16> = (1..=11)
+            .map(|level| {
+                let level = LevelNumber::new(level).unwrap_or_else(|| unreachable!());
+                recharge_ticks(level.difficulty())
+            })
+            .collect();
+        assert_eq!(ticks, [63, 66, 69, 72, 75, 78, 81, 84, 87, 90, 90]);
+    }
+
+    #[test]
+    fn explode_restarts_an_explosion() {
+        let mut fireball = Fireball::launched(Px::new(100, 100), Direction::Left);
+        fireball.explode();
+        assert_eq!(fireball.stage, FireballStage::Exploding { next_frame: 1 });
+        fireball.stage = FireballStage::Exploding { next_frame: 3 };
+        fireball.explode();
+        assert_eq!(fireball.stage, FireballStage::Exploding { next_frame: 1 });
+        assert_eq!(
+            [
+                FireballStage::Flying,
+                FireballStage::Exploding { next_frame: 2 },
+                FireballStage::Spent
+            ]
+            .map(FireballStage::number),
+            [0, 2, 4]
+        );
+    }
+
+    #[test]
+    fn flying_fireball_removed_at_round_end() {
+        let mut game = Game::new(GameConfig::default(), 0);
+        while game.phase != Phase::Playing {
+            game.step(&FrameInput::NONE);
+        }
+        game.step(&fire());
+        game.step(&fire());
+        let first = DiggerId::ALL[0];
+        assert!(!first.of(&game.sim.diggers).not_firing);
+        let _ = game.drain_sound().count();
+        // A quit ends the game through the round end.
+        game.step(&FrameInput {
+            quit: true,
+            ..FrameInput::NONE
+        });
+        let digger = first.of(&game.sim.diggers);
+        assert!(digger.not_firing);
+        assert_eq!(digger.fireball.stage, FireballStage::Flying);
+        assert!(!game.gfx.sprites().is_enabled(first.fireball().sprite()));
+        // A flying fireball has no fire cue left to stop.
+        let sounds: Vec<SoundCommand> = game.drain_sound().collect();
+        assert_eq!(sounds, [SoundCommand::StopAll]);
     }
 
     #[test]

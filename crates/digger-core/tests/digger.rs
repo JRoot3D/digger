@@ -6,6 +6,7 @@
     reason = "a failed expectation in a test is a test failure"
 )]
 
+use digger_core::assets::ImageId;
 use digger_core::geom::Px;
 use digger_core::testkit::{Run, Scenario, Script};
 use digger_core::{
@@ -750,4 +751,68 @@ fn fireball_kills_other_digger() {
     let fireball = run.state().digger(FIRST).fireball();
     assert_eq!(fireball.stage(), FireballStage::Exploding { next_frame: 1 });
     assert!(run.state().digger(FIRST).alive());
+}
+
+#[test]
+fn explosion_lasts_three_frames_then_removed() {
+    // The shot starts exploding at x = 200 on tick E = 8.
+    let mut run = started(SHORT_CORRIDOR);
+    run.set_script(Script::parse("F*8").expect("valid script"));
+    run.run_ticks(8);
+    let exploding = |frame| FireballStage::Exploding { next_frame: frame };
+    assert_eq!(run.state().digger(FIRST).fireball().stage(), exploding(1));
+    run.take_sounds();
+    let sprite = FIRST_FIREBALL.sprite();
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        run.set_script(Script::parse(".").expect("valid script"));
+        run.run_ticks(1);
+        let state = run.state();
+        let shown = state
+            .sprites()
+            .is_enabled(sprite)
+            .then(|| state.sprites().image(sprite));
+        let frames = state.penalty().count_of(PenaltySite::ExplosionFrame);
+        seen.push((shown, frames, run.take_sounds()));
+    }
+    assert_eq!(
+        seen,
+        [
+            (
+                Some(ImageId::EXPLOSION_1),
+                1,
+                vec![SoundCommand::Explode(FIRST_FIREBALL)]
+            ),
+            (Some(ImageId::EXPLOSION_2), 1, vec![]),
+            (Some(ImageId::EXPLOSION_3), 1, vec![]),
+            (None, 0, vec![SoundCommand::FireStop(FIRST_FIREBALL)]),
+        ]
+    );
+    let digger = run.state().digger(FIRST);
+    assert!(digger.not_firing(), "gone on E+4");
+    assert_eq!(digger.fireball().position(), Px::new(200, 184));
+    assert_eq!(digger.recharge_time(), 63, "recharge begins next tick");
+}
+
+#[test]
+fn level_1_next_shot_64_ticks_after_removal() {
+    // Fire held throughout: the first fireball is removed on tick R = 12.
+    let mut run = started(SHORT_CORRIDOR);
+    run.set_script(Script::parse("F*100").expect("valid script"));
+    run.run_ticks(11);
+    assert!(!run.state().digger(FIRST).not_firing());
+    run.run_ticks(1);
+    assert!(run.state().digger(FIRST).not_firing(), "removed on tick R");
+    run.take_sounds();
+    run.run_ticks(62);
+    let digger = run.state().digger(FIRST);
+    assert!(!digger.fire_ready() && digger.recharge_time() == 1);
+    run.run_ticks(1);
+    let digger = run.state().digger(FIRST);
+    assert!(digger.fire_ready(), "ready on tick R+63");
+    assert!(digger.not_firing(), "not yet fired on R+63");
+    assert_eq!(fire_cues(run.sounds()), 0);
+    run.run_ticks(1);
+    assert!(!run.state().digger(FIRST).not_firing(), "fired on R+64");
+    assert_eq!(fire_cues(run.sounds()), 1);
 }
