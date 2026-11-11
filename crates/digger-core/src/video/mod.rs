@@ -13,12 +13,14 @@
 //! [`Framebuffer::pixels`] and expands each index through
 //! [`Framebuffer::colors`].
 
+mod backdrop;
 mod crc;
 mod framebuffer;
 mod palette;
 mod saved;
 mod text;
 
+pub use backdrop::LevelPlan;
 pub use crc::crc32;
 pub use framebuffer::{Framebuffer, ProbeBits};
 pub use palette::{Intensity, Palette, Rgb, colors};
