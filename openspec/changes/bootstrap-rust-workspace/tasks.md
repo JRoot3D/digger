@@ -30,8 +30,8 @@
 - [x] 4.2 Add `NOTICE` crediting Windmill Software, Andrew Jenner and Maksym Sobolyev and stating that graphics and sound data derive from Digger Remastered (basis: research 07); verify it is referenced from `README.md`
 - [x] 4.3 Add `deny.toml` allowing licences compatible with GPL-2.0-or-later and banning `sdl2`, `sdl3`, `sdl2-sys`, `sdl3-sys`, `cc` and `bindgen`; verify `cargo deny check` passes
 - [x] 4.4 Write `CONTRIBUTING.md`: toolchain setup, `cargo xtask ci`, the conventions from `docs/porting-plan.md` §5, Conventional Commits, and the OpenSpec apply/archive workflow; verify every command in it runs as written
-- [ ] 4.5 Update `README.md`: replace the planning-only status with build and test instructions and link `LICENSE`, `NOTICE` and `CONTRIBUTING.md`; verify all links resolve
-- [ ] 4.6 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 4.5 Update `README.md`: replace the planning-only status with build and test instructions and link `LICENSE`, `NOTICE` and `CONTRIBUTING.md`; verify all links resolve
+- [x] 4.6 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 5. Continuous integration
 
