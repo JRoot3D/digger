@@ -1117,3 +1117,190 @@ fn commands_arrive_in_event_order() {
         ]
     ));
 }
+
+// --- 15.5 Remaining game-flow scenarios ----------------------------------------
+
+/// `player`'s level number, 0 for the placeholder.
+fn level_of(run: &Run, player: PlayerId) -> u16 {
+    run.state().level(player).map_or(0, LevelNumber::get)
+}
+
+#[test]
+fn alternating_players_keep_separate_progress() {
+    let mut run = started(&scene(GameMode::TwoPlayers, &ONE_EMERALD));
+    // Player 1 completes level 1 and plays on on level 2.
+    eat_last_emerald(&mut run);
+    run.start();
+    assert_eq!(run.state().current_player(), P1);
+    assert_eq!(level_of(&run, P1), 2);
+    assert_eq!(run.state().scores().visible(ScoreId::ALL[0]), 25);
+
+    // Player 1 dies: player 2's turn, on its own level 1 with its own
+    // emerald, score and lives.
+    die_and_end_round(&mut run);
+    run.start();
+    let state = run.state();
+    assert_eq!(state.current_player(), P2);
+    assert_eq!(level_of(&run, P2), 1);
+    assert_eq!(state.emeralds().count(P2), 1);
+    assert_eq!(state.scores().visible(ScoreId::ALL[1]), 0);
+    assert_eq!(state.lives(SECOND), 3);
+
+    // Player 2 dies: player 1 is back on level 2 with 25 points and the 2
+    // lives left after the death.
+    die_and_end_round(&mut run);
+    run.start();
+    let state = run.state();
+    assert_eq!(state.current_player(), P1);
+    assert_eq!(level_of(&run, P1), 2);
+    assert_eq!(level_of(&run, P2), 1);
+    assert_eq!(state.scores().visible(ScoreId::ALL[0]), 25);
+    assert_eq!(state.lives(FIRST), 2);
+    assert_eq!(state.lives(SECOND), 2);
+}
+
+#[test]
+fn simultaneous_diggers_share_the_field() {
+    let mut run = started(&scene(GameMode::TwoDiggers, &[(0, 0, b'C')]));
+    let between = CellPos::new(7, 9).expect("in the grid");
+    assert!(run.state().field().cell(between).is_untouched());
+    // Digger 1 digs left from (172,180) through cell (7,9).
+    for _ in 0..5 {
+        tick(&mut run, "L/.");
+    }
+    assert_eq!(run.state().digger(FIRST).position(), Px::new(152, 180));
+    let dug = *run.state().field();
+    assert!(dug.cell(between).has_no_h_slices());
+    // Digger 2 walks right from (132,180) into the same tunnel, which it
+    // finds already dug: the one field does not change.
+    for _ in 0..5 {
+        tick(&mut run, "./R");
+    }
+    assert_eq!(run.state().digger(SECOND).position(), Px::new(152, 180));
+    assert_eq!(run.state().field(), &dug);
+}
+
+#[test]
+fn one_player_start_at_level_5() {
+    let config = digger_core::GameConfig {
+        start_level: digger_core::StartLevel::new(5).expect("in range"),
+        ..digger_core::GameConfig::default()
+    };
+    let layout_5 = *config
+        .levels
+        .layout(LevelNumber::new(5).expect("a level").plan());
+    let emeralds = layout_5
+        .rows()
+        .iter()
+        .flatten()
+        .filter(|&&c| c == b'C')
+        .count();
+    let mut run = Run::new(digger_core::Game::new(config, 0));
+    run.start();
+    let state = run.state();
+    assert_eq!(level_of(&run, P1), 5);
+    assert_eq!(usize::from(state.emeralds().count(P1)), emeralds);
+    assert_eq!(state.scores().visible(ScoreId::ALL[0]), 0);
+    assert_eq!(state.lives(FIRST), 3);
+    // The field is layout 5's: its bag cells hold bags.
+    let bag_cells = layout_5
+        .rows()
+        .iter()
+        .flatten()
+        .filter(|&&c| c == b'B')
+        .count();
+    let bags = BagId::ALL
+        .iter()
+        .filter(|&&id| state.bag(id).exists())
+        .count();
+    assert_eq!(bags, bag_cells.min(7));
+}
+
+#[test]
+fn one_player_game_after_a_two_player_game() {
+    // A fresh one-player game, as in a freshly started program.
+    let fresh = |run: &mut Run| {
+        run.start();
+        let state = run.state();
+        (
+            trace(run),
+            *state.saved_field(P2),
+            state.level(P2),
+            *state.emeralds(),
+        )
+    };
+    let mut first = Scenario::new(GameMode::OnePlayer).build();
+    let expected = fresh(&mut first);
+    assert_eq!(expected.2, None, "level 0 placeholder (quirk Q06)");
+
+    // A two-player game is played for a while first.
+    let mut two = Scenario::new(GameMode::TwoPlayers).build();
+    two.start();
+    two.set_script(Script::parse("R*20 U*20 L*20").expect("valid script"));
+    two.run_ticks(60);
+    die_and_end_round(&mut two);
+    two.start();
+    assert!(two.state().level(P2).is_some());
+
+    let mut after = Scenario::new(GameMode::OnePlayer).build();
+    assert_eq!(fresh(&mut after), expected);
+}
+
+#[test]
+fn death_then_completion_numbers_rounds_0_1_2() {
+    let mut run = started(&scene(GameMode::OnePlayer, &ONE_EMERALD));
+    assert_eq!(run.state().round(), 0);
+    die_and_end_round(&mut run);
+    run.start();
+    assert_eq!(run.state().round(), 1, "the death ended round 0");
+    assert_eq!(level_of(&run, P1), 1);
+    eat_last_emerald(&mut run);
+    run.start();
+    assert_eq!(run.state().round(), 2, "the completion ended round 1");
+    assert_eq!(level_of(&run, P1), 2);
+}
+
+#[test]
+fn round_after_a_death_keeps_field_emeralds_and_bags() {
+    // A bag, two emeralds, and a tunnel dug part of the way into a cell.
+    let marks = [(5, 9, b'C'), (0, 0, b'C'), (10, 0, b'B')];
+    let mut run = started(&scene(GameMode::OnePlayer, &marks));
+    for _ in 0..2 {
+        tick(&mut run, "U");
+    }
+    let partly = CellPos::new(7, 8).expect("in the grid");
+    let cell = run.state().field().cell(partly);
+    assert!(cell.has_tunnel() && cell.is_untouched(), "partly dug");
+    let field = *run.state().field();
+    let emeralds = *run.state().emeralds();
+    let bag = run.state().bag(BagId::ALL[0]).position();
+
+    die_and_end_round(&mut run);
+    run.start();
+    let state = run.state();
+    assert_eq!(state.round(), 1);
+    // Same tunnels (partly dug cells keep exactly their slices: no
+    // redraw), same emeralds, the surviving bag, the digger back at its
+    // start cell.
+    assert_eq!(state.field(), &field);
+    assert_eq!(state.emeralds(), &emeralds);
+    assert_eq!(state.bag(BagId::ALL[0]).position(), bag);
+    assert_eq!(state.digger(FIRST).position(), Px::new(152, 180));
+    assert_eq!(state.lives(FIRST), 2);
+}
+
+#[test]
+fn tick_count_across_a_level_change() {
+    let mut run = started(&scene(GameMode::OnePlayer, &ONE_EMERALD));
+    eat_last_emerald(&mut run);
+    let main_end = run.ticks();
+    let wind_down_ticks = wind_down(&mut run);
+    assert_eq!(run.ticks(), main_end + wind_down_ticks);
+    // Waiting frames: the level-complete pause and the next level's draw.
+    let waits = waits_to_next_tick(&mut run);
+    assert!(waits >= 40);
+    assert_eq!(run.ticks(), main_end + wind_down_ticks);
+    assert_eq!(run.step(&FrameInput::NONE).frame, FrameKind::Tick);
+    assert_eq!(run.ticks(), main_end + wind_down_ticks + 1);
+    assert_eq!(level_of(&run, P1), 2);
+}

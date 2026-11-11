@@ -1034,3 +1034,21 @@ fn second_move_from_a_corner_decides() {
     assert_eq!(draws_per_tick(&mut run, 1), [2]);
     assert_eq!(run.state().monster(slot(0)).position(), Px::new(108, 90));
 }
+
+#[test]
+fn penalty_table_for_monsters_and_bags_carried_monster() {
+    // Scoring spec, "Penalty counter": one per tick a dead monster is
+    // carried by a bag.
+    let mut run = shaft_with_nobbin();
+    assert!(run.run_until(|s| s.monster(slot(0)).dead(), 200));
+    let mut carried_ticks = 0;
+    while run.state().monster(slot(0)).death() == MonsterDeath::Carried {
+        idle(&mut run, 1);
+        let count = run.state().penalty().count_of(PenaltySite::CarriedMonster);
+        if run.state().monster(slot(0)).death() == MonsterDeath::Carried {
+            assert_eq!(count, 1, "tick {}", run.ticks());
+            carried_ticks += 1;
+        }
+    }
+    assert!(carried_ticks >= 3, "carried for {carried_ticks} ticks");
+}

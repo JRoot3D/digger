@@ -136,8 +136,12 @@ If a digger that did not move this tick overlaps an unbroken bag, its facing SHA
 - **THEN** no fireball appears, the fireball stays ready, and the game continues
 
 #### Scenario: Facing recovered
-- **WHEN** such a digger, aligned on a cell corner, receives right
+- **WHEN** such a digger, aligned on a cell corner, receives right and its move takes it clear of the bag
 - **THEN** it faces right, is drawn again and moves normally
+
+#### Scenario: Still overlapping after the move
+- **WHEN** such a digger lies exactly under a bag and receives right
+- **THEN** its push of the bag is blocked by the digger itself, so it returns to its position and faces left
 
 ### Requirement: Fire control is latched one tick late
 The fire control state read on tick N SHALL take effect on tick N+1: the decision to fire on a tick uses the fire state latched from the previous tick. The latch SHALL be cleared at round start. (research 05 §1.7)

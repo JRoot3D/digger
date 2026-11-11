@@ -1171,3 +1171,28 @@ fn last_life_lost_removes_tombstone_next_tick() {
     assert_eq!(digger_sprite(&run, SECOND), None);
     assert_eq!(run.state().lives(SECOND), 0);
 }
+
+#[test]
+fn dying_digger_takes_no_movement_sample() {
+    let mut run = Scenario::new(GameMode::TwoDiggers)
+        .rows(EARTH)
+        .build_observed(Recorder::default());
+    run.start();
+    assert_eq!(run.run_ticks(1), 1);
+    run.kill_digger(FIRST, KillCause::Monster)
+        .expect("the digger is in play");
+    run.observer_mut().movements.clear();
+    // The whole death sequence, until the dead digger respawns, with
+    // controls held for both slots: only the living second digger is
+    // sampled.
+    run.set_script(Script::parse("RF/LF*120").expect("valid script"));
+    let mut ticks = 0;
+    while !run.state().digger(FIRST).alive() {
+        assert_eq!(run.run_ticks(1), 1);
+        ticks += 1;
+        assert!(ticks < 200, "no respawn");
+    }
+    let slots: Vec<SlotId> = run.observer().movements.iter().map(|m| m.0).collect();
+    assert!(ticks > 80, "a full death sequence ({ticks} ticks)");
+    assert_eq!(slots, vec![SlotId::ALL[1]; ticks]);
+}

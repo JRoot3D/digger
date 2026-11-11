@@ -879,3 +879,87 @@ fn quirk_q21_crushed_digger_carried_at_bag_plus_6() {
     assert_eq!(state.digger(FIRST).death_stage(), Some(DeathStage::Grave));
     assert_eq!(state.scores().visible(ScoreId::ALL[0]), 0, "no points");
 }
+
+// Penalty sites of the bags (scoring spec, "Penalty counter") -----------
+
+/// The count of `site` on each of the next `n` ticks without input.
+fn site_counts(run: &mut Run, site: PenaltySite, n: u32) -> Vec<u16> {
+    (0..n)
+        .map(|_| {
+            idle(run, 1);
+            run.state().penalty().count_of(site)
+        })
+        .collect()
+}
+
+#[test]
+fn penalty_table_for_monsters_and_bags_bag_sites() {
+    // A bag over a two-cell shaft: wobble from tick 1, fall steps from
+    // tick 17, landing as gold on tick 23, gold frames after it.
+    let mut run = started(&bag_over_shaft(3));
+    let wobble = site_counts(&mut run, PenaltySite::WobbleFrame, 16);
+    let falls = site_counts(&mut run, PenaltySite::FallStepDraw, 6);
+    assert_eq!(run.ticks(), TWO_CELL_LANDING - 1);
+    let landing = site_counts(&mut run, PenaltySite::BagLanding, 1);
+    let gold = site_counts(&mut run, PenaltySite::GoldFrame, 6);
+    // One wobble redraw on every second wobble tick.
+    assert_eq!(wobble, [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]);
+    // One fall-step draw on every tick of the fall, one for the landing.
+    assert_eq!(falls, [1; 6]);
+    assert_eq!(landing, [1]);
+    // One per gold opening frame, on the 1st, 3rd and 5th tick after it.
+    assert_eq!(gold, [1, 0, 1, 0, 1, 0]);
+
+    // A bag pushed once slides to the next cell corner.
+    let mut run = started(&[(4, 0, b'B')]);
+    place(&mut run, 76, 18, Direction::Right);
+    tick(&mut run, "R");
+    let slides = site_counts(&mut run, PenaltySite::SlideStepDraw, 8);
+    // One per slide step; the shared push counter makes a lone bag step
+    // on every second tick (quirk Q32).
+    assert_eq!(slides, [1, 0, 1, 0, 1, 0, 1, 0]);
+}
+
+#[test]
+fn facing_recovered_on_a_cell_corner() {
+    // A bag put overlapping the left part of the standing digger leaves it
+    // without a facing.
+    let mut run = started(&[]);
+    assert_eq!(run.state().digger(FIRST).position(), Px::new(152, 180));
+    run.place_bag(BAG0, Px::new(140, 180))
+        .expect("in the playfield");
+    idle(&mut run, 1);
+    assert_eq!(run.state().digger(FIRST).facing(), None);
+    // On its cell corner it takes right: it faces right, is drawn again
+    // and moves normally, clear of the bag.
+    tick(&mut run, "R");
+    let digger = run.state().digger(FIRST);
+    assert_eq!(digger.facing(), Some(Direction::Right));
+    assert_eq!(digger.position(), Px::new(156, 180));
+    assert_eq!(
+        run.state().sprites().position(FIRST.sprite()),
+        Px::new(156, 180)
+    );
+    assert!(run.state().sprites().is_enabled(FIRST.sprite()));
+    tick(&mut run, "R");
+    assert_eq!(run.state().digger(FIRST).position(), Px::new(160, 180));
+    assert_eq!(run.state().bag(BAG0).position(), Px::new(140, 180));
+}
+
+#[test]
+fn facing_none_digger_under_a_bag_stays_blocked() {
+    // The respawned second digger lies exactly under the bag that fell
+    // onto it and has no facing.
+    let (mut run, r) = respawned_under_bag();
+    idle_until(&mut run, r + 21);
+    let digger = run.state().digger(SECOND);
+    assert_eq!(digger.facing(), None);
+    assert_eq!(digger.position(), run.state().bag(BAG0).position());
+    // Its push to the right is refused because the bag's new position
+    // overlaps it, the pusher: it returns and faces left.
+    tick(&mut run, "./R");
+    let digger = run.state().digger(SECOND);
+    assert_eq!(digger.facing(), Some(Direction::Left));
+    assert_eq!(digger.position(), Px::new(132, 180));
+    assert_eq!(run.state().bag(BAG0).position(), Px::new(132, 180));
+}
