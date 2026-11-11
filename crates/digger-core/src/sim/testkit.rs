@@ -728,9 +728,10 @@ impl<O: Observer> Run<O> {
         Ok(())
     }
 
-    /// Switches bonus mode on or off without its timers, signalling or
-    /// music, for monster scenarios until bonus mode exists (task group
-    /// 13).
+    /// Switches bonus mode on as a pickup of the bonus does, without its
+    /// 1000 points (the bonus is removed, the countdowns are set for the
+    /// current level and the eat multipliers reset), or off at once,
+    /// without the pulse stop and the music request of its own ending.
     ///
     /// # Errors
     ///
@@ -739,7 +740,34 @@ impl<O: Observer> Run<O> {
         if self.game.phase != Phase::Playing {
             return Err(SetupError::NotPlaying);
         }
-        self.game.sim.bonus_mode = on;
+        if on {
+            self.with_ctx(|cx| {
+                cx.start_bonus_mode();
+            });
+        } else {
+            self.game.sim.bonus_mode = false;
+            self.game
+                .gfx
+                .fb_mut()
+                .set_intensity(crate::video::Intensity::Normal);
+        }
+        Ok(())
+    }
+
+    /// Shows the bonus at (292, 18) now, as its appearance does, and marks
+    /// it as having appeared for this round.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round.
+    pub fn show_bonus(&mut self) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        self.with_ctx(|cx| {
+            cx.monsters_mut().clear_bonus_pending();
+            cx.show_bonus();
+        });
         Ok(())
     }
 

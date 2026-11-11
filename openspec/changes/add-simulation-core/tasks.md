@@ -124,11 +124,11 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 
 ## 13. Bonus mode
 
-- [ ] 13.1 Implement bonus appearance (once per round, all monsters spawned, timer out, digger alive) at (292,18) and its removal at round end; verify scenario test `cherry_appears_44_ticks_after_last_level_1_spawn`
-- [ ] 13.2 Implement pickup (1000 points, multiplier reset for all diggers), the duration by level, the countdown from the pickup tick, the end on the tick after zero or when nobody is alive, and the main-music command on ending; verify scenario tests `bonus_mode_lasts_ticks_p_to_p_plus_229_on_level_1`, `bonus_mode_ends_when_all_diggers_dead` and unit test `bonus_duration_table_230_to_50`
-- [ ] 13.3 Implement signalling: intensity alternation and pulse commands for the first 20 ticks and the last 20, bonus music at the end of the first 20, high intensity in between, normal intensity on ending; verify scenario tests `pulse_stops_and_bonus_music_starts_on_tick_p_plus_19` and `intensity_alternates_in_final_20_ticks`
-- [ ] 13.4 Implement eating by the digger's own move (every overlapped monster, progression 200, 400, 800…, one `EatMonster` per monster) and confirm monsters flee and do not spawn; verify scenario tests `two_monsters_eaten_in_one_move_score_200_then_400`, `eaten_monster_returns_after_bonus_mode` and `multiplier_resets_in_second_bonus_mode`
-- [ ] 13.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 13.1 Implement bonus appearance (once per round, all monsters spawned, timer out, digger alive) at (292,18) and its removal at round end; verify scenario test `cherry_appears_44_ticks_after_last_level_1_spawn`
+- [x] 13.2 Implement pickup (1000 points, multiplier reset for all diggers), the duration by level, the countdown from the pickup tick, the end on the tick after zero or when nobody is alive, and the main-music command on ending; verify scenario tests `bonus_mode_lasts_ticks_p_to_p_plus_229_on_level_1`, `bonus_mode_ends_when_all_diggers_dead` and unit test `bonus_duration_table_230_to_50`
+- [x] 13.3 Implement signalling: intensity alternation and pulse commands for the first 20 ticks and the last 20, bonus music at the end of the first 20, high intensity in between, normal intensity on ending; verify scenario tests `pulse_stops_and_bonus_music_starts_on_tick_p_plus_19` and `intensity_alternates_in_final_20_ticks`
+- [x] 13.4 Implement eating by the digger's own move (every overlapped monster, progression 200, 400, 800…, one `EatMonster` per monster) and confirm monsters flee and do not spawn; verify scenario tests `two_monsters_eaten_in_one_move_score_200_then_400`, `eaten_monster_returns_after_bonus_mode` and `multiplier_resets_in_second_bonus_mode`
+- [x] 13.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 14. Round flow, modes and game end
 

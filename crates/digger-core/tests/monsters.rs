@@ -831,9 +831,12 @@ fn eaten_by_two_diggers_scores_both_once_removed() {
     let seed = seed_where(&scene, &[14], |d| d != [0]);
     let mut run = start(&scene, seed);
     run.set_bonus_mode(true).expect("playing");
+    // Both diggers stand where the monster's move, not their own draw,
+    // first overlaps them: a digger whose own draw touches a monster in
+    // bonus mode eats it before the monster moves.
     run.place_digger(FIRST, Px::new(152, 180), Direction::Right)
         .expect("reachable");
-    run.place_digger(DiggerId::ALL[1], Px::new(156, 180), Direction::Left)
+    run.place_digger(DiggerId::ALL[1], Px::new(152, 180), Direction::Left)
         .expect("reachable");
     place(&mut run, 0, 168, 180, heading(Direction::Left));
     run.take_sounds();

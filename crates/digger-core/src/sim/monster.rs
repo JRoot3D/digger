@@ -646,8 +646,12 @@ impl Ctx<'_> {
     /// 0 a monster spawns when fewer than the round's total have spawned,
     /// fewer slots are occupied than the on-screen limit, a digger is alive
     /// and bonus mode is off (monsters spec, "Spawn schedule"; research 02
-    /// §4.2). The bonus's appearance from the same point is added by task
-    /// group 13.
+    /// §4.2).
+    ///
+    /// From the same point the bonus appears, once per round, when every
+    /// monster of the round has spawned, the timer is still 0 (it was not
+    /// just restarted by a spawn) and a digger is alive (digger spec, "Bonus
+    /// appearance"; research 02 §3.8).
     fn run_spawn_schedule(&mut self) {
         let monsters = &mut self.sim.monsters;
         if monsters.spawn_timer > 0 {
@@ -660,6 +664,15 @@ impl Ctx<'_> {
             && !self.sim.bonus_mode
         {
             self.spawn_monster();
+        }
+        let monsters = &self.sim.monsters;
+        if monsters.bonus_pending
+            && monsters.spawned == monsters.total
+            && monsters.spawn_timer == 0
+            && self.sim.any_alive()
+        {
+            self.sim.monsters.bonus_pending = false;
+            self.show_bonus();
         }
     }
 
@@ -1166,6 +1179,11 @@ impl Monsters {
     /// Sets the spawn timer, for the test kit.
     pub(crate) const fn set_spawn_timer(&mut self, ticks: u16) {
         self.spawn_timer = ticks;
+    }
+
+    /// Marks the round's bonus as having appeared, for the test kit.
+    pub(crate) const fn clear_bonus_pending(&mut self) {
+        self.bonus_pending = false;
     }
 }
 

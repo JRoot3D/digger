@@ -819,12 +819,13 @@ impl Ctx<'_> {
             self.gfx.place(unit.sprite(), image, at);
         }
         self.sim.diggers_visible = true;
+        self.sim.reset_bonus();
     }
 
-    /// The diggers' part of a tick, without the gauntlet clock and the
-    /// bonus-mode timers: for each unit in order, read its controls, update
-    /// its fireball, move it (or pause it after a push, or run its death),
-    /// and count down its emerald window (game-flow spec, "Main-phase tick
+    /// The diggers' part of a tick, without the gauntlet clock: for each
+    /// unit in order, read its controls, update its fireball, move it (or
+    /// pause it after a push, or run its death), and count down its emerald
+    /// window; then the bonus-mode timers (game-flow spec, "Main-phase tick
     /// order"; research 02 §3.3, `dodigger`).
     pub(crate) fn update_diggers(&mut self, input: &FrameInput) {
         let tick = self.sim.ticks.wrapping_add(1);
@@ -847,6 +848,7 @@ impl Ctx<'_> {
             let digger = record.of_mut(&mut self.sim.diggers);
             digger.emerald_window = digger.emerald_window.saturating_sub(1);
         }
+        self.update_bonus_mode();
     }
 
     /// The tick after a push: the digger is redrawn facing the way it
@@ -904,9 +906,34 @@ impl Ctx<'_> {
         let hits = self.draw_digger(unit, record);
         self.sim.penalty.charge(PenaltySite::DiggerDraw);
         self.meet_bags(unit, record, from, hits);
-        // Meeting monsters and the bonus is added by task groups 12 and 13
-        // using these collisions.
+        self.meet_monsters_as_digger(unit, record, hits);
+        if hits.first(SpriteClass::Bonus).is_some() {
+            self.collect_bonus(unit);
+        }
         record.of_mut(&mut self.sim.diggers).relocate();
+    }
+
+    /// The digger side of meeting monsters after a move whose draw gave
+    /// `hits` (digger spec, "Eating monsters by moving into them"; research
+    /// 02 §3.4 step 11).
+    ///
+    /// Outside bonus mode nothing happens: only a monster's own move kills
+    /// (quirk Q26). In bonus mode a digger still alive removes every
+    /// monster the draw touched, in slot order, and for each one the eat
+    /// cue sounds and the digger scores its next eating step.
+    fn meet_monsters_as_digger(&mut self, unit: DiggerId, record: DiggerId, hits: Collisions) {
+        if !self.sim.bonus_mode || !record.of(&self.sim.diggers).alive {
+            return;
+        }
+        for sprite in hits.of(SpriteClass::Monster) {
+            if let Some(slot) = MonsterSlot::from_sprite(sprite) {
+                self.remove_monster(slot);
+            }
+        }
+        for _ in hits.of(SpriteClass::Monster) {
+            self.sound.push(SoundCommand::EatMonster);
+            self.eat_monster(unit, record);
+        }
     }
 
     /// The digger side of meeting bags after a move whose draw gave `hits`
@@ -1166,8 +1193,11 @@ impl Ctx<'_> {
                 self.gfx.erase(sprite);
                 self.gfx.place(sprite, image, at);
             }
-            // Task group 13 requests the bonus music here in bonus mode.
-            self.request_main_music();
+            if self.sim.bonus_mode {
+                self.request_bonus_music();
+            } else {
+                self.request_main_music();
+            }
         } else {
             self.gfx.erase(unit.sprite());
             record.of_mut(&mut self.sim.diggers).death = Some(DeathStage::Done);

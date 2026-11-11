@@ -65,6 +65,7 @@ use crate::video::{Framebuffer, LevelPlan, TextColor};
 
 pub use bags::Bag;
 use bags::{BagCues, PlayerBags};
+use bonus::Bonus;
 use digger::{AnimFrame, START_LIVES};
 pub use digger::{DeathStage, Digger};
 use draw::{DrawProgress, LevelDraw};
@@ -250,9 +251,10 @@ pub(crate) struct Sim {
     fireball_frames: [FlameFrame; DiggerId::COUNT],
     /// The six monster slots and the round's spawn schedule.
     monsters: Monsters,
-    /// Whether bonus mode is on (hashed as `bonusmode`); switched by the
-    /// bonus of task group 13.
+    /// Whether bonus mode is on (hashed as `bonusmode`).
     bonus_mode: bool,
+    /// The bonus and the bonus-mode countdowns.
+    bonus: Bonus,
     /// The seven bags in play.
     bags: [Bag; BagId::COUNT],
     /// Each player's saved bags.
@@ -327,6 +329,7 @@ impl Sim {
             fireball_frames: [FlameFrame::START; DiggerId::COUNT],
             monsters: Monsters::default(),
             bonus_mode: false,
+            bonus: Bonus::default(),
             bags: [Bag::default(); BagId::COUNT],
             saved_bags: [[Bag::default(); BagId::COUNT]; PlayerId::COUNT],
             gold_time: 0,
@@ -576,16 +579,17 @@ impl Ctx<'_> {
     }
 
     /// The round-end transition (game-flow spec, "Round end"): all sound is
-    /// stopped, every fireball removed, the bags tidied and saved and the
-    /// field saved for the player and the monsters erased, then the
-    /// observer sees the state and the round counter rises. Task 14.3 adds
-    /// the removal of the bonus in its place.
+    /// stopped, every fireball removed, the bonus removed (normal
+    /// intensity restored), the bags tidied and saved and the field saved
+    /// for the player and the monsters erased, then the observer sees the
+    /// state and the round counter rises.
     fn end_round(&mut self) {
         self.sound.push(SoundCommand::StopAll);
         for unit in self.sim.units() {
             let record = self.sim.record_of_unit(unit);
             self.remove_fireball(unit, record);
         }
+        self.remove_bonus();
         self.tidy_bags();
         self.sim.saved_fields.save(self.sim.turn, &self.sim.field);
         self.erase_monsters();

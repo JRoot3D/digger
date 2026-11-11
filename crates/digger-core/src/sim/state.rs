@@ -158,6 +158,23 @@ impl<'a> StateView<'a> {
         self.sim.bonus_mode
     }
 
+    /// Whether the bonus is shown (hashed as `bonusvisible`).
+    pub fn bonus_visible(self) -> bool {
+        self.sim.bonus.visible
+    }
+
+    /// The bonus-mode countdown (hashed as `bonustimeleft`): ticks left to
+    /// count down, 0 outside bonus mode once a round has started.
+    pub fn bonus_time_left(self) -> i16 {
+        self.sim.bonus.time_left
+    }
+
+    /// The countdown of bonus mode's opening flash (hashed as
+    /// `startbonustimeleft`); it goes below 0 during the final flash.
+    pub fn bonus_start_time_left(self) -> i16 {
+        self.sim.bonus.start_left
+    }
+
     /// Bag `id`, with its last values when it no longer exists.
     pub fn bag(self, id: BagId) -> &'a Bag {
         id.of(&self.sim.bags)
