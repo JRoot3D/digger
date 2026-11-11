@@ -29,8 +29,8 @@ task of each group is the quality gate and the commit.
 - [x] 3.1 Fetch upstream `sobomax/digger` at commit `638125eecc2a36629b886f58d7b75253894cf3d3` into a temporary directory outside the repository and run `cargo xtask import-assets --upstream <dir>`; verify exit status 0 and that `assets/` holds `sprites.bin`, `font.bin` (23040 bytes), `title.zz` (2772 bytes), `icon.rgba` (16384 bytes), `index.rs` and `manifest.txt`; if the reader rejects real upstream formatting, fix it in group 1's module with a new fixture test
 - [x] 3.2 Run `cargo xtask import-assets --upstream <dir> --check` and a second full import; verify the check exits 0 and `git status` shows no change after the second import
 - [x] 3.3 Add `xtask/tests/asset_manifest.rs` that hashes every file in `assets/` against `manifest.txt` and fails on a mismatch, a missing file or an unlisted file (ignoring `README.md` and `manifest.txt` itself only if they are listed as exempt in the test); verify with `cargo test -p xtask --test asset_manifest`, and by temporarily flipping one byte of `font.bin` and seeing the test name that file
-- [ ] 3.4 Write `assets/README.md` (origin, pinned commit, GPL-2.0-or-later notice, "do not edit by hand") and `docs/assets.md` (file formats from design D2, how to re-import and check, how later changes add level and music tables); verify the two commands in `docs/assets.md` run exactly as written
-- [ ] 3.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(assets): import upstream sprite, font, title and icon data`
+- [x] 3.4 Write `assets/README.md` (origin, pinned commit, GPL-2.0-or-later notice, "do not edit by hand") and `docs/assets.md` (file formats from design D2, how to re-import and check, how later changes add level and music tables); verify the two commands in `docs/assets.md` run exactly as written
+- [x] 3.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(assets): import upstream sprite, font, title and icon data`
 
 ## 4. Asset access in digger-core
 
