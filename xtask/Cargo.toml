@@ -9,5 +9,8 @@ authors.workspace = true
 description = "Developer tooling for the Digger workspace."
 publish = false
 
+[dependencies]
+clap.workspace = true
+
 [lints]
 workspace = true
