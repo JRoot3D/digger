@@ -75,10 +75,11 @@ pub mod video;
 pub use sim::testkit;
 pub use sim::{
     BagId, BonusEffect, CUSTOM_LEVELS_LEN, Cell, CellPos, ConfigError, Controls, Difficulty,
-    DiggerId, Direction, EmeraldMap, Field, FrameInput, FrameLength, GameConfig, GameMode, GameRng,
-    GauntletSeconds, IdOutOfRange, LevelError, LevelLayout, LevelNumber, LevelSet, Located,
-    Modulus, MonsterSlot, Movement, NoopObserver, Observer, Penalty, PenaltySite, PlayerId,
-    ScoreEvent, ScoreId, Scores, SlotId, StartLevel, StateView, locate, reverse_of, round_seed,
+    DiggerId, Direction, EmeraldMap, Field, FinishReason, FrameInput, FrameKind, FrameLength, Game,
+    GameConfig, GameMode, GameRng, GameSummary, GauntletSeconds, IdOutOfRange, LevelError,
+    LevelLayout, LevelNumber, LevelSet, Located, Modulus, MonsterSlot, Movement, NoopObserver,
+    Observer, Penalty, PenaltySite, PlayerId, PlayerResult, ScoreEvent, ScoreId, ScoreSummary,
+    Scores, SlotId, StartLevel, StateView, StepOutcome, locate, reverse_of, round_seed,
     within_limits,
 };
 pub use sound_cmd::{EmeraldStep, FireballId, SoundCommand, Tempo, Tune};

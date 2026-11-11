@@ -114,6 +114,7 @@ pub struct StepOutcome {
 
 | Phase | Frames | Frame kind | Leaves to |
 |---|---|---|---|
+| `Start` | none: the first step continues into `LevelDraw` | — | `LevelDraw` (the game-start `level_plan` observer calls for the participating players run here, because `Game::new` takes no observer) |
 | `LevelDraw { cursor }` | ⌈items / 3⌉ (`DRAW_ITEMS_PER_FRAME = 3`; items = opened cells, then emeralds; the bags are drawn between the two and not counted; a draw with no item takes one frame) | Wait | `PlayerFlash` (alternating mode, first round or after a turn change) or `Playing` |
 | `PlayerFlash { frame }` | `PLAYER_FLASH_FRAMES = 45` | Wait | `Playing` |
 | `Playing` | one tick per frame | Tick | `Paused`, `WindDown`, or round end directly on gauntlet time-out |

@@ -127,8 +127,9 @@ mod tests {
             Movement::default()
         );
 
-        obs.tick_end(1, StateView::empty());
-        obs.round_end(StateView::empty());
-        obs.game_end(StateView::empty());
+        let game = crate::sim::Game::new(crate::sim::GameConfig::default(), 0);
+        obs.tick_end(1, game.state());
+        obs.round_end(game.state());
+        obs.game_end(game.state());
     }
 }

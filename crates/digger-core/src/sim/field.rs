@@ -337,6 +337,11 @@ impl PlayerFields {
     pub(crate) fn restore(&self, player: PlayerId) -> Field {
         *player.of(&self.saved)
     }
+
+    /// `player`'s saved field, for reading.
+    pub(crate) fn saved(&self, player: PlayerId) -> &Field {
+        player.of(&self.saved)
+    }
 }
 
 /// The emeralds of the grid: one bit per cell for each player of an
