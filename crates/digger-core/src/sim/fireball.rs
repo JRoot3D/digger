@@ -625,8 +625,10 @@ mod tests {
         use crate::sim::{DeathStage, GameMode, LevelLayout, LevelSet};
         // Two diggers on earth with only the first digger's start cell
         // open. The second digger lies dead, its tombstone at (168,180) in
-        // the way of the first digger's shot to the right.
+        // the way of the first digger's shot to the right. An emerald far
+        // away keeps the level from being complete.
         let mut rows = ["               "; 10];
+        rows[0] = "C              ";
         rows[9] = "        S      ";
         let layout = LevelLayout::parse_rows(rows).unwrap_or_else(|_| unreachable!());
         let config = GameConfig {

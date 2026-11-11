@@ -209,7 +209,6 @@ pub(crate) fn draw_lives(fb: &mut Framebuffer, first: u32, second: Option<Second
 /// colour 3, where the seconds shown are `clock` (in 1,193,181ths of a
 /// second) divided by 1,193,181, rounded down (playfield spec, "Gauntlet
 /// clock display"; research 01 §6.5, §7.4).
-#[allow(dead_code, reason = "called by the gauntlet tick (task group 12)")]
 pub(crate) fn draw_gauntlet_clock(fb: &mut Framebuffer, clock: u32) {
     let seconds = clock / CLOCK_UNITS_PER_SECOND;
     let mut text = StackText::<8>::new();
@@ -221,7 +220,6 @@ pub(crate) fn draw_gauntlet_clock(fb: &mut Framebuffer, clock: u32) {
 
 /// Erases the whole top line: 26 cells from x = 0 and one from x = 308
 /// (research 01 §3.3, research 03 §8.5).
-#[allow(dead_code, reason = "called by the round flow (task group 7)")]
 pub(crate) fn clear_top_line(fb: &mut Framebuffer) {
     fb.erase_text(26, Px::new(0, TOP));
     fb.erase_text(1, Px::new(308, TOP));
@@ -229,7 +227,6 @@ pub(crate) fn clear_top_line(fb: &mut Framebuffer) {
 
 /// Draws `PLAYER 1` or `PLAYER 2` at (108, 0) in `color`, as the player
 /// flash does (game-flow spec; research 01 §3.2, research 03 §8.5).
-#[allow(dead_code, reason = "called by the player flash (task group 7)")]
 pub(crate) fn draw_player_label(fb: &mut Framebuffer, player: PlayerId, color: TextColor) {
     let mut text = StackText::<8>::new();
     for &b in b"PLAYER " {
@@ -241,7 +238,6 @@ pub(crate) fn draw_player_label(fb: &mut Framebuffer, player: PlayerId, color: T
 }
 
 /// Erases the eight cells of the `PLAYER n` label at (108, 0).
-#[allow(dead_code, reason = "called by the round start (task group 7)")]
 pub(crate) fn erase_player_label(fb: &mut Framebuffer) {
     let (x, cells) = PLAYER_LABEL;
     fb.erase_text(cells, Px::new(x, TOP));
@@ -249,10 +245,6 @@ pub(crate) fn erase_player_label(fb: &mut Framebuffer) {
 
 /// A message shown alone on the top line (game-flow spec; research 03
 /// §8.5).
-#[allow(
-    dead_code,
-    reason = "constructed by the pause and notice phases (task group 7)"
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum TopLineMessage {
     /// `PRESS ANY KEY` at (80, 0) in text colour 1, while paused.
@@ -263,10 +255,6 @@ pub(crate) enum TopLineMessage {
     TimeUp,
 }
 
-#[allow(
-    dead_code,
-    reason = "shown by the pause and notice phases (task group 7)"
-)]
 impl TopLineMessage {
     /// The message's text.
     pub(crate) const fn text(self) -> &'static str {

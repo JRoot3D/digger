@@ -135,6 +135,17 @@ index_id!(
     7: [0, 1, 2, 3, 4, 5, 6]
 );
 
+impl PlayerId {
+    /// The other player of an alternating game.
+    #[must_use]
+    pub const fn other(self) -> Self {
+        match self.number() {
+            0 => Self::ALL[1],
+            _ => Self::ALL[0],
+        }
+    }
+}
+
 impl DiggerId {
     /// The digger's sprite, slot 16 + index.
     pub const fn sprite(self) -> SpriteId {

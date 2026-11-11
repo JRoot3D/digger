@@ -19,15 +19,42 @@ use digger_core::{
 const FIRST: DiggerId = DiggerId::ALL[0];
 const SECOND: DiggerId = DiggerId::ALL[1];
 
-/// Solid earth everywhere.
-const EARTH: [&str; 10] = ["               "; 10];
+/// Solid earth everywhere, with one emerald in the bottom-right cell so
+/// that the level is not complete before anything happens (game-flow
+/// spec, "Level completion test").
+const EARTH: [&str; 10] = [
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "              C",
+];
 
 /// A one-player run on `rows`, started so that the next frame is the
 /// round's first tick.
 fn started(rows: [&str; 10]) -> Run {
-    let mut run = Scenario::new(GameMode::OnePlayer).rows(rows).build();
+    let rows = with_spare_emerald(rows);
+    let mut run = Scenario::new(GameMode::OnePlayer)
+        .rows(rows.each_ref().map(String::as_str))
+        .build();
     run.start();
     run
+}
+
+/// `rows`, with an emerald added in the top-right cell when the layout has
+/// none, so that the level is not complete before anything happens
+/// (game-flow spec, "Level completion test").
+fn with_spare_emerald(rows: [&str; 10]) -> [String; 10] {
+    let mut rows = rows.map(str::to_owned);
+    if !rows.iter().any(|row| row.contains('C')) {
+        rows[0].replace_range(14..15, "C");
+    }
+    rows
 }
 
 /// [`started`] with the first digger put at (`x`, `y`) facing `facing`.
@@ -345,11 +372,17 @@ fn quirk_q16_emerald_eaten_at_x_64_moving_right() {
     assert!(!run.state().emeralds().has(player, cell(3, 1)));
     assert_eq!(run.state().scores().visible(ScoreId::ALL[0]), 25);
     let note0 = EmeraldStep::new(0).expect("note 0");
+    // The level's only emerald is gone, so the tick also ends the main
+    // phase and the music stops after the emerald's cues.
     let sounds = run.take_sounds();
-    let tail = sounds.get(sounds.len() - 2..).expect("two cues");
+    let tail = sounds.get(sounds.len() - 3..).expect("three cues");
     assert_eq!(
         tail,
-        [SoundCommand::EmeraldClick, SoundCommand::EmeraldNote(note0)]
+        [
+            SoundCommand::EmeraldClick,
+            SoundCommand::EmeraldNote(note0),
+            SoundCommand::MusicOff
+        ]
     );
 }
 
@@ -658,7 +691,10 @@ fn quirk_q19_probe_ignored_while_touching_a_sprite() {
 /// A two-digger run on `rows` with digger 1 at (`x1`, 180) facing right
 /// and digger 2 at (`x2`, 180) facing left.
 fn facing_pair(rows: [&str; 10], x1: i32, x2: i32) -> Run {
-    let mut run = Scenario::new(GameMode::TwoDiggers).rows(rows).build();
+    let rows = with_spare_emerald(rows);
+    let mut run = Scenario::new(GameMode::TwoDiggers)
+        .rows(rows.each_ref().map(String::as_str))
+        .build();
     run.start();
     run.place_digger(FIRST, Px::new(x1, 180), Direction::Right)
         .expect("a reachable position");
@@ -976,9 +1012,20 @@ fn quirk_q23_one_digger_round_ends_at_g_plus_89() {
     assert_eq!(run.ticks(), g + 88);
     assert_eq!(run.state().round(), 0);
     assert_eq!(run.state().lives(FIRST), 3);
+    assert!(run.state().diggers_visible());
     idle(&mut run, 1);
     assert_eq!(run.ticks(), g + 89);
-    assert_eq!(run.state().round(), 1, "the round ended on tick G+89");
+    assert!(
+        !run.state().diggers_visible(),
+        "the main phase ended on tick G+89"
+    );
+    // A quiet wind-down of one tick ends the round.
+    idle(&mut run, 1);
+    assert_eq!(
+        run.state().round(),
+        1,
+        "the round ended after the wind-down"
+    );
     // The next round has begun at the start cell.
     let digger = run.state().digger(FIRST);
     assert!(digger.alive());

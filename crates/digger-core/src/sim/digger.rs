@@ -509,6 +509,14 @@ impl Digger {
         };
     }
 
+    /// Takes one of the digger's lives, except in gauntlet mode, where
+    /// lives never change (research 01 §3.2, `declife`).
+    pub(crate) const fn lose_life(&mut self, gauntlet: bool) {
+        if !gauntlet {
+            self.lives = self.lives.saturating_sub(1);
+        }
+    }
+
     /// Takes a record with no lives left out of play at round start
     /// (research 02 §3.2).
     fn retire(&mut self) {
@@ -822,12 +830,21 @@ impl Ctx<'_> {
         self.sim.reset_bonus();
     }
 
-    /// The diggers' part of a tick, without the gauntlet clock: for each
-    /// unit in order, read its controls, update its fireball, move it (or
-    /// pause it after a push, or run its death), and count down its emerald
-    /// window; then the bonus-mode timers (game-flow spec, "Main-phase tick
-    /// order"; research 02 §3.3, `dodigger`).
+    /// The diggers' part of a tick: in gauntlet mode the clock is drawn and
+    /// counted down first (quirk Q13); then for each unit in order, read
+    /// its controls, update its fireball, move it (or pause it after a
+    /// push, or run its death), and count down its emerald window; then
+    /// the bonus-mode timers (game-flow spec, "Update order of a
+    /// main-phase tick", "Gauntlet clock"; research 02 §3.3, research 01
+    /// §7.4, `dodigger`).
     pub(crate) fn update_diggers(&mut self, input: &FrameInput) {
+        if self.sim.gauntlet.is_some() {
+            // The clock is drawn with the value before this tick's step.
+            self.draw_lives();
+            if let Some(clock) = &mut self.sim.gauntlet {
+                clock.count_down();
+            }
+        }
         let tick = self.sim.ticks.wrapping_add(1);
         for unit in self.sim.units() {
             let record = self.sim.record_of_unit(unit);

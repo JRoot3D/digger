@@ -662,8 +662,8 @@ impl<O: Observer> Run<O> {
     ///
     /// # Errors
     ///
-    /// [`SetupError::NotPlaying`] outside a round,
-    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// [`SetupError::NotPlaying`] outside a round's main phase and
+    /// wind-down, [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
     /// y 18..=180.
     pub fn place_monster(&mut self, slot: MonsterSlot, at: Px) -> Result<(), SetupError> {
         self.place_monster_as(slot, at, MonsterSetup::default())
@@ -676,8 +676,8 @@ impl<O: Observer> Run<O> {
     ///
     /// # Errors
     ///
-    /// [`SetupError::NotPlaying`] outside a round,
-    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// [`SetupError::NotPlaying`] outside a round's main phase and
+    /// wind-down, [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
     /// y 18..=180.
     pub fn place_monster_as(
         &mut self,
@@ -777,8 +777,8 @@ impl<O: Observer> Run<O> {
     ///
     /// # Errors
     ///
-    /// [`SetupError::NotPlaying`] outside a round,
-    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// [`SetupError::NotPlaying`] outside a round's main phase and
+    /// wind-down, [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
     /// y 18..=180.
     pub fn place_bag(&mut self, id: BagId, at: Px) -> Result<(), SetupError> {
         self.check_entity_position(at)?;
@@ -791,8 +791,8 @@ impl<O: Observer> Run<O> {
     ///
     /// # Errors
     ///
-    /// [`SetupError::NotPlaying`] outside a round,
-    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// [`SetupError::NotPlaying`] outside a round's main phase and
+    /// wind-down, [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
     /// y 18..=180.
     pub fn place_gold(&mut self, id: BagId, at: Px) -> Result<(), SetupError> {
         self.check_entity_position(at)?;
@@ -822,10 +822,26 @@ impl<O: Observer> Run<O> {
         Ok(())
     }
 
-    /// Checks that a round is being played and `at` is within the playfield
-    /// limits.
+    /// Whether the main phase of a round is being played.
+    pub fn in_main_phase(&self) -> bool {
+        self.game.phase == Phase::Playing
+    }
+
+    /// Whether a round's wind-down is running: its next frame is a
+    /// wind-down tick.
+    pub fn in_wind_down(&self) -> bool {
+        matches!(self.game.phase, Phase::WindDown { .. })
+    }
+
+    /// Whether the game is paused.
+    pub fn is_paused(&self) -> bool {
+        matches!(self.game.phase, Phase::Paused { .. })
+    }
+
+    /// Checks that a round's main phase or wind-down is being played and
+    /// `at` is within the playfield limits.
     fn check_entity_position(&self, at: Px) -> Result<(), SetupError> {
-        if self.game.phase != Phase::Playing {
+        if !self.in_main_phase() && !self.in_wind_down() {
             return Err(SetupError::NotPlaying);
         }
         if !within_limits(at) {

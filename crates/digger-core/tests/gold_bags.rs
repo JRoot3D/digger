@@ -21,7 +21,10 @@ const BAG0: BagId = BagId::ALL[0];
 const BAG1: BagId = BagId::ALL[1];
 
 /// Ten rows of solid earth with the characters of `marks`, each a column,
-/// a row and a layout character.
+/// a row and a layout character. Unless the marks place an emerald, one is
+/// added in the first of the bottom-right, top-right and top-left cells
+/// left as earth, so that the level is not complete before anything
+/// happens (game-flow spec, "Level completion test").
 fn rows_with(marks: &[(u8, u8, u8)]) -> [String; 10] {
     let mut rows = [[b' '; 15]; 10];
     for &(h, v, c) in marks {
@@ -30,6 +33,16 @@ fn rows_with(marks: &[(u8, u8, u8)]) -> [String; 10] {
             .and_then(|row| row.get_mut(usize::from(h)))
             .expect("mark inside the grid");
         *at = c;
+    }
+    if !rows.iter().flatten().any(|&c| c == b'C') {
+        for (v, h) in [(9, 14), (0, 14), (0, 0)] {
+            if let Some(c) = rows.get_mut(v).and_then(|row| row.get_mut(h))
+                && *c == b' '
+            {
+                *c = b'C';
+                break;
+            }
+        }
     }
     rows.map(|row| String::from_utf8(row.to_vec()).expect("ASCII"))
 }

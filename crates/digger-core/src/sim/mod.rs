@@ -76,7 +76,7 @@ use gauntlet::GauntletClock;
 use gfx::Gfx;
 use input::SlotInput;
 pub use monster::{Monster, MonsterDeath, Monsters};
-use status::SecondSide;
+use status::{SecondSide, TopLineMessage};
 
 /// What kind of frame a step was (game-flow spec, "Frames and ticks").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -168,6 +168,46 @@ impl StepOutcome {
     }
 }
 
+/// Frames of the `PLAYER n` announcement (game-flow spec, "Player
+/// announcement"; research 01 §3.2: 15 × 3 frames).
+const PLAYER_FLASH_FRAMES: u8 = 45;
+
+/// The most wind-down ticks that a busy field runs once no bag is moving
+/// (game-flow spec, "Wind-down").
+const WIND_DOWN_MAX: u8 = 20;
+
+/// A wind-down tick whose penalty counter stays below this value ends the
+/// wind-down once no bag is moving (game-flow spec, "Wind-down").
+const WIND_DOWN_QUIET_PENALTY: u16 = 8;
+
+/// Frames of the pause after a completed level, standing in for the
+/// original's wait for the 3.17 s jingle at the default 80 ms frame
+/// (game-flow spec, "Level-complete jingle and pause"; design D3).
+const LEVEL_DONE_FRAMES: u8 = 40;
+
+/// Frames a `GAME OVER` or `TIME UP` notice is shown (game-flow spec, "Game
+/// over", "Gauntlet time-out"; research 01 §6.3).
+const NOTICE_FRAMES: u8 = 50;
+
+/// A notice shown alone on the top line at the end of a player's game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Notice {
+    /// `GAME OVER`: the current player has run out of lives.
+    GameOver,
+    /// `TIME UP`: the gauntlet clock ran out.
+    TimeUp,
+}
+
+impl Notice {
+    /// The top-line message the notice shows.
+    const fn message(self) -> TopLineMessage {
+        match self {
+            Self::GameOver => TopLineMessage::GameOver,
+            Self::TimeUp => TopLineMessage::TimeUp,
+        }
+    }
+}
+
 /// Where the game stands between two frames (design D3).
 ///
 /// Every waiting loop of the original is a variant; round start and round
@@ -178,10 +218,45 @@ enum Phase {
     /// observer for the participating players' layouts and then runs the
     /// first frame of the level draw.
     Start,
+    /// A full draw of the current player's field is due: the next frame
+    /// starts it and draws its first items.
+    DrawPending,
     /// The progressive full draw of the playfield: waiting frames.
     LevelDraw(LevelDraw),
+    /// The `PLAYER n` announcement of an alternating game, after the full
+    /// draw; `frame` frames of it have run.
+    PlayerFlash {
+        /// Frames of the announcement already shown.
+        frame: u8,
+    },
     /// The main phase: one tick per frame.
     Playing,
+    /// Paused after a main-phase tick. `main_over` records that the tick
+    /// before the pause ended the main phase, so the resume goes on to
+    /// the wind-down.
+    Paused {
+        /// Whether the main phase ended on the tick before the pause.
+        main_over: bool,
+    },
+    /// The wind-down after the main phase: one tick per frame. `left` is
+    /// the original's countdown from 20, set to 0 by a quiet tick.
+    WindDown {
+        /// The countdown of the wind-down ticks still owed.
+        left: u8,
+    },
+    /// The pause after a completed level; the outcome is decided on its
+    /// last frame.
+    LevelDone {
+        /// Frames of the pause still to run.
+        left: u8,
+    },
+    /// A `GAME OVER` or `TIME UP` notice.
+    Notice {
+        /// The notice shown.
+        notice: Notice,
+        /// Frames still to run.
+        left: u8,
+    },
     /// The game has finished; further steps change nothing.
     Finished(GameSummary),
 }
@@ -190,7 +265,50 @@ impl Phase {
     /// Whether a round has begun and not yet ended, so that ending the game
     /// now passes through the round end.
     const fn in_round(self) -> bool {
-        matches!(self, Self::Playing)
+        matches!(
+            self,
+            Self::Playing | Self::Paused { .. } | Self::WindDown { .. }
+        )
+    }
+}
+
+/// How a round begins (research 01 §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoundStart {
+    /// After a full draw of the field.
+    FullDraw,
+    /// After a full draw and the `PLAYER n` announcement.
+    Announced,
+    /// On the field as the last round left it, after a death.
+    SameField,
+}
+
+/// What a frame's advance produced: the phase that follows, the kind of
+/// the frame, and a player whose game ended on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Advance {
+    /// The phase after the frame.
+    phase: Phase,
+    /// The kind of the frame.
+    frame: FrameKind,
+    /// The player whose game ended on this frame, if any.
+    player_out: Option<PlayerResult>,
+}
+
+impl Advance {
+    /// A frame of `frame` kind leading to `phase` that ended no player's
+    /// game.
+    const fn to(phase: Phase, frame: FrameKind) -> Self {
+        Self {
+            phase,
+            frame,
+            player_out: None,
+        }
+    }
+
+    /// The same advance with the frame kind replaced.
+    const fn as_frame(self, frame: FrameKind) -> Self {
+        Self { frame, ..self }
     }
 }
 
@@ -277,6 +395,14 @@ pub(crate) struct Sim {
     gauntlet: Option<GauntletClock>,
     /// The direction resolver and fire latch of each control slot.
     inputs: [SlotInput; SlotId::COUNT],
+    /// Whether the next round starts with a full draw of the current
+    /// player's field (the original's `levnotdrawn`): set when a level is
+    /// set up after a completed level and when the turn passes.
+    redraw_pending: bool,
+    /// Whether the next full draw is followed by the `PLAYER n`
+    /// announcement (the original's `flashplayer`): at the start of an
+    /// alternating game and after every change of turn.
+    flash_player: bool,
     /// The tune of the last music request if it was for the main music,
     /// so a change of lives can switch between the main and the last-life
     /// tune (research 04 §3.1, `musicrefresh`).
@@ -339,6 +465,8 @@ impl Sim {
             scores,
             gauntlet: mode.gauntlet().map(GauntletClock::start),
             inputs: [SlotInput::new(); SlotId::COUNT],
+            redraw_pending: false,
+            flash_player: mode.alternating(),
             main_tune: None,
             cfg: config,
         };
@@ -384,10 +512,36 @@ impl Sim {
 
     /// The first digger record of the player whose turn it is.
     fn turn_record(&self) -> DiggerId {
-        match DiggerId::new(self.turn.number()) {
+        Self::record_of_player(self.turn)
+    }
+
+    /// The first digger record of `player`: record `player`.
+    fn record_of_player(player: PlayerId) -> DiggerId {
+        match DiggerId::new(player.number()) {
             Some(digger) => digger,
             None => unreachable!("there are as many digger records as players"),
         }
+    }
+
+    /// The score of `player`'s first digger: score `player`.
+    fn score_of(player: PlayerId) -> ScoreId {
+        match ScoreId::new(player.number()) {
+            Some(id) => id,
+            None => unreachable!("there are as many scores as players"),
+        }
+    }
+
+    /// The lives of the current player's diggers together (research 01
+    /// §3.2, `getalllives`).
+    fn turn_lives(&self) -> u32 {
+        self.units()
+            .map(|unit| self.record_of_unit(unit).of(&self.diggers).lives)
+            .sum()
+    }
+
+    /// Whether the gauntlet clock has run out.
+    fn timed_out(&self) -> bool {
+        self.gauntlet.is_some_and(GauntletClock::timed_out)
     }
 
     /// The current player's level. The player whose turn it is always
@@ -430,24 +584,53 @@ pub(crate) struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
-    /// Advances `phase` by one frame and returns the phase that follows and
-    /// the kind of the frame.
-    fn advance(&mut self, phase: Phase, input: &FrameInput) -> (Phase, FrameKind) {
+    /// Advances `phase` by one frame and returns what followed.
+    fn advance(&mut self, phase: Phase, input: &FrameInput) -> Advance {
         match phase {
             Phase::Start => {
                 self.start_game();
                 let draw = self.begin_level_draw();
                 self.level_draw_frame(draw)
             }
-            Phase::LevelDraw(draw) => self.level_draw_frame(draw),
-            Phase::Playing => {
-                self.tick_main(input);
-                if self.sim.all_dead {
-                    return (self.round_over(), FrameKind::Tick);
-                }
-                (Phase::Playing, FrameKind::Tick)
+            Phase::DrawPending => {
+                let draw = self.begin_level_draw();
+                self.level_draw_frame(draw)
             }
-            Phase::Finished(_) => (phase, FrameKind::Wait),
+            Phase::LevelDraw(draw) => self.level_draw_frame(draw),
+            Phase::PlayerFlash { frame } => self.player_flash_frame(frame),
+            Phase::Playing => self.main_frame(input),
+            Phase::Paused { main_over } => {
+                if !input.pause {
+                    return Advance::to(phase, FrameKind::Paused);
+                }
+                self.resume();
+                if main_over {
+                    self.end_main_phase().as_frame(FrameKind::Paused)
+                } else {
+                    Advance::to(Phase::Playing, FrameKind::Paused)
+                }
+            }
+            Phase::WindDown { left } => self.wind_down_frame(left, input),
+            Phase::LevelDone { left } => {
+                if left > 1 {
+                    return Advance::to(Phase::LevelDone { left: left - 1 }, FrameKind::Wait);
+                }
+                self.decide_outcome()
+            }
+            Phase::Notice { notice, left } => {
+                if left > 1 {
+                    return Advance::to(
+                        Phase::Notice {
+                            notice,
+                            left: left - 1,
+                        },
+                        FrameKind::Wait,
+                    );
+                }
+                notice.message().erase(self.gfx.fb_mut());
+                Advance::to(self.continue_after_round(), FrameKind::Wait)
+            }
+            Phase::Finished(_) => Advance::to(phase, FrameKind::Wait),
         }
     }
 
@@ -474,12 +657,23 @@ impl Ctx<'_> {
         self.sim.gold_time = gold_time;
     }
 
+    /// Sets up `player`'s current level, offering it to the observer's
+    /// `level_plan` hook first (design D8; research 01 §3.1, `initlevel`).
+    fn set_up_level_observed(&mut self, player: PlayerId) {
+        let replacement = player.of(&self.sim.players).level.and_then(|level| {
+            let stored = *self.sim.cfg.levels.layout(level.plan());
+            self.obs.level_plan(player, level, &stored)
+        });
+        self.sim.set_up_level(player, replacement);
+    }
+
     /// Starts the full draw of the current player's field: the saved field
     /// is put in play and the draw begins (design D3; research 01 §3.2,
     /// `drawscreen`). The sprites are reset to their initial images: the
     /// diggers' and the bags' here (the player's saved bags are put in
     /// play), and the monsters'.
     fn begin_level_draw(&mut self) -> LevelDraw {
+        self.sim.redraw_pending = false;
         let turn = self.sim.turn;
         self.sim.field = self.sim.saved_fields.restore(turn);
         let plan: LevelPlan = self.sim.current_level().plan();
@@ -489,9 +683,11 @@ impl Ctx<'_> {
         LevelDraw::begin(self.gfx, &mut self.sim.field, plan)
     }
 
-    /// One frame of the full draw; on the frame that draws the last item
-    /// the round starts, so the next frame is the round's first tick.
-    fn level_draw_frame(&mut self, mut draw: LevelDraw) -> (Phase, FrameKind) {
+    /// One frame of the full draw. On the frame that draws the last item
+    /// either the player announcement begins (the top line is cleared for
+    /// it) or the round starts, so that the next frame is the round's first
+    /// tick.
+    fn level_draw_frame(&mut self, mut draw: LevelDraw) -> Advance {
         let bags = self.sim.bags;
         let progress = draw.frame(
             self.gfx,
@@ -501,12 +697,40 @@ impl Ctx<'_> {
             |gfx| bags::draw_bags(gfx, &bags),
         );
         match progress {
-            DrawProgress::InProgress => (Phase::LevelDraw(draw), FrameKind::Wait),
+            DrawProgress::InProgress => Advance::to(Phase::LevelDraw(draw), FrameKind::Wait),
+            DrawProgress::Done if self.sim.flash_player => {
+                self.sim.flash_player = false;
+                status::clear_top_line(self.gfx.fb_mut());
+                Advance::to(Phase::PlayerFlash { frame: 0 }, FrameKind::Wait)
+            }
             DrawProgress::Done => {
-                self.begin_round(true);
-                (Phase::Playing, FrameKind::Wait)
+                self.begin_round(RoundStart::FullDraw);
+                Advance::to(Phase::Playing, FrameKind::Wait)
             }
         }
+    }
+
+    /// One frame of the `PLAYER n` announcement: the label and the current
+    /// player's score are drawn in text colour 1, 2 or 3 in turn (game-flow
+    /// spec, "Player announcement"; research 01 §3.2). After the 45th frame
+    /// both scores are drawn, each digger's score is refreshed by a
+    /// zero-point call and the round starts.
+    fn player_flash_frame(&mut self, frame: u8) -> Advance {
+        let color = match frame % 3 {
+            0 => TextColor::One,
+            1 => TextColor::Two,
+            _ => TextColor::Three,
+        };
+        let turn = self.sim.turn;
+        status::draw_player_label(self.gfx.fb_mut(), turn, color);
+        let id = Sim::score_of(turn);
+        score::draw_score(self.gfx.fb_mut(), id, self.sim.scores.visible(id), color);
+        let frame = frame + 1;
+        if frame < PLAYER_FLASH_FRAMES {
+            return Advance::to(Phase::PlayerFlash { frame }, FrameKind::Wait);
+        }
+        self.begin_round(RoundStart::Announced);
+        Advance::to(Phase::Playing, FrameKind::Wait)
     }
 
     /// The round-start transition (game-flow spec, "Round start", "Per-round
@@ -514,35 +738,34 @@ impl Ctx<'_> {
     ///
     /// The generator is seeded with the round's seed as the observer
     /// returns it; after a full draw the diggers are placed and both scores
-    /// drawn, otherwise the sprites are reset and the diggers placed; the
-    /// monster slots are cleared and the round's spawn schedule set; then
-    /// the `PLAYER n` label is erased, every digger's score is refreshed by
-    /// a zero-point scoring call, the lives are drawn, the main music is
-    /// requested and the control state is cleared.
-    fn begin_round(&mut self, after_full_draw: bool) {
+    /// drawn (after an announcement each digger's score is also refreshed
+    /// by a zero-point call, as the original does at its end), otherwise
+    /// the sprites are reset and the diggers placed; the monster slots are
+    /// cleared and the round's spawn schedule set; then the `PLAYER n`
+    /// label is erased, every digger's score is refreshed by a zero-point
+    /// scoring call, the lives are drawn, the main music is requested and
+    /// the control state is cleared.
+    fn begin_round(&mut self, start: RoundStart) {
         let round = self.sim.round;
         let derived = round_seed(self.sim.base_seed, round);
         let seed = self.obs.round_seed(round, derived);
         self.sim.rng.reseed(seed);
         self.reset_bag_images();
 
-        if after_full_draw {
-            self.init_diggers();
-            self.reset_monsters();
-            self.draw_scores();
-        } else {
+        if start == RoundStart::SameField {
             self.reset_digger_sprites();
             self.init_diggers();
             self.reset_monsters();
+        } else {
+            self.init_diggers();
+            self.reset_monsters();
+            self.draw_scores();
+            if start == RoundStart::Announced {
+                self.refresh_scores();
+            }
         }
         status::erase_player_label(self.gfx.fb_mut());
-        // The original refreshes scores 0..diggers, so in an alternating
-        // game it is always the first score, whoever's turn it is
-        // (research 01 §6.2, `initscores`).
-        let diggers = usize::from(self.sim.cfg.mode.diggers());
-        for id in ScoreId::ALL.into_iter().take(diggers) {
-            self.add_score(id, ScoreEvent::Refresh);
-        }
+        self.refresh_scores();
         self.draw_lives();
         self.request_main_music();
         for input in &mut self.sim.inputs {
@@ -550,11 +773,42 @@ impl Ctx<'_> {
         }
     }
 
-    /// One main-phase tick: the penalty counter is reset, the fire states
-    /// read on the previous tick are latched, the diggers, the monsters and
-    /// the bags are updated, the penalty counter's overflow delays monster
-    /// slots, and the tick is counted. Task 14.1 completes the order with
-    /// the level-completion test.
+    /// A zero-point scoring call for scores 0 up to the number of diggers
+    /// (quirk Q39).
+    ///
+    /// **Quirk Q39:** the original counts the scores refreshed at round
+    /// start, after a pause and at game end from 0, so in an alternating
+    /// game it is always the first score, whoever's turn it is (research
+    /// 01 §6.2, §6.3, `initscores`, `endofgame`). Each call checks the
+    /// bonus threshold.
+    fn refresh_scores(&mut self) {
+        let diggers = usize::from(self.sim.cfg.mode.diggers());
+        for id in ScoreId::ALL.into_iter().take(diggers) {
+            self.add_score(id, ScoreEvent::Refresh);
+        }
+    }
+
+    /// A main-phase frame: one tick, then a pause if one was requested,
+    /// otherwise the end of the main phase if the tick ended it.
+    fn main_frame(&mut self, input: &FrameInput) -> Advance {
+        self.tick_main(input);
+        let over = self.main_phase_over();
+        if input.pause {
+            self.pause();
+            return Advance::to(Phase::Paused { main_over: over }, FrameKind::Tick);
+        }
+        if over {
+            return self.end_main_phase().as_frame(FrameKind::Tick);
+        }
+        Advance::to(Phase::Playing, FrameKind::Tick)
+    }
+
+    /// One main-phase tick, in the order of the game-flow spec's "Update
+    /// order of a main-phase tick": the penalty counter is reset, the fire
+    /// states read on the previous tick are latched, the diggers, the
+    /// monsters and the bags are updated, the penalty counter's overflow
+    /// delays monster slots, the level-completion test runs and the tick is
+    /// counted.
     fn tick_main(&mut self, input: &FrameInput) {
         self.sim.penalty.reset();
         for slot in &mut self.sim.inputs {
@@ -566,7 +820,98 @@ impl Ctx<'_> {
         // Quirk Q02: only the main phase applies the overflow.
         let penalty = self.sim.penalty;
         self.sim.monsters.apply_penalty_overflow(penalty);
+        self.check_level_done();
         self.end_tick();
+    }
+
+    /// The level-completion test at the end of every main-phase tick: the
+    /// level is marked complete while a digger is alive and either no
+    /// emeralds remain or no monsters remain, on screen or to come, and
+    /// unmarked otherwise (game-flow spec, "Level completion test";
+    /// research 01 §3.2, `checklevdone`).
+    fn check_level_done(&mut self) {
+        let turn = self.sim.turn;
+        let cleared = self.sim.emeralds.count(turn) == 0 || self.sim.monsters.left() == 0;
+        let done = cleared && self.sim.any_alive();
+        turn.of_mut(&mut self.sim.players).level_done = done;
+    }
+
+    /// Whether the tick just run ended the main phase: every digger's death
+    /// has finished, the level is marked complete, or the gauntlet clock
+    /// ran out.
+    fn main_phase_over(&self) -> bool {
+        self.sim.all_dead || self.sim.turn.of(&self.sim.players).level_done || self.sim.timed_out()
+    }
+
+    /// The pause after a main-phase tick: the pause cue, and `PRESS ANY
+    /// KEY` alone on the top line (game-flow spec, "Pause"; research 01
+    /// §3.3).
+    fn pause(&mut self) {
+        self.sound.push(SoundCommand::Pause);
+        TopLineMessage::PressAnyKey.show(self.gfx.fb_mut());
+    }
+
+    /// The resume: the top line is cleared, the scores drawn and refreshed
+    /// by zero-point calls (quirk Q39), the lives redrawn and the resume
+    /// cue emitted (game-flow spec, "Resuming from pause"; research 01
+    /// §3.3).
+    fn resume(&mut self) {
+        status::clear_top_line(self.gfx.fb_mut());
+        self.draw_scores();
+        self.refresh_scores();
+        self.draw_lives();
+        self.sound.push(SoundCommand::Resume);
+    }
+
+    /// The end of the main phase (game-flow spec, "Wind-down"): the
+    /// diggers' sprites are erased and the diggers hidden, and the music
+    /// stops. The wind-down follows, except after a gauntlet time-out,
+    /// whose tick was the game's last, when the round ends at once.
+    fn end_main_phase(&mut self) -> Advance {
+        for unit in self.sim.units() {
+            self.gfx.erase(unit.sprite());
+        }
+        self.sim.diggers_visible = false;
+        self.sim.main_tune = None;
+        self.sound.push(SoundCommand::MusicOff);
+        if self.sim.timed_out() {
+            return self.round_end();
+        }
+        Advance::to(
+            Phase::WindDown {
+                left: WIND_DOWN_MAX,
+            },
+            FrameKind::Tick,
+        )
+    }
+
+    /// One wind-down tick and what follows it (game-flow spec, "Wind-down").
+    ///
+    /// **Quirk Q04:** the order is bags, diggers, monsters, without the
+    /// penalty overflow or the level-completion test; the hidden diggers
+    /// take no movement samples, while the monsters move and draw random
+    /// numbers as in the main phase. The countdown `left` starts at 20 and
+    /// drops by one per tick, or to 0 after a tick whose penalty counter
+    /// stayed below 8; the wind-down ends after the first tick at which the
+    /// countdown is 0 and no bag is moving, or once the gauntlet clock has
+    /// run out (research 01 §3.2, research 02 §6).
+    fn wind_down_frame(&mut self, left: u8, input: &FrameInput) -> Advance {
+        let mut left = left.saturating_sub(1);
+        self.sim.penalty.reset();
+        for slot in &mut self.sim.inputs {
+            slot.advance_fire();
+        }
+        self.update_bags();
+        self.update_diggers(input);
+        self.update_monsters();
+        if self.sim.penalty.value() < WIND_DOWN_QUIET_PENALTY {
+            left = 0;
+        }
+        self.end_tick();
+        if self.sim.timed_out() || (left == 0 && self.sim.moving_bags() == 0) {
+            return self.round_end().as_frame(FrameKind::Tick);
+        }
+        Advance::to(Phase::WindDown { left }, FrameKind::Tick)
     }
 
     /// Counts the tick and tells the observer, after everything of the tick
@@ -584,6 +929,7 @@ impl Ctx<'_> {
     /// for the player and the monsters erased, then the observer sees the
     /// state and the round counter rises.
     fn end_round(&mut self) {
+        self.sim.main_tune = None;
         self.sound.push(SoundCommand::StopAll);
         for unit in self.sim.units() {
             let record = self.sim.record_of_unit(unit);
@@ -597,50 +943,132 @@ impl Ctx<'_> {
         self.sim.round = self.sim.round.wrapping_add(1);
     }
 
-    /// Ends a round whose diggers are all dead and decides what follows
-    /// (game-flow spec, "Round end", "Death outcome and passing the turn";
-    /// research 01 §3.2).
-    ///
-    /// Outside gauntlet mode every digger in play with lives left loses
-    /// one, and the lives are redrawn. While the current player has lives
-    /// the next round starts on the same field on the next frame; otherwise
-    /// the game is over.
-    ///
-    /// Task group 14 completes this: the wind-down runs before the round
-    /// end (14.2), a field without emeralds advances the level (14.4), the
-    /// turn passes in an alternating game (14.5), and game over shows its
-    /// notice and reports the player (14.6).
-    fn round_over(&mut self) -> Phase {
+    /// Ends the round after its wind-down (or its time-out tick) and moves
+    /// on: a level marked complete sounds the level-done cue and pauses
+    /// for 40 frames before the outcome is decided; otherwise the outcome
+    /// is decided now (game-flow spec, "Level-complete jingle and pause").
+    fn round_end(&mut self) -> Advance {
         self.end_round();
+        if self.sim.turn.of(&self.sim.players).level_done {
+            self.sound.push(SoundCommand::LevelDone);
+            return Advance::to(
+                Phase::LevelDone {
+                    left: LEVEL_DONE_FRAMES,
+                },
+                FrameKind::Tick,
+            );
+        }
+        self.decide_outcome().as_frame(FrameKind::Tick)
+    }
+
+    /// The round's outcome (game-flow spec, "Level completion outcome",
+    /// "Death outcome and passing the turn", "Game over", "Gauntlet
+    /// time-out"; research 01 §3.2).
+    ///
+    /// **Quirk Q14:** the level advances when no emeralds remain even if
+    /// the level was not marked complete because the digger died on the
+    /// tick of the last emerald; every digger in play that has lives but is
+    /// not alive then loses one. Otherwise, after the deaths of all
+    /// diggers, every digger with lives loses one (never in gauntlet mode).
+    /// When the current player has no lives left (outside gauntlet mode),
+    /// or the clock ran out, that player's game is over: the scores are
+    /// refreshed by zero-point calls (quirk Q39), the player is reported
+    /// and the notice is shown.
+    fn decide_outcome(&mut self) -> Advance {
+        let turn = self.sim.turn;
         let gauntlet = self.sim.cfg.mode.gauntlet().is_some();
-        for unit in self.sim.units() {
-            let digger = self.sim.record_of_unit(unit).of_mut(&mut self.sim.diggers);
-            if digger.lives > 0 && !gauntlet {
-                digger.lives -= 1;
+        let state = *turn.of(&self.sim.players);
+        if self.sim.emeralds.count(turn) == 0 || state.level_done {
+            for unit in self.sim.units() {
+                let digger = self.sim.record_of_unit(unit).of_mut(&mut self.sim.diggers);
+                if digger.lives > 0 && !digger.alive {
+                    digger.lose_life(gauntlet);
+                }
+            }
+            self.draw_lives();
+            let next = state.level.map_or(LevelNumber::FIRST, LevelNumber::next);
+            turn.of_mut(&mut self.sim.players).level = Some(next);
+            self.set_up_level_observed(turn);
+            self.sim.redraw_pending = true;
+        } else if self.sim.all_dead {
+            for unit in self.sim.units() {
+                let digger = self.sim.record_of_unit(unit).of_mut(&mut self.sim.diggers);
+                if digger.lives > 0 {
+                    digger.lose_life(gauntlet);
+                }
+            }
+            self.draw_lives();
+        }
+
+        let timed_out = self.sim.timed_out();
+        if (self.sim.all_dead && self.sim.turn_lives() == 0 && !gauntlet) || timed_out {
+            self.refresh_scores();
+            let player_out = PlayerResult {
+                player: turn,
+                score: self.sim.scores.visible(Sim::score_of(turn)),
+            };
+            let notice = if gauntlet {
+                Notice::TimeUp
+            } else {
+                Notice::GameOver
+            };
+            notice.message().show(self.gfx.fb_mut());
+            return Advance {
+                phase: Phase::Notice {
+                    notice,
+                    left: NOTICE_FRAMES,
+                },
+                frame: FrameKind::Wait,
+                player_out: Some(player_out),
+            };
+        }
+        Advance::to(self.continue_after_round(), FrameKind::Wait)
+    }
+
+    /// What follows a round once its outcome and any notice are done
+    /// (research 01 §3.2, the end of the game loop).
+    ///
+    /// After a time-out the game finishes. After the deaths of all diggers
+    /// the turn passes in an alternating game to the other player if that
+    /// player has lives, with a full draw and the announcement; the game
+    /// finishes when the current player then has no lives. The next round
+    /// starts with a full draw where one is due, otherwise at once on the
+    /// same field. Lives are read afresh here, so a bonus life awarded by
+    /// the game end's zero-point calls lets the player play on (quirk
+    /// Q39).
+    fn continue_after_round(&mut self) -> Phase {
+        if self.sim.timed_out() {
+            return Phase::Finished(self.finish(FinishReason::TimeUp, false));
+        }
+        if self.sim.all_dead {
+            self.sim.all_dead = false;
+            if self.sim.cfg.mode.alternating() {
+                let other = self.sim.turn.other();
+                if Sim::record_of_player(other).of(&self.sim.diggers).lives != 0 {
+                    self.sim.turn = other;
+                    self.sim.flash_player = true;
+                    self.sim.redraw_pending = true;
+                }
+            }
+            if self.sim.turn_lives() == 0 {
+                return Phase::Finished(self.finish(FinishReason::AllPlayersOut, false));
             }
         }
-        self.draw_lives();
-        self.sim.all_dead = false;
-        let lives_left = self
-            .sim
-            .units()
-            .any(|unit| self.sim.record_of_unit(unit).of(&self.sim.diggers).lives > 0);
-        if !lives_left && !gauntlet {
-            let summary = self.sim.summary(FinishReason::AllPlayersOut);
-            self.obs.game_end(StateView::new(self.sim, self.gfx));
-            return Phase::Finished(summary);
+        if self.sim.redraw_pending {
+            return Phase::DrawPending;
         }
-        self.begin_round(false);
+        self.begin_round(RoundStart::SameField);
         Phase::Playing
     }
 
     /// Ends the game for `reason`: through the round end when a round is in
-    /// progress, otherwise by stopping all sound; then the observer sees the
-    /// final state (game-flow spec, "Quit"; compat-quirks U11).
+    /// progress, otherwise by stopping all sound unless the game ended by
+    /// its own course; then the observer sees the final state (game-flow
+    /// spec, "Quit"; compat-quirks U11).
     fn finish(&mut self, reason: FinishReason, in_round: bool) -> GameSummary {
         if in_round {
             self.end_round();
-        } else {
+        } else if reason == FinishReason::Quit {
             self.sound.push(SoundCommand::StopAll);
         }
         let summary = self.sim.summary(reason);
@@ -821,10 +1249,11 @@ impl Game {
             self.phase = Phase::Finished(summary);
             return StepOutcome::finished(summary);
         }
-        let (phase, frame) = cx.advance(self.phase, input);
-        self.phase = phase;
-        let mut outcome = StepOutcome::of(frame);
-        if let Phase::Finished(summary) = phase {
+        let advance = cx.advance(self.phase, input);
+        self.phase = advance.phase;
+        let mut outcome = StepOutcome::of(advance.frame);
+        outcome.player_out = advance.player_out;
+        if let Phase::Finished(summary) = advance.phase {
             outcome.finished = Some(summary);
         }
         outcome

@@ -2,13 +2,19 @@
 //!
 //! The clock counts in 1,193,181ths of a second as an unsigned 32-bit value
 //! (game-flow spec, "Gauntlet clock"; research 01 §7.4). This module holds
-//! its value, the time-out flag and the bonus addition; the per-tick
-//! countdown and the time-out are driven by the digger update (task 14.7).
+//! its value, the time-out flag, the per-tick countdown and the bonus
+//! addition; the countdown is driven by the digger update at the start of
+//! every tick, main phase and wind-down alike.
 
 use super::config::GauntletSeconds;
 
 /// Clock units per second: the original's timer frequency.
 pub(crate) const CLOCK_UNITS_PER_SECOND: u32 = 1_193_181;
+
+/// Clock units taken off at every tick: the original's default frame
+/// length in microseconds, whatever speed the game runs at (research 01
+/// §7.4).
+const UNITS_PER_TICK: u32 = 80_000;
 
 /// Clock units a scoring bonus adds in gauntlet mode: 15 seconds
 /// (scoring spec, "Bonus time in gauntlet mode"; research 01 §6.2).
@@ -43,6 +49,19 @@ impl GauntletClock {
         self.timed_out
     }
 
+    /// The countdown at the start of a tick's digger update: the game is
+    /// marked timed out if fewer than 80,000 units are left, and 80,000
+    /// units are taken off.
+    ///
+    /// **Quirk Q13:** the subtraction wraps around, so the tick that runs
+    /// out leaves a value just below 2^32 (research 01 §7.4).
+    pub(crate) const fn count_down(&mut self) {
+        if self.units < UNITS_PER_TICK {
+            self.timed_out = true;
+        }
+        self.units = self.units.wrapping_sub(UNITS_PER_TICK);
+    }
+
     /// Adds the 15-second bonus.
     ///
     /// **Quirk Q13:** the addition wraps around past 2^32 for durations
@@ -65,6 +84,19 @@ mod tests {
             GauntletClock::start(GauntletSeconds::MAX).units(),
             4_294_258_419
         );
+    }
+
+    #[test]
+    fn countdown_marks_time_out_and_wraps() {
+        let mut clock = GauntletClock::start(GauntletSeconds::DEFAULT);
+        for _ in 0..1789 {
+            clock.count_down();
+        }
+        assert!(!clock.timed_out());
+        assert_eq!(clock.units(), 61_720);
+        clock.count_down();
+        assert!(clock.timed_out());
+        assert_eq!(clock.units(), 4_294_949_016);
     }
 
     #[test]

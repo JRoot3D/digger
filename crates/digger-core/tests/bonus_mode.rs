@@ -16,8 +16,21 @@ use digger_core::{DiggerId, Direction, GameMode, MonsterSlot, ScoreId, SoundComm
 const FIRST: DiggerId = DiggerId::ALL[0];
 const SCORE: ScoreId = ScoreId::ALL[0];
 
-/// Solid earth everywhere.
-const EARTH: [&str; 10] = ["               "; 10];
+/// Solid earth everywhere, with one emerald in the bottom-right cell so
+/// that the level is not complete before anything happens (game-flow
+/// spec, "Level completion test").
+const EARTH: [&str; 10] = [
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "               ",
+    "              C",
+];
 
 /// Where the bonus appears.
 const BONUS_AT: Px = Px::new(292, 18);
@@ -93,7 +106,9 @@ fn still() -> MonsterSetup {
 /// Runs a level-1 round on the built-in layout, removing every monster on
 /// the tick after it spawns (outside bonus mode, so the round's total
 /// stays 6), until all six have spawned; returns the tick of the last
-/// spawn.
+/// spawn. The last one is kept, held still where it spawned, so that a
+/// monster remains and the level is not complete (game-flow spec, "Level
+/// completion test").
 fn spawn_all_six(run: &mut Run) -> u32 {
     let mut last = 0;
     while run.state().monsters().spawned() < 6 {
@@ -102,8 +117,16 @@ fn spawn_all_six(run: &mut Run) -> u32 {
         if run.state().monsters().spawned() > before {
             last = run.ticks();
         }
+        let all_spawned = run.state().monsters().spawned() == 6;
         for n in 0..6 {
-            if run.state().monster(slot(n)).occupied() {
+            let monster = *run.state().monster(slot(n));
+            if !monster.occupied() {
+                continue;
+            }
+            if all_spawned && last == run.ticks() {
+                run.place_monster_as(slot(n), monster.position(), still())
+                    .expect("playing");
+            } else {
                 run.remove_monster(slot(n)).expect("playing");
             }
         }
