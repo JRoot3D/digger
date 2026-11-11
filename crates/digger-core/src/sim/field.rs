@@ -271,6 +271,21 @@ impl Field {
     /// other player) changes the game state this way, not only the picture,
     /// so it runs whether or not anything is displayed (research 01 §5.3,
     /// §10 item 8, research 03 §8.2).
+    #[allow(dead_code, reason = "called by the full level draw (task group 4)")]
+    pub(crate) fn normalise_for_redraw(&mut self) {
+        for cell in &mut self.cells {
+            if cell.is_untouched() {
+                continue;
+            }
+            if !cell.has_all_v_slices() {
+                cell.open_vertical();
+            }
+            if !cell.has_all_h_slices() {
+                cell.open_horizontal();
+            }
+        }
+    }
+
     /// Whether a nobbin in cell `from` can move one cell in `dir`: the
     /// neighbouring cell exists, is not untouched, and is connected to
     /// `from`, meaning the neighbour's slice nearest `from` is gone or
@@ -290,21 +305,6 @@ impl Field {
             Direction::Left => !target.has_h_slice(last_h) || !own.has_h_slice(0),
             Direction::Up => !target.has_v_slice(last_v) || !own.has_v_slice(0),
             Direction::Down => !target.has_v_slice(0) || !own.has_v_slice(last_v),
-        }
-    }
-
-    #[allow(dead_code, reason = "called by the full level draw (task group 4)")]
-    pub(crate) fn normalise_for_redraw(&mut self) {
-        for cell in &mut self.cells {
-            if cell.is_untouched() {
-                continue;
-            }
-            if !cell.has_all_v_slices() {
-                cell.open_vertical();
-            }
-            if !cell.has_all_h_slices() {
-                cell.open_horizontal();
-            }
         }
     }
 }
