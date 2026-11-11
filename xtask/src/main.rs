@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod ci;
+mod deps;
 
 use std::process::ExitCode;
 

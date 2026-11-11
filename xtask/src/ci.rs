@@ -6,6 +6,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::deps;
+
 /// One cargo invocation of the CI sequence.
 #[derive(Debug)]
 struct Step {
@@ -55,6 +57,13 @@ pub(crate) enum CiError {
     },
     /// A step ran and exited unsuccessfully.
     StepFailed { step: String, code: Option<i32> },
+    /// `cargo tree` output was not valid UTF-8.
+    TreeOutput { package: &'static str },
+    /// A simulation-side crate depends on a platform crate.
+    Platform {
+        package: &'static str,
+        offenders: Vec<String>,
+    },
 }
 
 impl fmt::Display for CiError {
@@ -65,6 +74,15 @@ impl fmt::Display for CiError {
                 Some(code) => write!(f, "{step} failed (exit code {code})"),
                 None => write!(f, "{step} failed (terminated by a signal)"),
             },
+            Self::TreeOutput { package } => {
+                write!(f, "`cargo tree` output for {package} is not UTF-8")
+            }
+            Self::Platform { package, offenders } => write!(
+                f,
+                "{package} must not depend on platform crates, but its dependency tree \
+                 contains: {}",
+                offenders.join(", ")
+            ),
         }
     }
 }
@@ -96,8 +114,46 @@ pub(crate) fn run() -> Result<(), CiError> {
             });
         }
     }
+    for &package in deps::CHECKED_PACKAGES {
+        check_dependency_direction(&root, package)?;
+    }
     eprintln!("xtask ci: all checks passed");
     Ok(())
+}
+
+/// Fails if the normal-dependency tree of `package` contains a platform crate.
+fn check_dependency_direction(root: &Path, package: &'static str) -> Result<(), CiError> {
+    let step = format!("dependency-direction check for {package}");
+    eprintln!("xtask ci: running {step}");
+    let output = cargo(root)
+        .args([
+            "tree",
+            "--package",
+            package,
+            "--edges",
+            "normal",
+            "--prefix",
+            "none",
+        ])
+        .output()
+        .map_err(|source| CiError::Spawn {
+            step: step.clone(),
+            source,
+        })?;
+    if !output.status.success() {
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        return Err(CiError::StepFailed {
+            step,
+            code: output.status.code(),
+        });
+    }
+    let tree = String::from_utf8(output.stdout).map_err(|_| CiError::TreeOutput { package })?;
+    let offenders = deps::denied_crates(&tree);
+    if offenders.is_empty() {
+        Ok(())
+    } else {
+        Err(CiError::Platform { package, offenders })
+    }
 }
 
 /// A `cargo` command run from the workspace root, using the same cargo that
