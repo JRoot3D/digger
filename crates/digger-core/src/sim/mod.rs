@@ -46,6 +46,11 @@ mod status;
 pub mod testkit;
 mod timing;
 
+pub use config::{ConfigError, GameConfig, GameMode, GauntletSeconds, StartLevel};
 pub use geom::{CellPos, Direction, Located, locate, reverse_of, within_limits};
 pub(crate) use ids::index_id;
 pub use ids::{BagId, DiggerId, IdOutOfRange, MonsterSlot, PlayerId, SlotId};
+pub use level::{CUSTOM_LEVELS_LEN, Difficulty, LevelError, LevelLayout, LevelNumber, LevelSet};
+pub use penalty::{Penalty, PenaltySite};
+pub use rng::{GameRng, Modulus, round_seed};
+pub use timing::FrameLength;
