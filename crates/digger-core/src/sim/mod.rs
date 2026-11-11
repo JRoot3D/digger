@@ -54,4 +54,5 @@ pub use ids::{BagId, DiggerId, IdOutOfRange, MonsterSlot, PlayerId, SlotId};
 pub use level::{CUSTOM_LEVELS_LEN, Difficulty, LevelError, LevelLayout, LevelNumber, LevelSet};
 pub use penalty::{Penalty, PenaltySite};
 pub use rng::{GameRng, Modulus, round_seed};
+pub use score::{BonusEffect, ScoreEvent, ScoreId, Scores};
 pub use timing::FrameLength;

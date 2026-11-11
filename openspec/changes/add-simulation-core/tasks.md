@@ -45,11 +45,11 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 
 ## 5. Scoring
 
-- [ ] 5.1 Implement `Scores` with visible score, carried total and next threshold per score, zeroing at game start, and the scoring call with 16-bit award reduction (Q12) and three `ScoreCall` charges (Q01); verify unit tests `event_values_accumulate_25_525_775_1775`, `quirk_q12_award_51200_adds_minus_14336` and `score_call_charges_three_even_for_zero` pass
-- [ ] 5.2 Implement the bonus threshold check: one step per call, second score one point late (Q09), life cap with advancing threshold (Q10), unlimited-lives option, returning a typed effect (`ExtraLife`, `GauntletTime`, none); verify unit tests `first_bonus_life_at_20000`, `one_threshold_step_per_call`, `quirk_q09_second_score_needs_20001`, `quirk_q10_cap_at_5_threshold_advances` and `unlimited_lives_passes_cap` pass
-- [ ] 5.3 Implement the one-million rollover (Q11) and total-score reporting; verify unit test `quirk_q11_rollover_moves_score_to_carried_total` (999,900 + 250 → visible 0, total 1,000,150) passes
-- [ ] 5.4 Implement score drawing (six positions, leading zeros, leftmost only when non-zero, second score at 236 or 248) into stack buffers; verify unit tests `score_25_draws_00025_from_x12`, `six_digit_score_from_x0` and `second_score_shifts_at_100000`
-- [ ] 5.5 Implement bag-kill crediting for one and two diggers (125/125, 250/0, 0/250, both calls always made); verify unit tests `bag_kill_split_both_alive`, `bag_kill_all_to_digger_1_when_2_out` and `bag_kill_makes_two_calls_with_zero_points`
+- [x] 5.1 Implement `Scores` with visible score, carried total and next threshold per score, zeroing at game start, and the scoring call with 16-bit award reduction (Q12) and three `ScoreCall` charges (Q01); verify unit tests `event_values_accumulate_25_525_775_1775`, `quirk_q12_award_51200_adds_minus_14336` and `score_call_charges_three_even_for_zero` pass
+- [x] 5.2 Implement the bonus threshold check: one step per call, second score one point late (Q09), life cap with advancing threshold (Q10), unlimited-lives option, returning a typed effect (`ExtraLife`, `GauntletTime`, none); verify unit tests `first_bonus_life_at_20000`, `one_threshold_step_per_call`, `quirk_q09_second_score_needs_20001`, `quirk_q10_cap_at_5_threshold_advances` and `unlimited_lives_passes_cap` pass
+- [x] 5.3 Implement the one-million rollover (Q11) and total-score reporting; verify unit test `quirk_q11_rollover_moves_score_to_carried_total` (999,900 + 250 → visible 0, total 1,000,150) passes
+- [x] 5.4 Implement score drawing (six positions, leading zeros, leftmost only when non-zero, second score at 236 or 248) into stack buffers; verify unit tests `score_25_draws_00025_from_x12`, `six_digit_score_from_x0` and `second_score_shifts_at_100000`
+- [x] 5.5 Implement bag-kill crediting for one and two diggers (125/125, 250/0, 0/250, both calls always made); verify unit tests `bag_kill_split_both_alive`, `bag_kill_all_to_digger_1_when_2_out` and `bag_kill_makes_two_calls_with_zero_points`
 - [ ] 5.6 Fill the quirks-document columns for Q01, Q09–Q12; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 6. Controls, sound commands and observer boundary
