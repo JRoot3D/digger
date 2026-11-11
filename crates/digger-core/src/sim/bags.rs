@@ -468,7 +468,7 @@ impl Ctx<'_> {
                 if !above_bottom || (solid_below && bag.located.rem_y == 0) {
                     self.land(id);
                 }
-                // Monsters below a falling bag are frightened by task 12.8.
+                self.frighten_monsters(bag.located.cell.h());
             }
             Some(Direction::Up) => {
                 debug_assert!(false, "bags never move up");
@@ -686,7 +686,9 @@ impl Ctx<'_> {
                 self.sim.kill_digger(record, DeathStage::Bag, id);
             }
         }
-        // Squashing the overlapped monsters is added by task 12.8.
+        if hits.first(SpriteClass::Monster).is_some() {
+            self.squash_monsters(id, hits);
+        }
     }
 
     /// One sideways step of bag `id` (gold-bags spec, "Horizontal push",
@@ -796,6 +798,18 @@ impl Ctx<'_> {
         *id.of_mut(&mut self.sim.bags) = bag;
         self.gfx.erase(id.sprite());
         self.gfx.place(id.sprite(), ImageId::BAG_STILL, at);
+    }
+
+    /// Puts gold `id` at `at`, 6 ticks old and fully opened, and places its
+    /// sprite, for the test kit.
+    #[cfg(any(test, feature = "testkit"))]
+    pub(crate) fn put_gold(&mut self, id: BagId, at: Px) {
+        self.put_bag(id, at);
+        let bag = id.of_mut(&mut self.sim.bags);
+        bag.gold_age = 6;
+        bag.unfallen = false;
+        self.gfx.erase(id.sprite());
+        self.gfx.place(id.sprite(), ImageId::GOLD_3, at);
     }
 }
 

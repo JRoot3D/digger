@@ -6,9 +6,11 @@
     reason = "a failed expectation in a test is a test failure"
 )]
 
+use digger_core::geom::Rect;
 use digger_core::testkit::{Run, Scenario, Script};
+use digger_core::video::Framebuffer;
 use digger_core::{
-    FinishReason, FrameInput, FrameKind, GameMode, LevelNumber, ScoreId, SoundCommand,
+    FinishReason, FrameInput, FrameKind, GameMode, LevelNumber, MonsterSlot, ScoreId, SoundCommand,
 };
 
 const QUIT: FrameInput = FrameInput {
@@ -33,6 +35,16 @@ fn quit_during_play_reports_300_ticks() {
         .script(Script::parse("R*40 D*40 L*40 .*180").expect("valid script"));
     assert_eq!(run.run_ticks(300), 300);
     let picture = run.game().framebuffer().clone();
+    // The round end erases the monsters' sprites; nothing else may change.
+    let monsters: Vec<Rect> = MonsterSlot::ALL
+        .into_iter()
+        .filter(|slot| run.state().sprites().is_enabled(slot.sprite()))
+        .map(|slot| run.state().sprites().rect(slot.sprite()))
+        .collect();
+    assert!(
+        !monsters.is_empty(),
+        "monsters are on screen after 300 ticks"
+    );
     let reached = ScoreId::ALL.map(|id| {
         let scores = run.state().scores();
         (scores.visible(id), scores.total(id))
@@ -59,9 +71,36 @@ fn quit_during_play_reports_300_ticks() {
     }
     assert_eq!(run.ticks(), 300);
     assert_eq!(run.summary(), Some(summary));
-    // All sound stops and no game-over notice is drawn.
+    // All sound stops, the monsters are erased and no game-over notice is
+    // drawn.
     assert_eq!(run.take_sounds(), [SoundCommand::StopAll]);
-    assert_eq!(run.game().framebuffer(), &picture);
+    for slot in MonsterSlot::ALL {
+        assert!(!run.state().sprites().is_enabled(slot.sprite()));
+    }
+    assert_eq!(
+        changed_outside(run.game().framebuffer(), &picture, &monsters),
+        0
+    );
+}
+
+/// The number of pixels that differ between `a` and `b` outside the
+/// logical rectangles `skip`.
+fn changed_outside(a: &Framebuffer, b: &Framebuffer, skip: &[Rect]) -> usize {
+    let width = Framebuffer::WIDTH;
+    a.pixels()
+        .iter()
+        .zip(b.pixels().iter())
+        .enumerate()
+        .filter(|&(i, (pa, pb))| {
+            // Two real pixels per logical pixel in each direction.
+            let (x, y) = ((i % width) / 2, (i / width) / 2);
+            let (x, y) = (i32::try_from(x).unwrap_or(0), i32::try_from(y).unwrap_or(0));
+            let inside = skip.iter().any(|r| {
+                (r.left()..=r.right()).contains(&x) && (r.top()..=r.bottom()).contains(&y)
+            });
+            !inside && pa != pb
+        })
+        .count()
 }
 
 #[test]

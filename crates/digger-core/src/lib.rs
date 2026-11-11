@@ -133,9 +133,10 @@ pub use sim::{
     Difficulty, Digger, DiggerId, Direction, EmeraldMap, Field, FinishReason, Fireball,
     FireballStage, FrameInput, FrameKind, FrameLength, Game, GameConfig, GameMode, GameRng,
     GameSummary, GauntletSeconds, IdOutOfRange, LevelError, LevelLayout, LevelNumber, LevelSet,
-    Located, Modulus, Monster, MonsterSlot, Movement, NoopObserver, Observer, Penalty, PenaltySite,
-    PlayerId, PlayerResult, ScoreEvent, ScoreId, ScoreSummary, Scores, SlotId, StartLevel,
-    StateView, StepOutcome, locate, reverse_of, round_seed, within_limits,
+    Located, Modulus, Monster, MonsterDeath, MonsterSlot, Monsters, Movement, NoopObserver,
+    Observer, Penalty, PenaltySite, PlayerId, PlayerResult, ScoreEvent, ScoreId, ScoreSummary,
+    Scores, SlotId, StartLevel, StateView, StepOutcome, locate, reverse_of, round_seed,
+    within_limits,
 };
 pub use sound_cmd::{EmeraldStep, FireballId, SoundCommand, Tempo, Tune};
 

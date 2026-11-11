@@ -167,6 +167,14 @@ impl Scenario {
         Run::new(Game::new(self.config(), self.seed))
     }
 
+    /// The first base seed below `limit` for which `wanted` holds of the
+    /// scenario built with that seed, or `None`. Tests use it to find a
+    /// seed whose random draws produce the situation they need, instead of
+    /// hard-coding one.
+    pub fn search_seed(&self, limit: u64, mut wanted: impl FnMut(Run) -> bool) -> Option<u64> {
+        (0..limit).find(|&seed| wanted(self.clone().seed(seed).build()))
+    }
+
     /// The scenario's game, not yet stepped, observed by `obs` on every
     /// step.
     pub fn build_observed<O: Observer>(&self, obs: O) -> Run<O> {
@@ -310,6 +318,35 @@ pub enum KillCause {
     Bag(BagId),
 }
 
+/// How [`Run::place_monster_as`] sets up a monster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MonsterSetup {
+    /// A hobbin rather than a nobbin.
+    pub hobbin: bool,
+    /// The direction of movement, or none.
+    pub direction: Option<Direction>,
+    /// Ticks to wait before the next move.
+    pub delay: u16,
+    /// Move decisions still to stand still for.
+    pub standstill: u8,
+    /// The transformation counter.
+    pub counter: u16,
+}
+
+impl Default for MonsterSetup {
+    /// A nobbin heading left, past its standstill, with no delay and a
+    /// counter of 0.
+    fn default() -> Self {
+        Self {
+            hobbin: false,
+            direction: Some(Direction::Left),
+            delay: 0,
+            standstill: 0,
+            counter: 0,
+        }
+    }
+}
+
 /// A set-up that would put the game into a state it cannot reach.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupError {
@@ -421,6 +458,12 @@ impl<O: Observer> Run<O> {
     /// The game.
     pub fn game(&self) -> &Game {
         &self.game
+    }
+
+    /// The game, mutably, for the crate's own unit tests.
+    #[cfg(test)]
+    pub(crate) fn game_mut(&mut self) -> &mut Game {
+        &mut self.game
     }
 
     /// The observer.
@@ -613,8 +656,9 @@ impl<O: Observer> Run<O> {
     }
 
     /// Puts a living nobbin into monster slot `slot` at `at`, replacing
-    /// whatever was there, and places its sprite. Until monsters move (task
-    /// group 12) it stays where it is put.
+    /// whatever was there, and places its sprite: heading left, past its
+    /// standstill, with no delay and a counter of 0, chasing the first
+    /// digger record. Its stored cell and remainders follow `at`.
     ///
     /// # Errors
     ///
@@ -622,8 +666,80 @@ impl<O: Observer> Run<O> {
     /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
     /// y 18..=180.
     pub fn place_monster(&mut self, slot: MonsterSlot, at: Px) -> Result<(), SetupError> {
+        self.place_monster_as(slot, at, MonsterSetup::default())
+    }
+
+    /// Puts a living monster described by `setup` into monster slot `slot`
+    /// at `at`, replacing whatever was there, and places its sprite. Its
+    /// stored cell and remainders follow `at`, and it chases the first
+    /// digger record.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round,
+    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// y 18..=180.
+    pub fn place_monster_as(
+        &mut self,
+        slot: MonsterSlot,
+        at: Px,
+        setup: MonsterSetup,
+    ) -> Result<(), SetupError> {
         self.check_entity_position(at)?;
-        self.with_ctx(|cx| cx.put_nobbin(slot, at));
+        self.with_ctx(|cx| {
+            cx.put_monster(
+                slot,
+                at,
+                !setup.hobbin,
+                setup.direction,
+                setup.delay,
+                setup.standstill,
+                setup.counter,
+            );
+        });
+        Ok(())
+    }
+
+    /// Removes the monster in `slot`, as a kill does: the slot is freed
+    /// and the sprite erased (in bonus mode the round's total rises).
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round.
+    pub fn remove_monster(&mut self, slot: MonsterSlot) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        self.with_ctx(|cx| cx.remove_monster(slot));
+        Ok(())
+    }
+
+    /// Sets the spawn timer of the round's monster schedule: the schedule
+    /// next acts after `ticks` more ticks.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round.
+    pub fn set_spawn_timer(&mut self, ticks: u16) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        self.with_ctx(|cx| cx.monsters_mut().set_spawn_timer(ticks));
+        Ok(())
+    }
+
+    /// Switches bonus mode on or off without its timers, signalling or
+    /// music, for monster scenarios until bonus mode exists (task group
+    /// 13).
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round.
+    pub fn set_bonus_mode(&mut self, on: bool) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        self.game.sim.bonus_mode = on;
         Ok(())
     }
 
@@ -639,6 +755,42 @@ impl<O: Observer> Run<O> {
     pub fn place_bag(&mut self, id: BagId, at: Px) -> Result<(), SetupError> {
         self.check_entity_position(at)?;
         self.with_ctx(|cx| cx.put_bag(id, at));
+        Ok(())
+    }
+
+    /// Puts gold `id` at `at`, fully opened (6 ticks old), replacing
+    /// whatever was there, and places its sprite.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round,
+    /// [`SetupError::OutsidePlayfield`] for a position outside x 12..=292,
+    /// y 18..=180.
+    pub fn place_gold(&mut self, id: BagId, at: Px) -> Result<(), SetupError> {
+        self.check_entity_position(at)?;
+        self.with_ctx(|cx| cx.put_gold(id, at));
+        Ok(())
+    }
+
+    /// Makes the digger played by `unit` invincible for `draws` more
+    /// draws, as a respawn does.
+    ///
+    /// # Errors
+    ///
+    /// [`SetupError::NotPlaying`] outside a round,
+    /// [`SetupError::DiggerNotInPlay`] for a unit not in play.
+    pub fn set_invincible(&mut self, unit: DiggerId, draws: u16) -> Result<(), SetupError> {
+        if self.game.phase != Phase::Playing {
+            return Err(SetupError::NotPlaying);
+        }
+        let sim = &mut self.game.sim;
+        if unit.index() >= usize::from(sim.cfg.mode.diggers()) {
+            return Err(SetupError::DiggerNotInPlay { digger: unit });
+        }
+        let record = sim.record_of_unit(unit);
+        let digger = record.of_mut(&mut sim.diggers);
+        digger.invincible = draws > 0;
+        digger.invincibility = draws;
         Ok(())
     }
 

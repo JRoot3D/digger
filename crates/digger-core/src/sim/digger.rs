@@ -218,6 +218,11 @@ impl AnimFrame {
         rising: true,
     };
 
+    /// The current frame, 0..=2.
+    pub(crate) const fn frame(self) -> u8 {
+        self.frame
+    }
+
     /// Advances the counter and returns the new frame.
     pub(crate) const fn advance(&mut self) -> u8 {
         self.frame = if self.rising {
@@ -427,6 +432,15 @@ impl Digger {
         self.eat_multiplier
     }
 
+    /// Doubles the monster-eating multiplier after an eat (research 02
+    /// §3.8, `sceatm`).
+    ///
+    /// **Quirk Q12:** the multiplier is a 16-bit value and doubles with
+    /// wrap-around.
+    pub(crate) const fn bump_eat_multiplier(&mut self) {
+        self.eat_multiplier = self.eat_multiplier.wrapping_mul(2);
+    }
+
     /// Whether the digger is invincible (hashed as `invin`).
     pub const fn invincible(&self) -> bool {
         self.invincible
@@ -586,10 +600,10 @@ fn turn(
     (facing, facing)
 }
 
-/// Whether a digger at `at` may not move in `direction` because it is at
-/// that edge of the playfield (digger spec, "Step size and playfield
-/// limits").
-const fn at_limit(at: Px, direction: Direction) -> bool {
+/// Whether a digger or monster at `at` may not move in `direction` because
+/// it is at that edge of the playfield (digger spec, "Step size and
+/// playfield limits"; monsters spec, "Movement step and move scheduling").
+pub(super) const fn at_limit(at: Px, direction: Direction) -> bool {
     match direction {
         Direction::Right => at.x == MAX_X,
         Direction::Left => at.x == MIN_X,
@@ -600,7 +614,7 @@ const fn at_limit(at: Px, direction: Direction) -> bool {
 
 /// The position one step from `at` in `direction`: 4 pixels horizontally,
 /// 3 vertically.
-const fn step(at: Px, direction: Direction) -> Px {
+pub(super) const fn step(at: Px, direction: Direction) -> Px {
     match direction {
         Direction::Right => Px::new(at.x + STEP_X, at.y),
         Direction::Up => Px::new(at.x, at.y - STEP_Y),
@@ -637,7 +651,7 @@ fn walking_image(
 /// Removes the emerald a mover entering `cell` along `direction` has
 /// reached, and redraws it on the way (quirk Q16; research 02 §3.5,
 /// `hitemerald`). Returns whether it was eaten.
-fn hit_emerald(
+pub(super) fn hit_emerald(
     gfx: &mut Gfx,
     emeralds: &mut EmeraldMap,
     penalty: &mut Penalty,
@@ -1496,7 +1510,7 @@ mod tests {
         let first = DiggerId::ALL[0];
         game.sim
             .kill_digger(first, DeathStage::Monster, BagId::ALL[0]);
-        // A monster stub on the digger, which never moves.
+        // A monster on the digger, held in place while no digger is alive.
         let slot = MonsterSlot::ALL[2];
         let at = first.of(&game.sim.diggers).position();
         {
@@ -1507,16 +1521,16 @@ mod tests {
                 sound: &mut game.sound,
                 obs: &mut obs,
             };
-            cx.put_nobbin(slot, at);
+            cx.put_monster(slot, at, true, Some(Direction::Left), 0, 0, 0);
         }
         // The undrawn tick, the 7-tick arc and the 5-tick wait.
         steps(&mut game, 13);
-        assert!(slot.of(&game.sim.monsters).occupied());
+        assert!(slot.of(&game.sim.monsters.slots).occupied());
         let score = game.sim.scores.visible(ScoreId::ALL[0]);
         // Tick G: the first tombstone frame removes it.
         steps(&mut game, 1);
         assert_eq!(first.of(&game.sim.diggers).death_frame(), 1);
-        let monster = slot.of(&game.sim.monsters);
+        let monster = slot.of(&game.sim.monsters.slots);
         assert!(!monster.occupied() && !monster.alive());
         assert!(!game.gfx.sprites().is_enabled(slot.sprite()));
         assert_eq!(game.sim.scores.visible(ScoreId::ALL[0]), score);

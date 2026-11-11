@@ -9,7 +9,7 @@
 
 use digger_core::assets::ImageId;
 use digger_core::geom::Px;
-use digger_core::testkit::{KillCause, Run, Scenario, Script};
+use digger_core::testkit::{KillCause, MonsterSetup, Run, Scenario, Script};
 use digger_core::{
     BagId, CellPos, DeathStage, DiggerId, Direction, GameMode, MonsterSlot, PenaltySite, PlayerId,
     ScoreId, SoundCommand,
@@ -97,6 +97,18 @@ fn bag_over_shaft(to: u8) -> Vec<(u8, u8, u8)> {
 const TWO_CELL_LANDING: u32 = 23;
 
 // Bag creation ---------------------------------------------------------
+
+/// Puts a nobbin into `slot` at `at` that stays where it is: it has no
+/// direction and is held in its spawn standstill.
+fn place_still_monster(run: &mut Run, slot: MonsterSlot, at: Px) {
+    let still = MonsterSetup {
+        direction: None,
+        standstill: u8::MAX,
+        ..MonsterSetup::default()
+    };
+    run.place_monster_as(slot, at, still)
+        .expect("inside the playfield");
+}
 
 #[test]
 fn level_1_has_seven_bags_first_at_1_2_second_at_4_0() {
@@ -406,8 +418,7 @@ fn free_push_moves_bag_4_px_and_slides() {
 fn push_blocked_by_monster_on_far_side() {
     let mut run = started(&[(4, 0, b'B')]);
     place(&mut run, 76, 18, Direction::Right);
-    run.place_monster(MonsterSlot::ALL[0], Px::new(108, 18))
-        .expect("in the playfield");
+    place_still_monster(&mut run, MonsterSlot::ALL[0], Px::new(108, 18));
     tick(&mut run, "R");
     let state = run.state();
     assert_eq!(state.bag(BAG0).position(), px(4, 0), "stays where it was");
@@ -426,8 +437,7 @@ fn quirk_q32_failed_push_rolls_bag_back_to_corner() {
     use Direction::{Left, Right};
     let mut run = started(&[(4, 0, b'B')]);
     place(&mut run, 76, 18, Direction::Right);
-    run.place_monster(MonsterSlot::ALL[0], Px::new(116, 18))
-        .expect("in the playfield");
+    place_still_monster(&mut run, MonsterSlot::ALL[0], Px::new(116, 18));
     let mut seen = Vec::new();
     for entry in ["R", ".", "L", "L", "L", "L", "L", "L", "L"] {
         tick(&mut run, entry);
@@ -511,8 +521,7 @@ fn quirk_q32_failed_chain_that_touches_a_monster_restores_twice() {
         .expect("in the playfield");
     run.place_bag(BAG1, Px::new(292, 18))
         .expect("in the playfield");
-    run.place_monster(MonsterSlot::ALL[0], Px::new(292, 30))
-        .expect("in the playfield");
+    place_still_monster(&mut run, MonsterSlot::ALL[0], Px::new(292, 30));
     place(&mut run, 260, 18, Direction::Right);
     tick(&mut run, "R");
     let state = run.state();

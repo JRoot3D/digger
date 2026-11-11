@@ -8,7 +8,7 @@
 
 use digger_core::assets::ImageId;
 use digger_core::geom::Px;
-use digger_core::testkit::{KillCause, Run, Scenario, Script};
+use digger_core::testkit::{KillCause, MonsterSetup, Run, Scenario, Script};
 use digger_core::video::Framebuffer;
 use digger_core::{
     BagId, CellPos, Controls, DeathStage, DiggerId, Direction, EmeraldStep, FireballId,
@@ -58,6 +58,18 @@ fn notes(sounds: &[SoundCommand]) -> Vec<u8> {
             _ => None,
         })
         .collect()
+}
+
+/// Puts a nobbin into `slot` at `at` that stays where it is: it has no
+/// direction and is held in its spawn standstill.
+fn place_still_monster(run: &mut Run, slot: MonsterSlot, at: Px) {
+    let still = MonsterSetup {
+        direction: None,
+        standstill: u8::MAX,
+        ..MonsterSetup::default()
+    };
+    run.place_monster_as(slot, at, still)
+        .expect("inside the playfield");
 }
 
 #[test]
@@ -659,8 +671,7 @@ fn facing_pair(rows: [&str; 10], x1: i32, x2: i32) -> Run {
 fn fireball_kills_nobbin_for_250() {
     let mut run = started(LONG_CORRIDOR);
     let slot = MonsterSlot::ALL[2];
-    run.place_monster(slot, Px::new(200, 180))
-        .expect("inside the playfield");
+    place_still_monster(&mut run, slot, Px::new(200, 180));
     let path = flight(&mut run, "F", 7);
     // Launched at 160, the shot first overlaps the nobbin at x = 200.
     assert_eq!(

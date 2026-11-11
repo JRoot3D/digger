@@ -58,11 +58,15 @@ On each tick, slots SHALL be processed in order 0..5. A living monster with a de
 - **THEN** it does not move for two ticks and moves on the third
 
 ### Requirement: Random double move for nobbins
-After the move of every living monster whose delay was 0, one random number SHALL be drawn with modulus 15 − L. If the result is 0 and the monster is a nobbin and at least one digger is alive, the monster SHALL make a second move in the same tick. Hobbins never move twice. (research 02 §4.3, §7)
+After the move of every living monster whose delay was 0, one random number SHALL be drawn with modulus 15 − L. If the result is 0 and the monster is a nobbin that is still alive after that move, the monster SHALL make a second move in the same tick, whether or not a digger is alive. A nobbin eaten in bonus mode by its first move, or squashed by a falling bag it pushed, makes no second move. Hobbins never move twice. (research 02 §4.3, §7, §8)
 
 #### Scenario: Double move
 - **WHEN** a nobbin moves on a tick and the draw that follows returns 0
 - **THEN** the nobbin makes a second complete move on that tick
+
+#### Scenario: Eaten nobbin
+- **WHEN** a nobbin's first move in bonus mode runs into a living digger and the draw that follows returns 0
+- **THEN** the nobbin has been removed and makes no second move
 
 #### Scenario: Hobbin still draws
 - **WHEN** a hobbin moves on a tick

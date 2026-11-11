@@ -74,7 +74,7 @@ pub use fireball::{Fireball, FireballStage};
 use gauntlet::GauntletClock;
 use gfx::Gfx;
 use input::SlotInput;
-pub use monster::Monster;
+pub use monster::{Monster, MonsterDeath, Monsters};
 use status::SecondSide;
 
 /// What kind of frame a step was (game-flow spec, "Frames and ticks").
@@ -207,6 +207,10 @@ struct PlayerState {
 /// The simulation state proper: everything a tick reads or writes apart
 /// from the picture, the sprite layer and the sound queue (design D4, D5).
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent flags of the state hash, kept at the original's granularity (design D5)"
+)]
 pub(crate) struct Sim {
     /// The configuration the game was started with.
     cfg: GameConfig,
@@ -244,8 +248,11 @@ pub(crate) struct Sim {
     digger_frames: [AnimFrame; DiggerId::COUNT],
     /// The animation counter of each fireball sprite, by unit (not hashed).
     fireball_frames: [FlameFrame; DiggerId::COUNT],
-    /// The six monster slots.
-    monsters: [Monster; MonsterSlot::COUNT],
+    /// The six monster slots and the round's spawn schedule.
+    monsters: Monsters,
+    /// Whether bonus mode is on (hashed as `bonusmode`); switched by the
+    /// bonus of task group 13.
+    bonus_mode: bool,
     /// The seven bags in play.
     bags: [Bag; BagId::COUNT],
     /// Each player's saved bags.
@@ -318,7 +325,8 @@ impl Sim {
             diggers_visible: false,
             digger_frames: [AnimFrame::START; DiggerId::COUNT],
             fireball_frames: [FlameFrame::START; DiggerId::COUNT],
-            monsters: [Monster::default(); MonsterSlot::COUNT],
+            monsters: Monsters::default(),
+            bonus_mode: false,
             bags: [Bag::default(); BagId::COUNT],
             saved_bags: [[Bag::default(); BagId::COUNT]; PlayerId::COUNT],
             gold_time: 0,
@@ -467,12 +475,13 @@ impl Ctx<'_> {
     /// is put in play and the draw begins (design D3; research 01 §3.2,
     /// `drawscreen`). The sprites are reset to their initial images: the
     /// diggers' and the bags' here (the player's saved bags are put in
-    /// play), the monsters' by task group 12.
+    /// play), and the monsters'.
     fn begin_level_draw(&mut self) -> LevelDraw {
         let turn = self.sim.turn;
         self.sim.field = self.sim.saved_fields.restore(turn);
         let plan: LevelPlan = self.sim.current_level().plan();
         self.restore_bags();
+        self.reset_monster_sprites();
         self.reset_digger_sprites();
         LevelDraw::begin(self.gfx, &mut self.sim.field, plan)
     }
@@ -502,8 +511,8 @@ impl Ctx<'_> {
     ///
     /// The generator is seeded with the round's seed as the observer
     /// returns it; after a full draw the diggers are placed and both scores
-    /// drawn, otherwise the sprites are reset and the diggers placed (the
-    /// monsters are reset here from task group 12 on); then
+    /// drawn, otherwise the sprites are reset and the diggers placed; the
+    /// monster slots are cleared and the round's spawn schedule set; then
     /// the `PLAYER n` label is erased, every digger's score is refreshed by
     /// a zero-point scoring call, the lives are drawn, the main music is
     /// requested and the control state is cleared.
@@ -516,10 +525,12 @@ impl Ctx<'_> {
 
         if after_full_draw {
             self.init_diggers();
+            self.reset_monsters();
             self.draw_scores();
         } else {
             self.reset_digger_sprites();
             self.init_diggers();
+            self.reset_monsters();
         }
         status::erase_player_label(self.gfx.fb_mut());
         // The original refreshes scores 0..diggers, so in an alternating
@@ -537,16 +548,21 @@ impl Ctx<'_> {
     }
 
     /// One main-phase tick: the penalty counter is reset, the fire states
-    /// read on the previous tick are latched, the diggers and then the bags
-    /// are updated and the tick is counted. Task 14.1 assembles the full
-    /// update order with the monsters between the diggers and the bags.
+    /// read on the previous tick are latched, the diggers, the monsters and
+    /// the bags are updated, the penalty counter's overflow delays monster
+    /// slots, and the tick is counted. Task 14.1 completes the order with
+    /// the level-completion test.
     fn tick_main(&mut self, input: &FrameInput) {
         self.sim.penalty.reset();
         for slot in &mut self.sim.inputs {
             slot.advance_fire();
         }
         self.update_diggers(input);
+        self.update_monsters();
         self.update_bags();
+        // Quirk Q02: only the main phase applies the overflow.
+        let penalty = self.sim.penalty;
+        self.sim.monsters.apply_penalty_overflow(penalty);
         self.end_tick();
     }
 
@@ -561,9 +577,9 @@ impl Ctx<'_> {
 
     /// The round-end transition (game-flow spec, "Round end"): all sound is
     /// stopped, every fireball removed, the bags tidied and saved and the
-    /// field saved for the player, then the observer sees the state and the
-    /// round counter rises. Task 14.3 adds the removal of the bonus and
-    /// monsters in their places.
+    /// field saved for the player and the monsters erased, then the
+    /// observer sees the state and the round counter rises. Task 14.3 adds
+    /// the removal of the bonus in its place.
     fn end_round(&mut self) {
         self.sound.push(SoundCommand::StopAll);
         for unit in self.sim.units() {
@@ -572,6 +588,7 @@ impl Ctx<'_> {
         }
         self.tidy_bags();
         self.sim.saved_fields.save(self.sim.turn, &self.sim.field);
+        self.erase_monsters();
         self.obs.round_end(StateView::new(self.sim, self.gfx));
         self.sim.round = self.sim.round.wrapping_add(1);
     }

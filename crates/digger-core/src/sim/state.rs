@@ -12,7 +12,7 @@ use super::gauntlet::GauntletClock;
 use super::gfx::Gfx;
 use super::ids::{BagId, DiggerId, MonsterSlot, PlayerId};
 use super::level::LevelNumber;
-use super::monster::Monster;
+use super::monster::{Monster, Monsters};
 use super::penalty::Penalty;
 use super::score::{ScoreId, Scores};
 
@@ -139,7 +139,23 @@ impl<'a> StateView<'a> {
 
     /// The monster in `slot`, with its last values when the slot is free.
     pub fn monster(self, slot: MonsterSlot) -> &'a Monster {
-        slot.of(&self.sim.monsters)
+        slot.of(&self.sim.monsters.slots)
+    }
+
+    /// The monster slots with the round's spawn schedule.
+    pub fn monsters(self) -> &'a Monsters {
+        &self.sim.monsters
+    }
+
+    /// The monsters remaining in the round: occupied slots plus those not
+    /// yet spawned.
+    pub fn monsters_left(self) -> u16 {
+        self.sim.monsters.left()
+    }
+
+    /// Whether bonus mode is on (hashed as `bonusmode`).
+    pub fn bonus_mode(self) -> bool {
+        self.sim.bonus_mode
     }
 
     /// Bag `id`, with its last values when it no longer exists.
