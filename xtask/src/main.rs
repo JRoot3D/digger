@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+mod ci;
+
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -27,7 +29,7 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
-        Command::Ci => Err("the ci subcommand is not implemented yet"),
+        Command::Ci => ci::run(),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
