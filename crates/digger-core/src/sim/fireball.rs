@@ -687,4 +687,52 @@ mod tests {
         }
         assert_eq!(path, [(180, flying), (180, exploding)]);
     }
+
+    #[test]
+    fn exploding_fireball_hit_again_is_not_restarted() {
+        use crate::sim::GameMode;
+        let config = GameConfig {
+            mode: GameMode::TwoDiggers,
+            ..GameConfig::default()
+        };
+        let mut game = Game::new(config, 0);
+        while game.phase != Phase::Playing {
+            game.step(&FrameInput::NONE);
+        }
+        let [first, second] = DiggerId::ALL;
+        // Digger 1's fireball flies right at (188,184); digger 2's is
+        // exploding at (196,184), its second frame next.
+        let set_up = |game: &mut Game, unit: DiggerId, stage, x, image| {
+            let digger = unit.of_mut(&mut game.sim.diggers);
+            digger.not_firing = false;
+            digger.fireball = Fireball {
+                stage,
+                direction: Direction::Right,
+                position: Px::new(x, 184),
+            };
+            game.gfx
+                .place(unit.fireball().sprite(), image, Px::new(x, 184));
+        };
+        set_up(
+            &mut game,
+            first,
+            FireballStage::Flying,
+            188,
+            ImageId::FIREBALL_1,
+        );
+        let second_image = for_unit(ImageId::EXPLOSION_1, second);
+        let stage = FireballStage::Exploding { next_frame: 2 };
+        set_up(&mut game, second, stage, 196, second_image);
+        game.step(&FrameInput::NONE);
+        let flying = first.of(&game.sim.diggers).fireball;
+        assert_eq!(flying.position, Px::new(196, 184));
+        assert_eq!(flying.stage, FireballStage::Exploding { next_frame: 1 });
+        // The hit fireball drew its second frame, as without the hit.
+        let hit = second.of(&game.sim.diggers).fireball;
+        assert_eq!(hit.stage, FireballStage::Exploding { next_frame: 3 });
+        assert_eq!(
+            game.gfx.sprites().image(second.fireball().sprite()),
+            for_unit(ImageId::EXPLOSION_2, second)
+        );
+    }
 }

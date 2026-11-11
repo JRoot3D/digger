@@ -167,6 +167,7 @@ impl<'a> StateView<'a> {
     /// `lv` both players' levels (0 for the Q06 placeholder), `li` both
     /// digger records' lives, `sc` both total scores, `em` the current
     /// player's emeralds left, `dg` both digger records' positions as
+    /// `x,y,x,y`, `fb` both digger records' fireball positions as
     /// `x,y,x,y`, and `gt` the gauntlet clock in the gauntlet modes. Later
     /// task groups append the positions of the entities they add.
     ///
@@ -179,10 +180,11 @@ impl<'a> StateView<'a> {
         let [li0, li1] = sim.diggers.map(|d| d.lives);
         let [sc0, sc1] = ScoreId::ALL.map(|id| sim.scores.total(id));
         let [d0, d1] = sim.diggers.map(|d| d.position);
+        let [f0, f1] = sim.diggers.map(|d| d.fireball.position);
         write!(
             out,
             "t={} r={} p={} rng={:08X} pen={} lv={lv0},{lv1} li={li0},{li1} sc={sc0},{sc1} em={} \
-             dg={},{},{},{}",
+             dg={},{},{},{} fb={},{},{},{}",
             sim.ticks,
             sim.round,
             sim.turn.number(),
@@ -193,6 +195,10 @@ impl<'a> StateView<'a> {
             d0.y,
             d1.x,
             d1.y,
+            f0.x,
+            f0.y,
+            f1.x,
+            f1.y,
         )?;
         if let Some(clock) = sim.gauntlet {
             write!(out, " gt={}", clock.units())?;
@@ -219,7 +225,7 @@ mod tests {
         let game = Game::new(GameConfig::default(), 0);
         assert_eq!(
             trace(&game),
-            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 dg=0,0,0,0"
+            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 dg=0,0,0,0 fb=0,0,0,0"
         );
 
         let config = GameConfig {
@@ -231,7 +237,7 @@ mod tests {
         let game = Game::new(config, 0);
         assert_eq!(
             trace(&game),
-            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 dg=0,0,0,0 gt=143181720"
+            "t=0 r=0 p=0 rng=00000000 pen=0 lv=1,0 li=3,0 sc=0,0 em=30 dg=0,0,0,0 fb=0,0,0,0 gt=143181720"
         );
     }
 
@@ -243,7 +249,7 @@ mod tests {
         }
         assert_eq!(
             trace(&game),
-            "t=1 r=0 p=0 rng=7B1DCDAF pen=1 lv=1,0 li=3,0 sc=0,0 em=30 dg=152,180,0,0"
+            "t=1 r=0 p=0 rng=7B1DCDAF pen=1 lv=1,0 li=3,0 sc=0,0 em=30 dg=152,180,0,0 fb=0,0,0,0"
         );
     }
 }
