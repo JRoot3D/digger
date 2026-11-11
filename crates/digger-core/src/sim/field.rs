@@ -271,6 +271,28 @@ impl Field {
     /// other player) changes the game state this way, not only the picture,
     /// so it runs whether or not anything is displayed (research 01 §5.3,
     /// §10 item 8, research 03 §8.2).
+    /// Whether a nobbin in cell `from` can move one cell in `dir`: the
+    /// neighbouring cell exists, is not untouched, and is connected to
+    /// `from`, meaning the neighbour's slice nearest `from` is gone or
+    /// `from`'s slice nearest the neighbour is gone (monsters spec,
+    /// "Nobbin passability and choice"; research 02 §0, §4.4).
+    pub fn is_passable(&self, from: CellPos, dir: Direction) -> bool {
+        let Some(to) = from.neighbour(dir) else {
+            return false;
+        };
+        let (own, target) = (self.cell(from), self.cell(to));
+        if target.is_untouched() {
+            return false;
+        }
+        let (last_h, last_v) = (H_SLICES - 1, V_SLICES - 1);
+        match dir {
+            Direction::Right => !target.has_h_slice(0) || !own.has_h_slice(last_h),
+            Direction::Left => !target.has_h_slice(last_h) || !own.has_h_slice(0),
+            Direction::Up => !target.has_v_slice(last_v) || !own.has_v_slice(0),
+            Direction::Down => !target.has_v_slice(0) || !own.has_v_slice(last_v),
+        }
+    }
+
     #[allow(dead_code, reason = "called by the full level draw (task group 4)")]
     pub(crate) fn normalise_for_redraw(&mut self) {
         for cell in &mut self.cells {
@@ -870,6 +892,89 @@ mod tests {
                 let c = field.cell(cell(h, 9));
                 assert!(c.has_no_h_slices() && c.has_all_v_slices() && !c.is_untouched());
             }
+        }
+    }
+
+    /// A field with every cell `S`.
+    fn all_open() -> Field {
+        Field::from_layout(&LevelLayout::from_rows([[b'S'; 15]; 10]))
+    }
+
+    #[test]
+    fn passable_through_joined_cells() {
+        let field = Field::for_level(&LevelSet::builtin(), level(1), false);
+        // Row 9 of layout 1 holds `H` from column 4 to 10.
+        assert!(field.is_passable(cell(5, 9), Direction::Right));
+        assert!(field.is_passable(cell(6, 9), Direction::Left));
+        assert!(field.is_passable(cell(4, 9), Direction::Right));
+        // The `S` at (0,0) joins the `V` below it.
+        assert!(field.is_passable(cell(0, 0), Direction::Down));
+        assert!(field.is_passable(cell(0, 1), Direction::Up));
+
+        // A digger's tunnel joins two cells once the slice ahead is gone.
+        let mut field = Field::EARTH;
+        let mut penalty = Penalty::default();
+        for step in 0..5 {
+            field.dig(
+                Px::new(12 + 4 * step, 18),
+                Some(Direction::Right),
+                &mut penalty,
+            );
+        }
+        assert!(!field.cell(cell(1, 0)).is_untouched());
+        assert!(field.is_passable(cell(0, 0), Direction::Right));
+        assert!(!field.is_passable(cell(1, 0), Direction::Left));
+    }
+
+    #[test]
+    fn not_passable_into_untouched_cell() {
+        let field = Field::for_level(&LevelSet::builtin(), level(1), false);
+        // (3,9) is earth, left of the `H` at (4,9).
+        assert!(field.cell(cell(3, 9)).is_untouched());
+        assert!(!field.is_passable(cell(4, 9), Direction::Left));
+
+        // A partly dug neighbour is still untouched and not passable.
+        let mut field = Field::from_layout(&layout_with(&[(0, 0, b'S')]));
+        let mut penalty = Penalty::default();
+        field.dig(Px::new(12, 18), Some(Direction::Right), &mut penalty);
+        field.dig(Px::new(16, 18), Some(Direction::Right), &mut penalty);
+        assert!(field.cell(cell(1, 0)).has_tunnel() && field.cell(cell(1, 0)).is_untouched());
+        assert!(!field.is_passable(cell(0, 0), Direction::Right));
+    }
+
+    #[test]
+    fn adjacent_unconnected_tunnel_not_passable() {
+        // Two vertical shafts side by side: neither cell is untouched, but
+        // both keep the horizontal slices that face each other.
+        let field = Field::from_layout(&layout_with(&[(0, 0, b'V'), (1, 0, b'V')]));
+        assert!(!field.cell(cell(1, 0)).is_untouched());
+        assert!(!field.is_passable(cell(0, 0), Direction::Right));
+        assert!(!field.is_passable(cell(1, 0), Direction::Left));
+
+        // Two horizontal corridors one above the other are not joined
+        // vertically either.
+        let field = Field::from_layout(&layout_with(&[(0, 0, b'H'), (0, 1, b'H')]));
+        assert!(!field.is_passable(cell(0, 0), Direction::Down));
+        assert!(!field.is_passable(cell(0, 1), Direction::Up));
+
+        // One facing slice gone on either side is enough.
+        let field = Field::from_layout(&layout_with(&[(0, 0, b'H'), (1, 0, b'V')]));
+        assert!(field.is_passable(cell(0, 0), Direction::Right));
+        assert!(field.is_passable(cell(1, 0), Direction::Left));
+    }
+
+    #[test]
+    fn not_passable_off_grid() {
+        let field = all_open();
+        for v in 0..10 {
+            assert!(!field.is_passable(cell(14, v), Direction::Right));
+            assert!(!field.is_passable(cell(0, v), Direction::Left));
+            assert!(field.is_passable(cell(13, v), Direction::Right));
+        }
+        for h in 0..15 {
+            assert!(!field.is_passable(cell(h, 0), Direction::Up));
+            assert!(!field.is_passable(cell(h, 9), Direction::Down));
+            assert!(field.is_passable(cell(h, 1), Direction::Up));
         }
     }
 }
