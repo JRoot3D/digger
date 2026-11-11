@@ -1,32 +1,46 @@
 schema: spec-driven
 
-# Project context (optional)
-# Add only constraints that should guide OpenSpec artifacts and workflows.
-# Include constraints an agent cannot infer by reading the code.
-# Keep general project documentation and discoverable codebase facts out.
-# Example:
-#   context: |
-#     Designs and tasks must cover Windows, macOS, and Linux
-#     Write all artifacts in Spanish
+context: |
+  This repository re-creates the game Digger Remastered as an idiomatic Rust
+  program (Rust 1.99, edition 2024). Read docs/porting-plan.md first: it holds
+  the project-wide decisions and the order of the changes.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always state what is out of scope
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Behavioural reference: the reports in docs/research/ describe what the
+  upstream C implementation (sobomax/digger at commit 638125e) does. They are
+  a description of behaviour, not a structure to copy. Their "suggested Rust
+  design" sections are superseded by docs/porting-plan.md.
 
-# Per-operation guidance (optional)
-# Add advisory guidance for how apply and archive work should be conducted.
-# This is separate from artifact rules above.
-# Example:
-#   operations:
-#     apply:
-#       guidance:
-#         - Keep test summaries concise
-#     archive:
-#       guidance:
-#         - Summarize the archive outcome before finishing
+  Hard constraints
+  - No C: nothing from upstream is linked, vendored, called through FFI or
+    mechanically translated. No C platform libraries (no SDL).
+  - Platform crates are Rust-only: winit, softbuffer, cpal, gilrs.
+  - Networked play (NetSim), CGA mode and upstream config/score file formats
+    are out of scope. Upstream .drf/.edrf recordings are the one upstream
+    format the port reads and writes.
+  - digger-core has no I/O, clock, threads or platform dependencies and is
+    deterministic; every crate uses #![forbid(unsafe_code)].
+  - Fidelity is proven by replaying the upstream recordings (final score,
+    level, tick count, eDRF state-hash checkpoints), not by code resemblance.
+  - Simulation-affecting quirks of the original are reproduced deliberately
+    and recorded in docs/compat-quirks.md with a test each.
+  - Licence: GPL-2.0-or-later.
+
+rules:
+  proposal:
+    - State what is out of scope and which later change picks it up
+  specs:
+    - Describe observable game behaviour with concrete numbers (pixels, ticks, scores); never name Rust types, functions or crates
+    - Cite the docs/research report section a requirement was derived from at the end of its description, e.g. "(research 02 §5)"
+  design:
+    - Explain how the design stays idiomatic Rust (ownership, enums, state machines, error handling) where the original used globals, flag integers or blocking loops
+    - List the compat quirks the change must reproduce and how each is isolated and tested
+  tasks:
+    - Each task fits one working session and names its verification (test name, cargo command or observable behaviour)
+    - Every task group ends with cargo fmt --check, cargo clippy --all-targets -- -D warnings and cargo test --workspace passing
+    - Use Conventional Commits; one commit per completed task group at minimum
+
+operations:
+  apply:
+    guidance:
+      - Work from docs/research and the specs; do not open or copy upstream C source while implementing
+      - When a recording disagrees with a research report, the recording wins; record the finding in docs/compat-quirks.md
