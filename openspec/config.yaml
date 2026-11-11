@@ -43,5 +43,6 @@ operations:
   apply:
     guidance:
       - Planning stays on the main session; delegate the implementation of each task group to a subagent running the Opus model, then review its result against the specs before ticking tasks
-      - Work from docs/research and the specs; do not open or copy upstream C source while implementing
+      - Work from the specs, design and docs/research; when a question or spec conflict remains, re-check the provided sources (upstream sobomax/digger source and recordings, digger.org, portmaster.games) to confirm the behaviour, then write the code independently; never copy or translate C
+      - Record every resolved question or spec conflict in the same commit, in docs/compat-quirks.md or by correcting the change's own artifacts
       - When a recording disagrees with a research report, the recording wins; record the finding in docs/compat-quirks.md

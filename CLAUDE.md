@@ -18,5 +18,8 @@ Read `docs/porting-plan.md` and `openspec/config.yaml` before any work.
 - No C: nothing from upstream is linked, vendored, called through FFI, run or
   mechanically translated. No SDL. Upstream data tables and recordings may be
   read as data.
-- Implement from `docs/research/` and the specs, not from upstream source.
+- Implement from the specs and `docs/research/`. When a question or spec
+  conflict remains, re-check the provided sources (upstream source and
+  recordings, digger.org, portmaster.games) to confirm the behaviour, then write
+  the code independently. Never copy or translate C.
 - One Conventional Commit per completed task group at minimum.
