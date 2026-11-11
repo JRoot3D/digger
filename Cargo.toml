@@ -39,3 +39,9 @@ expect_used = "warn"
 panic = "warn"
 indexing_slicing = "warn"
 cast_possible_truncation = "warn"
+# The heap types, methods and macros of clippy.toml are banned only in the
+# simulation (crates/digger-core/src/sim/mod.rs denies these three lints);
+# everywhere else they are allowed.
+disallowed_types = "allow"
+disallowed_methods = "allow"
+disallowed_macros = "allow"

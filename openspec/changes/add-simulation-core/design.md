@@ -214,7 +214,7 @@ Commands are pushed in event order into a fixed-capacity ring (`SOUND_QUEUE_CAP 
 
 ### D9. No allocation in `step`
 
-All game tables are arrays; `Collisions`, the sound queue and the draw cursor are fixed-size. The rule is enforced statically: the `sim` module carries `#![deny(clippy::disallowed_types, clippy::disallowed_methods)]` with `Vec`, `String`, `Box`, `Rc`, `Arc`, the hash collections and `format!`-family macros listed in `clippy.toml`; `Game::new` and the `testkit` module are the only places with a local `allow`. Status-line numbers are formatted into stack buffers.
+All game tables are arrays; `Collisions`, the sound queue and the draw cursor are fixed-size. The rule is enforced statically: the `sim` module carries `#![cfg_attr(not(test), deny(clippy::disallowed_types, clippy::disallowed_methods, clippy::disallowed_macros))]` with `Vec`, `String`, `Box`, `Rc`, `Arc`, the std collections, their constructors and `to_string`/`to_owned`, and the `format!` and `vec!` macros listed in `clippy.toml`; the three lints are allowed workspace-wide in `Cargo.toml`, so only `sim` is restricted. `Game::new` and the `testkit` module are the only places with a local `allow`; `#[cfg(test)]` unit tests are exempt through the `not(test)` condition, while `cargo clippy --all-targets` still checks the library build. Status-line numbers are formatted into stack buffers.
 
 *Alternative rejected:* a counting global allocator in a test — needs `unsafe impl GlobalAlloc`, which the workspace forbids.
 

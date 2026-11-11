@@ -1,0 +1,40 @@
+# Clippy configuration for the workspace.
+#
+# The lists below are the heap-allocating types, functions and macros that
+# the simulation (`crates/digger-core/src/sim/`) must not use: design D9 of
+# add-simulation-core, "No allocation in step". The lints that read them are
+# allowed workspace-wide (Cargo.toml) and denied only in `sim/mod.rs`, so the
+# rest of the workspace (xtask, tests, the frontend) may allocate freely.
+
+disallowed-types = [
+  { path = "std::vec::Vec", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::string::String", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::boxed::Box", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::rc::Rc", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::sync::Arc", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::HashMap", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::HashSet", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::BTreeMap", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::BTreeSet", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::VecDeque", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::BinaryHeap", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::collections::LinkedList", reason = "no allocation in the simulation (design D9)" },
+]
+
+disallowed-methods = [
+  { path = "std::vec::Vec::new", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::vec::Vec::with_capacity", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::string::String::new", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::string::String::with_capacity", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::boxed::Box::new", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::rc::Rc::new", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::sync::Arc::new", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::string::ToString::to_string", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::borrow::ToOwned::to_owned", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::fmt::format", reason = "no allocation in the simulation (design D9)" },
+]
+
+disallowed-macros = [
+  { path = "std::format", reason = "no allocation in the simulation (design D9)" },
+  { path = "std::vec", reason = "no allocation in the simulation (design D9)" },
+]
