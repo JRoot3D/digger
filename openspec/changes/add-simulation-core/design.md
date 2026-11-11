@@ -99,7 +99,7 @@ pub struct FrameInput { pub slots: [Controls; 2], pub pause: bool, pub quit: boo
 pub struct Controls { pub up: bool, pub down: bool, pub left: bool, pub right: bool, pub fire: bool }
 pub struct StepOutcome {
     pub frame: FrameKind,                     // Tick | Wait | Paused
-    pub player_out: Option<PlayerResult>,     // set on the frame a player's game ends
+    pub player_out: Option<PlayerResult>,     // set on the frame a player's game ends (game over or time-up)
     pub finished: Option<GameSummary>,        // reason + scores + level + ticks
 }
 ```
@@ -115,13 +115,14 @@ pub struct StepOutcome {
 | Phase | Frames | Frame kind | Leaves to |
 |---|---|---|---|
 | `Start` | none: the first step continues into `LevelDraw` | — | `LevelDraw` (the game-start `level_plan` observer calls for the participating players run here, because `Game::new` takes no observer) |
+| `DrawPending` | none: the next frame starts the full draw and draws its first items | — | `LevelDraw` |
 | `LevelDraw { cursor }` | ⌈items / 3⌉ (`DRAW_ITEMS_PER_FRAME = 3`; items = opened cells, then emeralds; the bags are drawn between the two and not counted; a draw with no item takes one frame) | Wait | `PlayerFlash` (alternating mode, first round or after a turn change) or `Playing` |
 | `PlayerFlash { frame }` | `PLAYER_FLASH_FRAMES = 45` | Wait | `Playing` |
 | `Playing` | one tick per frame | Tick | `Paused`, `WindDown`, or round end directly on gauntlet time-out |
 | `WindDown { left }` | 1..n ticks (`WIND_DOWN_MAX = 20`, `WIND_DOWN_QUIET_PENALTY = 8`) | Tick | round end |
-| `LevelDone { left }` | `LEVEL_DONE_FRAMES = 40` | Wait | `LevelDraw` |
-| `Notice { kind, left }` (`GAME OVER` / `TIME UP`) | `NOTICE_FRAMES = 50` | Wait | `LevelDraw` (other player's turn) or `Finished` |
-| `Paused` | until a pause request | Paused | `Playing` |
+| `LevelDone { left }` | `LEVEL_DONE_FRAMES = 40`; the outcome is decided on its last frame | Wait | `DrawPending`, `Notice` or `Playing` |
+| `Notice { kind, left }` (`GAME OVER` / `TIME UP`) | `NOTICE_FRAMES = 50` | Wait | `DrawPending` (other player's turn), `Playing` (a bonus life from the game end's zero-point calls, Q39) or `Finished` |
+| `Paused { main_over }` | until a pause request | Paused | `Playing`, or the wind-down when the tick before the pause ended the main phase |
 | `Finished` | absorbing | Wait | — |
 
 Round start (`begin_round`: seed, entity reset, score refresh, lives, main music, control reset) and round end (`end_round`: stop sound, remove fireballs and bonus, tidy bags, save field, remove monsters, decide outcome) are **transitions**, not phases: they take no frame. They run inside the `step` call whose frame ends the preceding phase, so a death on the same level goes from the last wind-down tick straight to the first tick of the next round on the following frame, as in the original. The full level draw applies the redraw normalisation to the whole field when the phase is entered and reveals the pixels progressively; no tick can observe the difference.

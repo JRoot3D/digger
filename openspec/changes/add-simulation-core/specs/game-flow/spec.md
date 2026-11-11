@@ -141,7 +141,7 @@ If a round ends with all diggers dead and the level not complete, each digger in
 - **THEN** player 1 plays the next round without a redraw or announcement
 
 ### Requirement: Game over
-When a round ends with all diggers dead, no lives left among the current player's diggers, and the mode is not gauntlet, that player's game is over: a 0-point scoring call SHALL be made for each of their diggers, the frame's outcome SHALL report the player and final score, and `GAME OVER` SHALL be shown at (104,0) in text colour 3 for 50 frames without ticks. The whole game finishes when the current player has no lives and the turn cannot pass. (research 01 §3.2, §6.3)
+When a round ends with all diggers dead, no lives left among the current player's diggers, and the mode is not gauntlet, that player's game is over: a 0-point scoring call SHALL be made for each score from the first up to the number of diggers (in an alternating game always the first score, whoever's turn it is), the frame's outcome SHALL report the player and final score, and `GAME OVER` SHALL be shown at (104,0) in text colour 3 for 50 frames without ticks. The whole game finishes when, after the notice, the current player has no lives and the turn cannot pass; a bonus life awarded by the 0-point calls lets the same player play on. (research 01 §3.2, §6.3)
 
 #### Scenario: One-player game over
 - **WHEN** the digger of a one-player game dies with 1 life
