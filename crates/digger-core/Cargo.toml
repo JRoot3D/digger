@@ -1,0 +1,10 @@
+[package]
+name = "digger-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Deterministic Digger simulation: game state, framebuffer rendering and recordings, with no I/O."
+publish = false

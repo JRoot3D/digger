@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/digger-core",
+    "crates/digger-sound",
+    "crates/digger",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/JRoot3D/digger"
+authors = ["The Digger Rust contributors"]

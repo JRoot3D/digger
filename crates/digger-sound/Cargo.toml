@@ -1,0 +1,10 @@
+[package]
+name = "digger-sound"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Digger sound effects, music and sample synthesis: sound commands in, PCM samples out."
+publish = false

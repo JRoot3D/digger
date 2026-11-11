@@ -1,0 +1,14 @@
+[package]
+name = "digger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Digger Remastered re-created in Rust: the desktop game."
+publish = false
+
+[[bin]]
+name = "digger"
+path = "src/main.rs"

@@ -2,13 +2,13 @@
 
 ## 1. Workspace skeleton
 
-- [ ] 1.1 Add `rust-toolchain.toml` pinning channel `1.99` with components `rustfmt` and `clippy`; verify `rustc --version` in the repository reports 1.99.x
-- [ ] 1.2 Add the root `Cargo.toml` with `[workspace]` members `crates/digger-core`, `crates/digger-sound`, `crates/digger`, `xtask`, and `[workspace.package]` (edition 2024, rust-version 1.99, license GPL-2.0-or-later, repository); verify `cargo metadata --no-deps` lists four packages
-- [ ] 1.3 Create library crate `digger-core` with `#![forbid(unsafe_code)]`, a crate-level doc comment stating its no-I/O rule, and one placeholder test; verify `cargo test -p digger-core` passes
-- [ ] 1.4 Create library crate `digger-sound` with `#![forbid(unsafe_code)]`, a crate-level doc comment, and one placeholder test; verify `cargo test -p digger-sound` passes
-- [ ] 1.5 Create binary crate `digger` (binary name `digger`) that prints its name and version and exits 0; verify `cargo run -p digger` prints `digger 0.1.0`
-- [ ] 1.6 Add `.gitignore` (`target/`, editor files) and `.editorconfig` (UTF-8, LF, 4 spaces for Rust, 2 for YAML/TOML/Markdown); verify `git status` is clean after `cargo build`
-- [ ] 1.7 Commit `Cargo.lock`; verify `cargo build --workspace --locked` succeeds, then run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`
+- [x] 1.1 Add `rust-toolchain.toml` pinning channel `1.99` with components `rustfmt` and `clippy`; verify `rustc --version` in the repository reports 1.99.x
+- [x] 1.2 Add the root `Cargo.toml` with `[workspace]` members `crates/digger-core`, `crates/digger-sound`, `crates/digger`, `xtask`, and `[workspace.package]` (edition 2024, rust-version 1.99, license GPL-2.0-or-later, repository); verify `cargo metadata --no-deps` lists four packages (`xtask` starts as a dependency-free placeholder binary so the member exists; 3.1 turns it into the `clap` tool)
+- [x] 1.3 Create library crate `digger-core` with `#![forbid(unsafe_code)]`, a crate-level doc comment stating its no-I/O rule, and one placeholder test; verify `cargo test -p digger-core` passes
+- [x] 1.4 Create library crate `digger-sound` with `#![forbid(unsafe_code)]`, a crate-level doc comment, and one placeholder test; verify `cargo test -p digger-sound` passes
+- [x] 1.5 Create binary crate `digger` (binary name `digger`) that prints its name and version and exits 0; verify `cargo run -p digger` prints `digger 0.1.0`
+- [x] 1.6 Add `.gitignore` (`target/`, editor files) and `.editorconfig` (UTF-8, LF, 4 spaces for Rust, 2 for YAML/TOML/Markdown); verify `git status` is clean after `cargo build`
+- [x] 1.7 Commit `Cargo.lock`; verify `cargo build --workspace --locked` succeeds, then run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`
 
 ## 2. Lints and formatting
 
