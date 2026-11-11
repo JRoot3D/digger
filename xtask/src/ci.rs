@@ -134,6 +134,10 @@ fn check_dependency_direction(root: &Path, package: &'static str) -> Result<(), 
             "normal",
             "--prefix",
             "none",
+            // Every target, not just the host: a platform crate behind a
+            // `[target.'cfg(windows)'.dependencies]` table must fail on Linux too.
+            "--target",
+            "all",
         ])
         .output()
         .map_err(|source| CiError::Spawn {

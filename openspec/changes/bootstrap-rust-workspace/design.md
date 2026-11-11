@@ -78,7 +78,9 @@ visible where the code is read.
 
 ### Dependency-direction check
 
-`cargo xtask ci` runs `cargo tree -p digger-core -e normal --prefix none` and
+`cargo xtask ci` runs `cargo tree -p digger-core -e normal --prefix none --target all`
+(every target, so a platform crate behind a `cfg(windows)` table is caught on
+any host) and
 the same for `digger-sound`, and fails if any crate from a deny-list of
 platform crates (`winit`, `softbuffer`, `cpal`, `gilrs`, `directories`)
 appears. The deny-list lives in one constant in `xtask`. Direct use of
