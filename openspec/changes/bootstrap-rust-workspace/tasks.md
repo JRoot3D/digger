@@ -35,7 +35,7 @@
 
 ## 5. Continuous integration
 
-- [ ] 5.1 Add `.github/workflows/ci.yml` with the `check` job (format, Clippy, tests, docs) on Ubuntu, Windows and macOS using the pinned toolchain and a cargo cache; verify the workflow file passes `actionlint`
+- [x] 5.1 Add `.github/workflows/ci.yml` with the `check` job (format, Clippy, tests, docs) on Ubuntu, Windows and macOS using the pinned toolchain and a cargo cache; verify the workflow file passes `actionlint`
 - [ ] 5.2 Add the `deny` job running `cargo deny check`; verify it passes locally with the same command
 - [ ] 5.3 Add the `openspec` job running `npx @fission-ai/openspec validate --all --strict`; verify the same command passes locally
 - [ ] 5.4 Push the branch and verify all three jobs are green on the first run; fix any platform-specific failure

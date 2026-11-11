@@ -1,0 +1,10 @@
+# Keep LF line endings in the working tree on every platform (Windows CI
+# runners default to core.autocrlf=true), matching .editorconfig and rustfmt.
+* text=auto eol=lf
+
+# Binary data: recordings and imported assets must never be converted.
+*.drf binary
+*.edrf binary
+*.png binary
+*.wav binary
+*.bin binary
