@@ -147,6 +147,29 @@ impl<'a> StateView<'a> {
         id.of(&self.sim.bags)
     }
 
+    /// Bag `id` as saved for `player` at the end of that player's last
+    /// round, or as created for the player's level.
+    pub fn saved_bag(self, player: PlayerId, id: BagId) -> &'a Bag {
+        id.of(player.of(&self.sim.saved_bags))
+    }
+
+    /// The gold lifetime (hashed as `goldtime`).
+    pub fn gold_time(self) -> u16 {
+        self.sim.gold_time
+    }
+
+    /// The push counter shared by all bags (hashed as `pushcount`).
+    pub fn push_count(self) -> u8 {
+        self.sim.push_count
+    }
+
+    /// The number of bags still moving for the round's wind-down: those
+    /// wobbling (the fall after a wobble included) and gold younger than 10
+    /// ticks.
+    pub fn moving_bags(self) -> usize {
+        self.sim.moving_bags()
+    }
+
     /// The picture, as it stands.
     pub fn framebuffer(self) -> &'a crate::video::Framebuffer {
         self.gfx.fb()

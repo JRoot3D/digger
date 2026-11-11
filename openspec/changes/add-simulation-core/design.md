@@ -269,7 +269,7 @@ Each row becomes an entry in `docs/compat-quirks.md` (class "affects the simulat
 | Q29 | Transformation test runs for dead monsters still carried | `monster::update_slot` |
 | Q30 | Dead left-facing hobbin is 14 pixels tall | `monster::sprite_for` |
 | Q31 | Any monster removal in bonus mode raises the round's total | `monster::remove` |
-| Q32 | Shared push counter; failed push sets the bag's direction to the reverse; double restore on a failed chain | `bags::push_bag` |
+| Q32 | Shared push counter, set by every sideways step including a bag's own slide; failed push sets the bag's direction to the reverse; double restore on a failed chain | `bags::push_bag` |
 | Q33 | Pushing a falling bag sideways succeeds without moving it and crushes | `bags::push_bag` |
 | Q34 | Landing bag removes overlapped bags; gold over a dug cell expires early; break after two cells | `bags::land`, `bags::update_gold` |
 | Q35 | Digger takes gold whenever it overlaps it, whoever triggered the collection | `bags::collect_gold` |
@@ -277,6 +277,7 @@ Each row becomes an entry in `docs/compat-quirks.md` (class "affects the simulat
 | Q37 | Round-end bag tidy rules, including removal at cell (7,9) | `bags::tidy` |
 | Q38 | Hobbin dig step charged even with no direction; emeralds destroyed by hobbins and bags without score | `monster::step`, `bags::fall_step` |
 | Q39 | Zero-point scoring calls at round start, after pause and at game end perform the threshold check | `Scores::add` call sites |
+| Q40 | The gold lifetime is one game-wide value set from the level set up last, so a one-player game's first level has 150 (the second player's level 0 placeholder is set up last) | `Sim::create_bags`, `Ctx::start_game` |
 
 ### D13. Decisions for the original's undefined or accidental behaviour
 

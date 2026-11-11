@@ -76,15 +76,19 @@ A falling bag SHALL count each cell corner it reaches after leaving its starting
 - **THEN** it is gold from tick T, and the break cue is emitted with the first gold frame on tick T+1
 
 ### Requirement: Gold lifetime
-Gold SHALL show three opening frames on the 1st, 3rd and 5th ticks after landing and SHALL disappear when its age counter, 1 on the landing tick and rising by 1 per tick, reaches 150 − 10 × difficulty index. (research 02 §5.2, §7)
+Gold SHALL show three opening frames on the 1st, 3rd and 5th ticks after landing and SHALL disappear when its age counter, 1 on the landing tick and rising by 1 per tick, reaches the gold lifetime. The gold lifetime SHALL be one value for the whole game, set to 150 − 10 × the difficulty index each time a player's level is set up, from that player's level; the level 0 placeholder of the second player in a game without alternating players counts as difficulty 0. At game start the first player's level is set up before the second's, so in a one-player game the first level's gold lifetime is 150; from the first completed level on it follows the level reached. (research 02 §5.1, §5.2, §7; `initbags` sets one global from the current player's level)
 
 #### Scenario: Lifetime table
 - **WHEN** the difficulty index is 1, 2, 3, 4, 5, 6, 7, 8, 9 or 10
 - **THEN** the gold lifetime value is 140, 130, 120, 110, 100, 90, 80, 70, 60 or 50
 
 #### Scenario: Level 1 gold
-- **WHEN** a bag breaks on tick T of level 1 and is left alone on undug ground
+- **WHEN** a bag breaks on tick T of level 1 in a game of two alternating players and is left alone on undug ground
 - **THEN** the gold disappears on tick T+139
+
+#### Scenario: First level of a one-player game
+- **WHEN** a bag breaks on tick T of the first level of a one-player game started on level 1 and is left alone on undug ground
+- **THEN** the gold disappears on tick T+149, because the lifetime was last set up for the second player's level 0
 
 ### Requirement: Gold over a dug cell vanishes early
 If gold lies above the bottom row and the cell below it is no longer untouched, then on any tick its age is more than 10 short of the lifetime the age SHALL jump to lifetime − 10, so the gold disappears 10 ticks later. (research 02 §5.2, §9 item 11)
@@ -109,7 +113,7 @@ Gold SHALL be collected when anything pushes against it in any direction. Every 
 - **THEN** the gold is collected and the digger is not turned back
 
 ### Requirement: Horizontal push
-A bag at rest or sliding SHALL move 4 pixels when pushed left or right, stop any wobble, and take the push direction as its sliding direction. A push SHALL fail, leaving the bag where it was, if the bag is at x = 292 pushed right or x = 12 pushed left, or if after moving it overlaps a living digger or any monster. Bags SHALL NOT be pushable up or down. (research 02 §5.5)
+A bag at rest or sliding SHALL move 4 pixels when pushed left or right, stop any wobble, and take the push direction as its sliding direction. A push SHALL fail, leaving the bag where it was, if the bag is at x = 292 pushed right or x = 12 pushed left (the bag is then left entirely unchanged), or if after moving it overlaps a living digger or any monster. Bags SHALL NOT be pushable up or down. (research 02 §5.5)
 
 #### Scenario: Free push
 - **WHEN** a digger pushes a resting bag at (92,18) to the right
@@ -124,11 +128,11 @@ A bag at rest or sliding SHALL move 4 pixels when pushed left or right, stop any
 - **THEN** it stops wobbling and its wobble count returns to 15
 
 ### Requirement: Failed push reverses the bag
-After a failed horizontal push the bag's sliding direction SHALL be the opposite of the push. A bag that was between cells therefore rolls back by itself to the cell corner it came from; a bag on a cell corner settles or drops on its next update. (research 02 §5.5, §9 item 9)
+After a horizontal push that fails because the moved bag overlapped a living digger, a monster or a bag that could not be pushed on, the bag's sliding direction SHALL be the opposite of the push; a push refused at the playfield edge changes nothing. A bag that was between cells therefore rolls back by itself to the cell corner it came from; a bag on a cell corner settles or drops on its next update. (research 02 §5.5, §9 item 9)
 
 #### Scenario: Blocked between cells
 - **WHEN** a bag sliding right, 8 pixels past a cell corner, is pushed right against a monster
-- **THEN** on the following ticks it moves left 4 pixels per tick until it is back on the cell corner
+- **THEN** it stays where it is, sliding left, and on the following ticks rolls back left 4 pixels at a time, on every second tick, until it is back on the cell corner, where it comes to rest
 
 ### Requirement: Push chains
 A pushed bag that comes to overlap other bags SHALL push every one of them in the same direction, attempting all of them even after one fails. If any of them fails, the pushed bag is returned to where it was and its own push fails. A chain therefore moves as a whole or not at all at its head. (research 02 §5.5)
@@ -142,11 +146,11 @@ A pushed bag that comes to overlap other bags SHALL push every one of them in th
 - **THEN** the first bag stays in place, the pusher is blocked, and the first bag's sliding direction is left
 
 ### Requirement: Sliding continues to the cell corner
-A sliding bag SHALL keep moving 4 pixels per tick in its sliding direction during the bag update until it is on a cell corner. A single push counter shared by all bags is set by every horizontal push; the first sliding bag updated while it is set clears it and skips its own move for that update. (research 02 §5.3, §9 item 9)
+A sliding bag SHALL keep moving 4 pixels in its sliding direction during the bag update until it is on a cell corner. A single push counter shared by all bags SHALL be set by every horizontal push, the sliding bag's own step included; the first sliding bag updated while it is set clears it and skips its own move for that update. A lone sliding bag therefore moves on every second tick. (research 02 §5.3, §5.5, §9 item 9; `pushbag` sets the counter for every sideways step, whoever made it)
 
 #### Scenario: One push, one cell
 - **WHEN** a resting bag on a cell corner is pushed right once on tick N by a digger and not touched again
-- **THEN** it is 4 pixels along after tick N, moves 4 pixels on each of ticks N+1 to N+4, and is on the next cell corner after tick N+4
+- **THEN** it is 4 pixels along after tick N, moves 4 pixels on each of ticks N+1, N+3, N+5 and N+7, is on the next cell corner after tick N+7, and comes to rest on tick N+8
 
 #### Scenario: Shared counter with two sliding bags
 - **WHEN** two bags are pushed in a chain on the same tick
@@ -189,7 +193,7 @@ A bag SHALL count as "still moving" for the purpose of ending a round while it e
 - **THEN** the wind-down continues at least until that bag has landed and, if it broke, its gold is 10 ticks old
 
 ### Requirement: Bag sound cues
-The fall cue SHALL be emitted when a bag starts falling, the wobble cue on each wobble redraw, the break cue with the first gold frame, and the gold cue when a digger collects gold. After all bags have been updated on a tick, the fall cue SHALL be stopped unless a bag is falling and the wobble cue stopped unless a bag is wobbling; both SHALL be stopped at the end of a round. (research 02 §5.2, §5.3, §5.6, research 04 §2)
+The fall cue SHALL be emitted when a bag starts falling, the wobble cue on each wobble redraw, the break cue with the first gold frame, and the gold cue when a digger collects gold. After all bags have been updated on a tick, the fall cue SHALL be stopped unless a bag is falling and the wobble cue stopped unless a bag is wobbling without falling; a stop is sent only while the cue runs, so a quiet field sends none. Both SHALL be stopped at the end of a round, which stops all sound. (research 02 §5.2, §5.3, §5.6, research 04 §2)
 
 #### Scenario: Bag lands
 - **WHEN** the only falling bag lands

@@ -108,7 +108,7 @@ columns are filled in as the quirks are implemented.
 | Q29 | The transformation test also runs for dead monsters still carried by a bag | research 02 §4.3, §4.5, §9 item 24 |  |  |
 | Q30 | A dead left-facing hobbin is 14 pixels tall | research 02 §4.7, §9 |  |  |
 | Q31 | Any monster removal in bonus mode raises the round's monster total | research 02 §3.8, §4.7 |  |  |
-| Q32 | Bags share one push counter; a failed push sets the bag's direction to the reverse; a failed chain restores twice | research 02 §5.3, §5.5, §9 item 9 |  |  |
+| Q32 | Bags share one push counter, set by every sideways step, a bag's own slide step included, so a lone sliding bag moves on every second tick (research 02 §5.3 reads it as set only by a pusher; confirmed against upstream `pushbag`, which sets it for every sideways step); a push that fails because of an overlap sets the bag's direction to the reverse, while one refused at the playfield edge changes nothing; a failed chain restores twice | research 02 §5.3, §5.5, §9 item 9 |  |  |
 | Q33 | Pushing a falling bag sideways succeeds without moving it and crushes the pusher | research 02 §5.5, §5.7, §9 item 10 |  |  |
 | Q34 | A landing bag removes the bags it overlaps; gold over a dug cell expires early; a bag breaks after falling two cells | research 02 §5.2, §5.4, §9 item 11 |  |  |
 | Q35 | A digger takes gold whenever it overlaps it, whoever triggered the collection | research 02 §5.6, §9 item 12 |  |  |
@@ -116,6 +116,7 @@ columns are filled in as the quirks are implemented.
 | Q37 | Round-end bag tidy rules, including removal of a bag at cell (7,9) | research 02 §5.1, §5.8 |  |  |
 | Q38 | A hobbin's dig step is charged even with no direction; hobbins and falling bags destroy emeralds without score | research 02 §4.4, §5.3 |  |  |
 | Q39 | Zero-point scoring calls at round start, after a pause and at game end perform the threshold check. The round-start refresh calls scores 0..diggers, so in an alternating game it is always the first score, on either player's turn (confirmed against upstream `initscores`) | research 01 §3.2, §3.3, §6.2, §6.3 |  |  |
+| Q40 | The gold lifetime is one game-wide value, set to 150 − 10 × difficulty each time a player's level is set up, from that player's level. At game start the second player's level is set up last, so in a one-player game (second player at the level 0 placeholder of Q06) the first level's gold lasts 150 ticks, not 140; in an alternating game it follows the second player's level until a level is completed, and after a turn change it keeps the value of the level set up last (found while implementing gold: upstream `initbags` sets the global `goldtime` from `levof10()` of the player being set up, and `initlevel` runs for both players at game start) | research 02 §5.1, §7, research 01 §3.1 | `gold_time` and `Sim::create_bags`, called by `Sim::set_up_level` (`crates/digger-core/src/sim/bags.rs`, `sim/mod.rs`); `Ctx::start_game` keeps the value when the observer's layouts set a level up again | `quirk_q40_one_player_gold_lifetime_is_150_on_the_first_level`, `level_1_gold_disappears_139_ticks_after_landing` (`crates/digger-core/tests/gold_bags.rs`), `sim::bags::tests::gold_lifetime_table_140_to_50` |
 
 ## Undefined and accidental behaviour (`add-simulation-core`)
 
@@ -153,6 +154,10 @@ the state of the game.
   frames; no tick can observe the difference.
 - **Pause requests.** A pause request is honoured only on a main-phase tick,
   because the pause phase is simulation state entered between ticks.
+- **Bag cue stops.** The original posts the fall-stop and wobble-stop
+  commands on every tick on which no bag needs the cue; the port sends a
+  stop only while the cue runs. Stopping a silent cue does nothing, so the
+  sound heard is the same, and a quiet field fills no sound queue.
 - **Game over notice.** `GAME OVER` is always shown for 50 frames; entering
   initials is left to the desktop app, which acts on the player result the
   step reports, so the simulation never blocks on input.

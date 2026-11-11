@@ -23,7 +23,7 @@ use super::draw::{self, Carve};
 use super::field::EmeraldMap;
 use super::fireball::Fireball;
 use super::fireball::FireballStage;
-use super::geom::{CellPos, Direction, Located, MAX_X, MAX_Y, MIN_X, MIN_Y, locate};
+use super::geom::{CellPos, Direction, Located, MAX_X, MAX_Y, MIN_X, MIN_Y, locate, reverse_of};
 use super::gfx::Gfx;
 use super::ids::{BagId, DiggerId, MonsterSlot, PlayerId};
 use super::input::FrameInput;
@@ -737,6 +737,25 @@ impl Sim {
         })
     }
 
+    /// **Quirk Q36:** whether a living, non-invincible digger that last
+    /// moved up or down is in the column of `below` (the cell under a
+    /// bag), in that cell's row or the row above it, so that the bag does
+    /// not start to wobble (gold-bags spec, "When a bag starts to wobble";
+    /// research 02 §5.3, `checkdiggerunderbag`). The digger's cell is taken
+    /// from its current position.
+    pub(crate) fn digger_under_bag(&self, below: CellPos) -> bool {
+        self.units().any(|unit| {
+            let digger = self.record_of_unit(unit).of(&self.diggers);
+            digger.alive
+                && !digger.invincible
+                && digger.moving.is_some_and(Direction::is_vertical)
+                && locate(digger.position).is_some_and(|at| {
+                    at.cell.h() == below.h()
+                        && (at.cell.v() == below.v() || at.cell.v() + 1 == below.v())
+                })
+        })
+    }
+
     /// The units in play: one, or two in a two-digger game.
     pub(crate) fn units(&self) -> impl Iterator<Item = DiggerId> + use<> {
         DiggerId::ALL
@@ -868,11 +887,60 @@ impl Ctx<'_> {
                 self.emerald_eaten(unit, record);
             }
         }
-        // Meeting bags, monsters and the bonus is added by task groups 11
-        // to 13 using these collisions.
-        let _collisions = self.draw_digger(unit, record);
+        let hits = self.draw_digger(unit, record);
         self.sim.penalty.charge(PenaltySite::DiggerDraw);
+        self.meet_bags(unit, record, from, hits);
+        // Meeting monsters and the bonus is added by task groups 12 and 13
+        // using these collisions.
         record.of_mut(&mut self.sim.diggers).relocate();
+    }
+
+    /// The digger side of meeting bags after a move whose draw gave `hits`
+    /// (digger spec, "Meeting a bag while moving", "Digger left without a
+    /// facing"; research 02 §3.4).
+    ///
+    /// Nothing happens unless the draw touched a bag, other than a falling
+    /// bag while the digger is invincible. A left or right move pushes
+    /// every touched bag; any other move, standing still included, collects
+    /// gold and is blocked by an unbroken bag. A blocked or failed move
+    /// puts the digger back at `from`, where it is drawn once more facing
+    /// the way it moved, and then faces the other way; a digger that did
+    /// not move is left without a facing.
+    ///
+    /// **Quirk Q17:** every horizontal push attempt, successful or not,
+    /// sets the push pause for the next tick.
+    ///
+    /// **Quirk Q18:** the blocked digger is redrawn, which counts down its
+    /// invincibility a second time, and its facing is reversed.
+    fn meet_bags(&mut self, unit: DiggerId, record: DiggerId, from: Px, hits: Collisions) {
+        let digger = *record.of(&self.sim.diggers);
+        let met = hits.of(SpriteClass::Bag).any(|sprite| {
+            BagId::from_sprite(sprite).is_some_and(|id| {
+                let bag = id.of(&self.sim.bags);
+                bag.exists() && !(digger.invincible && bag.is_falling())
+            })
+        });
+        if !met {
+            return;
+        }
+        let moving = digger.moving;
+        let pushed = match moving {
+            Some(direction) if direction.is_horizontal() => {
+                let pushed = self.push_bags(direction, hits);
+                let digger = record.of_mut(&mut self.sim.diggers);
+                digger.bag_time = digger.bag_time.saturating_add(1);
+                pushed
+            }
+            _ => self.push_bags_vertically(hits),
+        };
+        if !pushed {
+            let digger = record.of_mut(&mut self.sim.diggers);
+            digger.position = from;
+            digger.facing = moving;
+            self.draw_digger(unit, record);
+            self.sim.penalty.charge(PenaltySite::DiggerBlockedRedraw);
+            record.of_mut(&mut self.sim.diggers).facing = reverse_of(moving);
+        }
     }
 
     /// Scores an eaten emerald for `unit`'s record and advances its run:
@@ -1531,6 +1599,7 @@ mod tests {
             exists: true,
             position: Px::new(152, 177),
             direction: None,
+            ..crate::sim::Bag::ZEROED
         };
         game.sim.kill_digger(first, DeathStage::Bag, bag);
         steps(&mut game, 1);

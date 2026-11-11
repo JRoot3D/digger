@@ -64,6 +64,7 @@ use crate::sound_cmd::{SoundCommand, SoundQueue, Tempo, Tune};
 use crate::video::{Framebuffer, LevelPlan, TextColor};
 
 pub use bags::Bag;
+use bags::{BagCues, PlayerBags};
 use digger::{AnimFrame, START_LIVES};
 pub use digger::{DeathStage, Digger};
 use draw::{DrawProgress, LevelDraw};
@@ -245,8 +246,22 @@ pub(crate) struct Sim {
     fireball_frames: [FlameFrame; DiggerId::COUNT],
     /// The six monster slots.
     monsters: [Monster; MonsterSlot::COUNT],
-    /// The seven bags.
+    /// The seven bags in play.
     bags: [Bag; BagId::COUNT],
+    /// Each player's saved bags.
+    saved_bags: PlayerBags,
+    /// The gold lifetime (hashed as `goldtime`): one value for the whole
+    /// game, set from the level of the player whose level was set up last
+    /// (quirk Q40).
+    gold_time: u16,
+    /// The push counter shared by all bags (hashed as `pushcount`; quirk
+    /// Q32).
+    push_count: u8,
+    /// The bag sound cues running (not hashed).
+    bag_cues: BagCues,
+    /// Whether the last gold collected was taken by a monster, so that its
+    /// delay is cleared (`mongotgold`; read by the monsters of task 12.6).
+    monster_got_gold: bool,
     /// Both scores.
     scores: Scores,
     /// The gauntlet clock, in the gauntlet modes.
@@ -305,6 +320,11 @@ impl Sim {
             fireball_frames: [FlameFrame::START; DiggerId::COUNT],
             monsters: [Monster::default(); MonsterSlot::COUNT],
             bags: [Bag::default(); BagId::COUNT],
+            saved_bags: [[Bag::default(); BagId::COUNT]; PlayerId::COUNT],
+            gold_time: 0,
+            push_count: 0,
+            bag_cues: BagCues::default(),
+            monster_got_gold: false,
             scores,
             gauntlet: mode.gauntlet().map(GauntletClock::start),
             inputs: [SlotInput::new(); SlotId::COUNT],
@@ -320,15 +340,17 @@ impl Sim {
         sim
     }
 
-    /// Sets up `player`'s current level: field, emeralds and (from task
-    /// group 11) bags, from `replacement` if given and otherwise from the
-    /// level set as played (playfield spec, "Initial earth and tunnel
-    /// state"; research 01 §3.1, `initlevel`).
+    /// Sets up `player`'s current level: field, emeralds and bags, from
+    /// `replacement` if given and otherwise from the level set as played
+    /// (playfield spec, "Initial earth and tunnel state"; gold-bags spec,
+    /// "Bag creation"; research 01 §3.1, `initlevel`). The gold lifetime
+    /// follows the player's level (quirk Q40).
     fn set_up_level(&mut self, player: PlayerId, replacement: Option<LevelLayout>) {
         let two_diggers = self.cfg.mode.two_diggers();
         let state = player.of_mut(&mut self.players);
         state.level_done = false;
-        let layout = match (replacement, state.level) {
+        let level = state.level;
+        let layout = match (replacement, level) {
             // A supplied layout is used verbatim, without quirk Q07.
             (Some(layout), _) => layout,
             (None, Some(level)) => self.cfg.levels.layout_as_played(level.plan(), two_diggers),
@@ -337,6 +359,7 @@ impl Sim {
         self.field = Field::from_layout(&layout);
         self.saved_fields.save(player, &self.field);
         self.emeralds.place(player, &layout);
+        self.create_bags(player, &layout, level);
     }
 
     /// The digger record that score `id` belongs to and whose lives its
@@ -421,6 +444,12 @@ impl Ctx<'_> {
     /// player's level, in player order. A supplied layout replaces the one
     /// set up when the game was created (design D8).
     fn start_game(&mut self) {
+        // The original sets the gold lifetime as it sets up each player's
+        // level, the first player then the second, and a supplied layout
+        // is applied inside that setup; setting a level up again here must
+        // not change which player's level the lifetime came from (quirk
+        // Q40).
+        let gold_time = self.sim.gold_time;
         for player in PlayerId::ALL {
             let Some(level) = player.of(&self.sim.players).level else {
                 // The Q06 placeholder is never offered to the observer.
@@ -431,16 +460,19 @@ impl Ctx<'_> {
                 self.sim.set_up_level(player, Some(layout));
             }
         }
+        self.sim.gold_time = gold_time;
     }
 
     /// Starts the full draw of the current player's field: the saved field
     /// is put in play and the draw begins (design D3; research 01 §3.2,
     /// `drawscreen`). The sprites are reset to their initial images: the
-    /// diggers' here, the bags' and monsters' by task groups 11 and 12.
+    /// diggers' and the bags' here (the player's saved bags are put in
+    /// play), the monsters' by task group 12.
     fn begin_level_draw(&mut self) -> LevelDraw {
         let turn = self.sim.turn;
         self.sim.field = self.sim.saved_fields.restore(turn);
         let plan: LevelPlan = self.sim.current_level().plan();
+        self.restore_bags();
         self.reset_digger_sprites();
         LevelDraw::begin(self.gfx, &mut self.sim.field, plan)
     }
@@ -448,13 +480,13 @@ impl Ctx<'_> {
     /// One frame of the full draw; on the frame that draws the last item
     /// the round starts, so the next frame is the round's first tick.
     fn level_draw_frame(&mut self, mut draw: LevelDraw) -> (Phase, FrameKind) {
+        let bags = self.sim.bags;
         let progress = draw.frame(
             self.gfx,
             &self.sim.field,
             &self.sim.emeralds,
             self.sim.turn,
-            // The bags are drawn here from task group 11 on.
-            |_| {},
+            |gfx| bags::draw_bags(gfx, &bags),
         );
         match progress {
             DrawProgress::InProgress => (Phase::LevelDraw(draw), FrameKind::Wait),
@@ -480,6 +512,7 @@ impl Ctx<'_> {
         let derived = round_seed(self.sim.base_seed, round);
         let seed = self.obs.round_seed(round, derived);
         self.sim.rng.reseed(seed);
+        self.reset_bag_images();
 
         if after_full_draw {
             self.init_diggers();
@@ -504,14 +537,16 @@ impl Ctx<'_> {
     }
 
     /// One main-phase tick: the penalty counter is reset, the fire states
-    /// read on the previous tick are latched, the diggers are updated and
-    /// the tick is counted. Task 14.1 assembles the full update order.
+    /// read on the previous tick are latched, the diggers and then the bags
+    /// are updated and the tick is counted. Task 14.1 assembles the full
+    /// update order with the monsters between the diggers and the bags.
     fn tick_main(&mut self, input: &FrameInput) {
         self.sim.penalty.reset();
         for slot in &mut self.sim.inputs {
             slot.advance_fire();
         }
         self.update_diggers(input);
+        self.update_bags();
         self.end_tick();
     }
 
@@ -525,16 +560,17 @@ impl Ctx<'_> {
     }
 
     /// The round-end transition (game-flow spec, "Round end"): all sound is
-    /// stopped, every fireball removed and the field saved for the player,
-    /// then the observer sees the state and the round counter rises. Task
-    /// 14.3 adds the removal of the bonus and monsters and the bag tidy in
-    /// their places.
+    /// stopped, every fireball removed, the bags tidied and saved and the
+    /// field saved for the player, then the observer sees the state and the
+    /// round counter rises. Task 14.3 adds the removal of the bonus and
+    /// monsters in their places.
     fn end_round(&mut self) {
         self.sound.push(SoundCommand::StopAll);
         for unit in self.sim.units() {
             let record = self.sim.record_of_unit(unit);
             self.remove_fireball(unit, record);
         }
+        self.tidy_bags();
         self.sim.saved_fields.save(self.sim.turn, &self.sim.field);
         self.obs.round_end(StateView::new(self.sim, self.gfx));
         self.sim.round = self.sim.round.wrapping_add(1);
