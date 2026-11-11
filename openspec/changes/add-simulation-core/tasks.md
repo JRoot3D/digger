@@ -39,9 +39,9 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 - [x] 4.2 Implement the six carving shapes with their offsets, sizes and clipping; verify unit tests `right_cap_at_x_plus_16_y_minus_1`, `shape_rect_table` (all six rectangles) and `shapes_clip_at_screen_bottom` pass
 - [x] 4.3 Implement the full-draw tunnel pass (column-major, vertical and horizontal openings, joins to right and lower neighbours); verify unit tests `horizontal_corridor_is_continuous_black` and `no_opening_into_solid_neighbour` by probing pixels
 - [x] 4.4 Implement emerald draw and erase and the progressive draw cursor (three items per frame: opened cells, then emeralds); verify unit tests `emerald_3_1_occupies_x72_y39` and `level_1_draw_takes_21_frames`
-- [ ] 4.5 Implement `status.rs` lives display for both sides (icons, blanks, `X<n>` form, mirrored second side) without allocation; verify unit tests `three_lives_show_two_icons`, `seven_lives_show_x6` and `second_side_is_mirrored`
-- [ ] 4.6 Implement the gauntlet clock text and the top-line helpers (clear line, `PLAYER n`, `PRESS ANY KEY`, `GAME OVER`, `TIME UP` at their spec positions and colours); verify unit tests `gauntlet_120s_shows_2_00` and `top_line_messages_at_spec_positions`
-- [ ] 4.7 Document the drawing order of a full draw in the `draw.rs` module docs; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 4.5 Implement `status.rs` lives display for both sides (icons, blanks, `X<n>` form, mirrored second side) without allocation; verify unit tests `three_lives_show_two_icons`, `seven_lives_show_x6` and `second_side_is_mirrored`
+- [x] 4.6 Implement the gauntlet clock text and the top-line helpers (clear line, `PLAYER n`, `PRESS ANY KEY`, `GAME OVER`, `TIME UP` at their spec positions and colours); verify unit tests `gauntlet_120s_shows_2_00` and `top_line_messages_at_spec_positions`
+- [x] 4.7 Document the drawing order of a full draw in the `draw.rs` module docs; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 5. Scoring
 
