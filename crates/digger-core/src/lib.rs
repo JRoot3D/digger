@@ -74,13 +74,14 @@ pub mod video;
 #[cfg(any(test, feature = "testkit"))]
 pub use sim::testkit;
 pub use sim::{
-    BagId, BonusEffect, CUSTOM_LEVELS_LEN, Cell, CellPos, ConfigError, Difficulty, DiggerId,
-    Direction, EmeraldMap, Field, FrameLength, GameConfig, GameMode, GameRng, GauntletSeconds,
-    IdOutOfRange, LevelError, LevelLayout, LevelNumber, LevelSet, Located, Modulus, MonsterSlot,
-    Penalty, PenaltySite, PlayerId, ScoreEvent, ScoreId, Scores, SlotId, StartLevel, locate,
-    reverse_of, round_seed, within_limits,
+    BagId, BonusEffect, CUSTOM_LEVELS_LEN, Cell, CellPos, ConfigError, Controls, Difficulty,
+    DiggerId, Direction, EmeraldMap, Field, FrameInput, FrameLength, GameConfig, GameMode, GameRng,
+    GauntletSeconds, IdOutOfRange, LevelError, LevelLayout, LevelNumber, LevelSet, Located,
+    Modulus, MonsterSlot, Movement, NoopObserver, Observer, Penalty, PenaltySite, PlayerId,
+    ScoreEvent, ScoreId, Scores, SlotId, StartLevel, StateView, locate, reverse_of, round_seed,
+    within_limits,
 };
-pub use sound_cmd::FireballId;
+pub use sound_cmd::{EmeraldStep, FireballId, SoundCommand, Tempo, Tune};
 
 pub use error::{AssetError, Error};
 

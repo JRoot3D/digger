@@ -208,7 +208,7 @@ pub enum SoundCommand {
 }
 ```
 
-Commands are pushed in event order into a fixed-capacity ring (`SOUND_QUEUE_CAP = 64`) owned by `Game` and drained by the caller after each `step`. The worst realistic frame produces fewer than 30 commands; if the caller never drains, the oldest commands are dropped (sound is not simulation state) and a debug assertion fires in tests. The "last life" tune choice is resolved here, because it depends on lives, so the sound engine needs no access to game state. `Tempo::Quick` is the original's duration factor 0.7, used only for the dirge in two-digger games (research 04 §3.1; research 02 calls it "volume", which research 04 corrects). `Pause` and `Resume` are simulation commands because the pause phase is simulation state. This enum is the single definition; `add-sound-engine` consumes it under these names.
+Commands are pushed in event order into a fixed-capacity ring (`SOUND_QUEUE_CAP = 64`) owned by `Game` and drained by the caller after each `step`. The worst realistic frame produces fewer than 30 commands; if the caller never drains, the oldest commands are dropped (sound is not simulation state) and counted, so tests can see that it happened. A debug assertion is deliberately not used: the determinism test of task 15.1 runs a game with the queue never drained in a debug build and must not panic. The "last life" tune choice is resolved here, because it depends on lives, so the sound engine needs no access to game state. `Tempo::Quick` is the original's duration factor 0.7, used only for the dirge in two-digger games (research 04 §3.1; research 02 calls it "volume", which research 04 corrects). `Pause` and `Resume` are simulation commands because the pause phase is simulation state. This enum is the single definition; `add-sound-engine` consumes it under these names.
 
 *Alternatives rejected:* a `Sound` trait object called synchronously (lets a frontend's audio code run inside `step` and tempts feedback); returning a `Vec` from `step` (allocation per frame).
 
@@ -316,7 +316,7 @@ A unit test (`quirks_doc_lists_every_quirk_test`) checks that every `quirk_<id>`
 - [`Ctx` is a wide mutable context; any system can touch anything] → This mirrors the real coupling. Discipline comes from module-private fields with narrow `pub(in crate::sim)` methods (RNG reachable only from `monster.rs`; penalty only through `charge`).
 - [Uncertain presentation details: when the fall and wobble cues stop, wobble frame order] → They affect sound and pixels only, not simulation state; flagged in the quirks document for confirmation by ear and eye during `add-sound-engine` and `add-desktop-app`.
 - [Scenario tests that place entities directly could construct impossible states] → Testkit setters validate alignment and bounds, and each capability also has at least one test that reaches its situation purely through inputs.
-- [The 64-entry sound queue could overflow if a frontend forgets to drain] → Oldest entries dropped, debug assertion in tests, and documented on `drain_sound`.
+- [The 64-entry sound queue could overflow if a frontend forgets to drain] → Oldest entries dropped and counted (readable by tests), and documented on `drain_sound`.
 - [Phase 2 derives a sprite's size from its image and has no collision borders] → Both match research 02 §1 for every call this change makes; if a recording disagrees, the fix is local to phase 2's `Sprite::rect` (its design, Risks).
 
 ## Open Questions

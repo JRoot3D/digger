@@ -54,11 +54,11 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 
 ## 6. Controls, sound commands and observer boundary
 
-- [ ] 6.1 Implement `Controls`, `FrameInput` and the per-slot direction resolver (press ranking, release fallback right > left > down > up, one-tick pulse) with a round-start reset; verify unit tests `last_pressed_wins`, `fallback_after_release_prefers_down_over_up`, `short_tap_lasts_one_tick`, `releasing_non_winner_changes_nothing` and `held_key_counts_as_new_press_after_reset`
-- [ ] 6.2 Implement the fire latch (pending → active once per tick, cleared at round start) and the `Movement` sample type; verify unit test `fire_read_on_tick_n_is_active_on_tick_n_plus_1`
-- [ ] 6.3 Implement `SoundCommand`, `Tune`, `Tempo`, `EmeraldStep` (checked 0..=7) and the 64-entry fixed queue with drop-oldest overflow and `drain`; verify unit tests `sound_queue_preserves_order`, `sound_queue_drops_oldest_when_full` and `drain_empties_queue`
-- [ ] 6.4 Implement the `Observer` trait with default methods and the no-op observer, and document each method's call point in rustdoc; verify `cargo doc -p digger-core` builds without warnings and unit test `noop_observer_returns_inputs_unchanged` passes
-- [ ] 6.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 6.1 Implement `Controls`, `FrameInput` and the per-slot direction resolver (press ranking, release fallback right > left > down > up, one-tick pulse) with a round-start reset; verify unit tests `last_pressed_wins`, `fallback_after_release_prefers_down_over_up`, `short_tap_lasts_one_tick`, `releasing_non_winner_changes_nothing` and `held_key_counts_as_new_press_after_reset`
+- [x] 6.2 Implement the fire latch (pending → active once per tick, cleared at round start) and the `Movement` sample type; verify unit test `fire_read_on_tick_n_is_active_on_tick_n_plus_1`
+- [x] 6.3 Implement `SoundCommand`, `Tune`, `Tempo`, `EmeraldStep` (checked 0..=7) and the 64-entry fixed queue with drop-oldest overflow and `drain`; verify unit tests `sound_queue_preserves_order`, `sound_queue_drops_oldest_when_full` and `drain_empties_queue`
+- [x] 6.4 Implement the `Observer` trait with default methods and the no-op observer, and document each method's call point in rustdoc; verify `cargo doc -p digger-core` builds without warnings and unit test `noop_observer_returns_inputs_unchanged` passes
+- [x] 6.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 7. Game state machine shell and test kit
 
