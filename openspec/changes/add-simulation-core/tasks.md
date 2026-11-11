@@ -22,7 +22,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 - [x] 2.5 Implement `rng.rs`: `GameRng`, `Modulus`, `round_seed` (SplitMix64); verify unit tests `rng_sequence_from_zero` (states 0x00000001, 0x015A4E36, 0x8082A52F; results 1, 8, 1 mod 14), `round_seeds_base_0` (0x7B1DCDAF, 0xA1B965F4, 0x8009454F) and `round_seed_base_1` (0x89025CC1) pass
 - [x] 2.6 Implement `penalty.rs`: `Penalty`, `PenaltySite` with every site of design D6, per-site counts under `cfg(test)`/`testkit`, and the overflow slot computation; verify unit tests `penalty_resets_and_counts_per_site` and `quirk_q02_overflow_table` (counter 8, 9, 10, 12, 20 → none, none, slot 1, slots 1–3, slots 1–5) pass
 - [x] 2.7 Implement `timing.rs`: `FrameLength` from speed (×2000 µs, default 40, 0 = no wait), `faster` (−10,000 only above 10,000) and `slower` (+10,000, saturating); verify unit tests `default_speed_is_80000_us`, `faster_stops_at_10000` and `speed_zero_means_no_wait` pass
-- [ ] 2.8 Fill the "Implemented in" and "Test" columns for Q02, Q07 and Q08 in `docs/compat-quirks.md`; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 2.8 Fill the "Implemented in" and "Test" columns for Q02, Q07 and Q08 in `docs/compat-quirks.md`; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 3. Playfield state
 
