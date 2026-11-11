@@ -11,6 +11,8 @@ publish = false
 
 [dependencies]
 clap.workspace = true
+miniz_oxide.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

@@ -266,12 +266,22 @@ pub struct Collisions(u32);         // bit n set = slot n collided; iterated per
   `const` assertion plus a test, not a runtime check.
 - `xtask`: an `ImportError` enum with file, line and table name
   (`MissingFile`, `MissingTable`, `Syntax`, `UnknownSymbol`,
-  `Length { expected, got }`, `Count`, `TitleInflate`, `Io`); `MissingTable`
-  covers a source file that exists but does not define a table the import
-  needs. The importer reads and validates
+  `Length { expected, got }`, `Count`, `TitleInflate`, `Io`, and `Drift`
+  for a failed `--check`, listing the changed, missing and extra files);
+  `MissingTable` covers a source file that exists but does not define a
+  table the import needs. The importer reads and validates
   everything, builds all outputs in memory, and only then writes, each file
   through a temporary file and rename, so a failure never leaves a
   half-written `assets/`. `--check` stops before the write step and compares.
+  `assets/README.md` is written by hand (task 3.4), so `--check` does not
+  report it as an extra file; every other file in `--out` that the import
+  does not produce is reported.
+- Sprite array lengths: an array referenced from `vgatable` with one size
+  only must hold exactly `8w × 2h` bytes; an array referenced with several
+  sizes (upstream: only `vgazero480`) must hold at least the largest of
+  them. `sprites.bin` stores each distinct array content once, so
+  `vgazero480` and `vgaediggermask` (both 960 zero bytes) share one copy;
+  with upstream 638125e the blob is 136576 bytes.
 - The table reader handles exactly the grammar the upstream data files use:
   comments, `static`/`const` qualifiers, `NAME[N] = { number, … };` with
   decimal or hexadecimal numbers, and pointer tables whose elements are

@@ -58,6 +58,7 @@ impl TableFile {
     }
 
     /// Every table, in name order.
+    #[cfg(test)]
     pub(crate) fn tables(&self) -> impl Iterator<Item = (&str, &Table)> {
         self.tables
             .iter()

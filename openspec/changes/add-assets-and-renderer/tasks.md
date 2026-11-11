@@ -15,14 +15,14 @@ task of each group is the quality gate and the commit.
 
 ## 2. Importer: producing the asset files
 
-- [ ] 2.1 Implement the sprite import: read the 240-entry index table, apply the fixed size-by-number table (research 03 §5.2), validate lengths (exact for image-specific arrays, at-least for shared arrays), de-duplicate arrays by content and plan `sprites.bin` plus the 120 index entries; verify with `sprites_import_fixture` (a 3-image fixture) and `sprites_wrong_length_is_error`
-- [ ] 2.2 Implement the font import: 40 glyphs of 576 bytes in the order A–Z, 0–9, `.`, `:`, `_`, space, and the 95-entry character map; verify with `font_import_fixture`, `font_lowercase_maps_to_uppercase_glyph` and `font_wrong_glyph_size_is_error`
-- [ ] 2.3 Implement the title import (copy the stream verbatim, inflate to check the 256000-byte length, print the CRC-32 of the inflated bytes) and the icon import (4096 ARGB words to 16384 R, G, B, A bytes); add `miniz_oxide` and `sha2` to `xtask`; verify with `title_import_checks_inflated_length` and `icon_channel_order`
-- [ ] 2.4 Generate `index.rs` (`SPRITE_INDEX`, `GLYPH_INDEX`) and `manifest.txt` (upstream commit header; SHA-256, length and name per file) from the planned outputs; verify with `index_rs_is_stable_text` (snapshot of the fixture output) and `manifest_lists_every_output`
-- [ ] 2.5 Implement validate-then-write: build everything in memory, write each file through a temporary file and rename, and write nothing on any error; verify with `import_is_deterministic` (two runs, identical bytes) and `failed_import_leaves_out_dir_untouched`
-- [ ] 2.6 Implement `--check`: compare the in-memory result with the files in `--out`, list differing, missing and extra files, modify nothing; verify with `check_passes_on_identical_output` and `check_reports_changed_file`
-- [ ] 2.7 Confirm that CGA tables are never read: verify with `cga_tables_are_ignored` (fixture directory containing a CGA file whose content is invalid; import still succeeds)
-- [ ] 2.8 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(xtask): write sprite, font, title and icon assets with manifest`
+- [x] 2.1 Implement the sprite import: read the 240-entry index table, apply the fixed size-by-number table (research 03 §5.2), validate lengths (exact for image-specific arrays, at-least for shared arrays), de-duplicate arrays by content and plan `sprites.bin` plus the 120 index entries; verify with `sprites_import_fixture` (a 3-image fixture) and `sprites_wrong_length_is_error`
+- [x] 2.2 Implement the font import: 40 glyphs of 576 bytes in the order A–Z, 0–9, `.`, `:`, `_`, space, and the 95-entry character map; verify with `font_import_fixture`, `font_lowercase_maps_to_uppercase_glyph` and `font_wrong_glyph_size_is_error`
+- [x] 2.3 Implement the title import (copy the stream verbatim, inflate to check the 256000-byte length, print the CRC-32 of the inflated bytes) and the icon import (4096 ARGB words to 16384 R, G, B, A bytes); add `miniz_oxide` and `sha2` to `xtask`; verify with `title_import_checks_inflated_length` and `icon_channel_order`
+- [x] 2.4 Generate `index.rs` (`SPRITE_INDEX`, `GLYPH_INDEX`) and `manifest.txt` (upstream commit header; SHA-256, length and name per file) from the planned outputs; verify with `index_rs_is_stable_text` (snapshot of the fixture output) and `manifest_lists_every_output`
+- [x] 2.5 Implement validate-then-write: build everything in memory, write each file through a temporary file and rename, and write nothing on any error; verify with `import_is_deterministic` (two runs, identical bytes) and `failed_import_leaves_out_dir_untouched`
+- [x] 2.6 Implement `--check`: compare the in-memory result with the files in `--out`, list differing, missing and extra files, modify nothing; verify with `check_passes_on_identical_output` and `check_reports_changed_file`
+- [x] 2.7 Confirm that CGA tables are never read: verify with `cga_tables_are_ignored` (fixture directory containing a CGA file whose content is invalid; import still succeeds)
+- [x] 2.8 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; commit as `feat(xtask): write sprite, font, title and icon assets with manifest`
 
 ## 3. Import and commit the assets
 
