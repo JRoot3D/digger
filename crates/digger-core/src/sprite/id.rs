@@ -146,6 +146,9 @@ impl SpriteClass {
 
 /// A set of sprite slots, one bit per slot; iteration is in ascending slot
 /// order, which is the stacking order.
+///
+/// Quirk S7: stacking order is slot order, so a higher slot is always drawn
+/// on top whichever sprite moved last (docs/compat-quirks.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub(super) struct SlotSet(u32);
 

@@ -265,6 +265,9 @@ impl SpriteLayer {
         };
         let mut set = SlotSet::EMPTY;
         let mut work = SlotSet::EMPTY;
+        // Quirk S7: membership depends only on the enabled flag, so a sprite
+        // game logic regards as dead but has not erased is still redrawn and
+        // still collides (docs/compat-quirks.md).
         for id in SpriteId::all() {
             if self.is_enabled(id) && Some(id) != start_slot && rect_of(id).overlaps(start) {
                 set.insert(id);
