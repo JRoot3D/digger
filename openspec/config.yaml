@@ -42,5 +42,6 @@ rules:
 operations:
   apply:
     guidance:
+      - Planning stays on the main session; delegate the implementation of each task group to a subagent running the Opus model, then review its result against the specs before ticking tasks
       - Work from docs/research and the specs; do not open or copy upstream C source while implementing
       - When a recording disagrees with a research report, the recording wins; record the finding in docs/compat-quirks.md
