@@ -50,7 +50,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 - [x] 5.3 Implement the one-million rollover (Q11) and total-score reporting; verify unit test `quirk_q11_rollover_moves_score_to_carried_total` (999,900 + 250 → visible 0, total 1,000,150) passes
 - [x] 5.4 Implement score drawing (six positions, leading zeros, leftmost only when non-zero, second score at 236 or 248) into stack buffers; verify unit tests `score_25_draws_00025_from_x12`, `six_digit_score_from_x0` and `second_score_shifts_at_100000`
 - [x] 5.5 Implement bag-kill crediting for one and two diggers (125/125, 250/0, 0/250, both calls always made); verify unit tests `bag_kill_split_both_alive`, `bag_kill_all_to_digger_1_when_2_out` and `bag_kill_makes_two_calls_with_zero_points`
-- [ ] 5.6 Fill the quirks-document columns for Q01, Q09–Q12; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 5.6 Fill the quirks-document columns for Q01, Q09–Q12; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 6. Controls, sound commands and observer boundary
 
