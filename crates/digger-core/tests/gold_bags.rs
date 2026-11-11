@@ -340,6 +340,22 @@ fn quirk_q34_landing_bag_removes_overlapped_bag() {
 }
 
 #[test]
+fn removed_bag_keeps_its_last_values() {
+    // Compat-quirks U07: a removed bag's record is still readable and
+    // keeps the values it had when it was removed.
+    let mut run = started(&bag_over_shaft(9));
+    run.place_bag(BAG1, px(3, 9)).expect("in the playfield");
+    let before = *run.state().bag(BAG1);
+    assert!(run.run_until(|s| !s.bag(BAG1).exists(), 100));
+    idle(&mut run, 20);
+    let after = run.state().bag(BAG1);
+    assert_eq!(after.position(), before.position());
+    assert_eq!(after.located(), before.located());
+    assert_eq!(after.direction(), before.direction());
+    assert_eq!(after.is_gold(), before.is_gold());
+}
+
+#[test]
 fn falling_bag_removes_emerald_without_score() {
     // The emerald is in the cell under the bag; the digger opens one slice
     // of that cell without reaching the emerald.

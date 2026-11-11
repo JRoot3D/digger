@@ -132,12 +132,12 @@ accidental, and the decision taken for each (design D13 of
 | U04 | A start level of 0 or below gives blank levels and a division by zero in the generator | research 01 §1.1, §9 | The start level accepts 1..=1000 only; the generator's modulus is non-zero by construction | Undefined behaviour in C, rejected at configuration time | `StartLevel::new` (`crates/digger-core/src/sim/config.rs`), `Modulus` (`crates/digger-core/src/sim/rng.rs`) | `sim::config::tests::start_level_0_and_1001_rejected`, `sim::rng::tests::modulus_rejects_zero` |
 | U05 | A dig step indexes outside the field | research 01 §5.3, §9 | No cell changes; the penalty is still charged. No debug assertion fires: the playfield spec's scenario "Dig request beyond the right edge" requires the defined result in debug test builds, so design D13 was corrected | Undefined behaviour in C, given a defined result | `Field::dig` (`crates/digger-core/src/sim/field.rs`) | `sim::field::tests::dig_beyond_grid_changes_nothing` |
 | U06 | Signed overflow in the generator and in SplitMix64 | research 01 §7.1, §7.2, §9 | Wrapping arithmetic, as every recording assumes | Undefined behaviour in C, given a defined result | `GameRng::draw` and `round_seed` (`crates/digger-core/src/sim/rng.rs`) | `sim::rng::tests::rng_sequence_from_zero`, `sim::rng::tests::round_seeds_base_0`, `sim::rng::tests::round_seed_index_wraps_in_32_bits` |
-| U07 | Reads of unoccupied monster slots, removed bags and out-of-play diggers | research 01 §8, research 02 §9 | Arrays are always fully initialised and keep their last values | Undefined behaviour in C, given a defined result |  |  |
-| U08 | The on-screen monster limit has no value for a level below 1 | research 02 §4.2, §7 | Unreachable: the start level is validated | Undefined behaviour in C, unreachable |  |  |
+| U07 | Reads of unoccupied monster slots, removed bags and out-of-play diggers | research 01 §8, research 02 §9 | Arrays are always fully initialised and keep their last values | Undefined behaviour in C, given a defined result | The fixed arrays of `Sim` (`crates/digger-core/src/sim/mod.rs`): `Monsters` (`sim/monster.rs`), the bags (`sim/bags.rs`) and the digger records (`sim/digger.rs`), created in full by `Sim::new` and never shrunk; `StateView::monster`, `StateView::bag` and `StateView::digger` read any of them (`sim/state.rs`) | `removed_bag_keeps_its_last_values` (`crates/digger-core/tests/gold_bags.rs`), `soak_one_player`, `soak_two_players`, `soak_two_diggers`, `soak_gauntlet`, `soak_gauntlet_two_diggers` (`crates/digger-core/tests/soak.rs`, bounds checks on) |
+| U08 | The on-screen monster limit has no value for a level below 1 | research 02 §4.2, §7 | Unreachable: the start level is validated | Undefined behaviour in C, unreachable | `StartLevel::new` (`crates/digger-core/src/sim/config.rs`); levels only rise from there (`LevelNumber::next`, `sim/level.rs`) | `sim::config::tests::start_level_0_and_1001_rejected` |
 | U09 | The second player's level is left over from the previous game | research 01 §3.1, §10 item 18 | Always reset to level 0 at game start (Q06 covers the fresh-process case recordings exercise) | Accidental behaviour, fixed | `Sim::new` (`crates/digger-core/src/sim/mod.rs`): every game value starts from its own configuration, so nothing carries over | `sim::tests::quirk_q06_second_player_position_is_level_0` |
 | U10 | A custom level file is read into 16-byte rows | research 01 §5.5 | Rows are 15 bytes, as evidently intended | Accidental behaviour, fixed | `LevelSet::from_custom_bytes` (`crates/digger-core/src/sim/level.rs`) | `sim::level::tests::custom_levels_parse_bonus_step_and_rows` |
 | U11 | Quitting during the player announcement skips the end-of-game bookkeeping | research 01 §3.4 | Quit always finishes the game through the same path | Accidental behaviour, fixed | `Game::step_observed` and `Ctx::finish` (`crates/digger-core/src/sim/mod.rs`): a quit on any frame passes through the round end when a round is in progress, then the observer's `game_end` | `quit_during_play_reports_300_ticks`, `quit_during_level_draw_reports_0_ticks` (`crates/digger-core/tests/game_flow.rs`) |
-| U12 | Timing kludge for recordings made on or before 1998-11-25 | research 01 §7.3, §10 item 17, research 05 §4.1 | Not ported; `add-recording-and-conformance` rejects such files | Dropped feature |  |  |
+| U12 | Timing kludge for recordings made on or before 1998-11-25 | research 01 §7.3, §10 item 17, research 05 §4.1 | Not ported; `add-recording-and-conformance` rejects such files | Dropped feature | Nothing in this change: the simulation has no timing kludge; the recording reader of add-recording-and-conformance rejects such files | None in this change; add-recording-and-conformance tests the rejection |
 
 ## Presentation deviations (`add-simulation-core`)
 
@@ -187,6 +187,17 @@ oracle and a brute-force collision scan, and
 `crates/digger-core/tests/golden_frames.rs` pins the CRC-32 of the title,
 backgrounds, text, numbers and a scripted sprite scene; `cargo xtask
 render-sheet` writes those scenes as PPM files for review.
+
+The simulation's integration tests run whole games:
+`crates/digger-core/tests/determinism.rs` plays one scripted game per mode
+twice, once with the sound queue never drained and once headless, comparing
+the picture's CRC-32 and the tick trace after every frame;
+`crates/digger-core/tests/observer_roundtrip.rs` replays the round seeds and
+movement samples of a live game into a second one with empty controls; and
+`crates/digger-core/tests/soak.rs` runs every mode for 50,000 frames in the
+debug build. `crates/digger-core/tests/quirks_doc.rs` checks that the tables
+above name only tests that exist, that no quirk row lacks its code or test,
+and that every `quirk_q*` test is listed in its quirk's row.
 
 ## Findings from recordings
 
