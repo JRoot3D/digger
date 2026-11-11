@@ -72,12 +72,12 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 
 ## 8. Digger movement, digging and emeralds
 
-- [ ] 8.1 Implement digger state (all hash-visible fields of design D5), round-start placement for the three start cases, and drawing through the sprite layer; verify scenario tests `one_player_starts_at_152_180_facing_right`, `two_diggers_start_at_172_and_132` and `second_alternating_player_faces_left`
-- [ ] 8.2 Implement the movement sample point (Q15: only when alive, visible and not in push pause; observer `controls` and `movement` hooks) and the turning rules; verify scenario tests `turn_requested_between_cells_waits_for_alignment`, `no_input_stops_between_cells`, `reversal_is_immediate` and `observer_sees_one_movement_per_movable_tick`
-- [ ] 8.3 Implement step sizes, playfield limits, dig-then-carve-then-move and the two per-move penalty charges; verify scenario tests `crossing_a_cell_takes_5_or_6_ticks`, `stops_at_left_limit_keeping_facing`, `tunnelling_clears_horizontal_slices` and `moving_digger_charges_dig_and_draw`
-- [ ] 8.4 Implement emerald eating with the per-direction thresholds (Q16), the 25-point award and the click and note commands; verify scenario tests `quirk_q16_emerald_eaten_at_x_64_moving_right`, `emerald_eaten_moving_up_at_remainder_9` and `emerald_tick_penalty_is_6`
-- [ ] 8.5 Implement the eight-in-a-row run (9-tick window, note positions 0..7, 250 bonus, reset); verify scenario tests `eight_emerald_run_scores_450_with_notes_0_to_7` and `run_restarts_after_9_idle_ticks`
-- [ ] 8.6 Fill the quirks-document columns for Q15 and Q16; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
+- [x] 8.1 Implement digger state (all hash-visible fields of design D5), round-start placement for the three start cases, and drawing through the sprite layer; verify scenario tests `one_player_starts_at_152_180_facing_right`, `two_diggers_start_at_172_and_132` and `second_alternating_player_faces_left`
+- [x] 8.2 Implement the movement sample point (Q15: only when alive, visible and not in push pause; observer `controls` and `movement` hooks) and the turning rules; verify scenario tests `turn_requested_between_cells_waits_for_alignment`, `no_input_stops_between_cells`, `reversal_is_immediate` and `observer_sees_one_movement_per_movable_tick`
+- [x] 8.3 Implement step sizes, playfield limits, dig-then-carve-then-move and the two per-move penalty charges; verify scenario tests `crossing_a_cell_takes_5_or_6_ticks`, `stops_at_left_limit_keeping_facing`, `tunnelling_clears_horizontal_slices` and `moving_digger_charges_dig_and_draw`
+- [x] 8.4 Implement emerald eating with the per-direction thresholds (Q16), the 25-point award and the click and note commands; verify scenario tests `quirk_q16_emerald_eaten_at_x_64_moving_right`, `emerald_eaten_moving_up_at_remainder_9` and `emerald_tick_penalty_is_6`
+- [x] 8.5 Implement the eight-in-a-row run (9-tick window, note positions 0..7, 250 bonus, reset); verify scenario tests `eight_emerald_run_scores_450_with_notes_0_to_7` and `run_restarts_after_9_idle_ticks`
+- [x] 8.6 Fill the quirks-document columns for Q15 and Q16; run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; verify all pass
 
 ## 9. Fireballs
 
