@@ -295,6 +295,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "digger-core",
  "miniz_oxide",
  "sha2",
 ]

@@ -8,6 +8,7 @@
 mod ci;
 mod deps;
 mod import;
+mod render;
 
 use std::process::ExitCode;
 
@@ -29,6 +30,9 @@ enum Command {
     /// Read the upstream sprite, font, title and icon tables as data and
     /// write the asset files, index and manifest (or compare with --check).
     ImportAssets(import::ImportArgs),
+    /// Write the golden scenes and a contact sheet of all 120 images as PPM
+    /// files (default target/sheets/), for review by eye.
+    RenderSheet(render::RenderArgs),
 }
 
 fn main() -> ExitCode {
@@ -36,6 +40,7 @@ fn main() -> ExitCode {
     let result: Result<(), Box<dyn std::error::Error>> = match cli.command {
         Command::Ci => ci::run().map_err(Into::into),
         Command::ImportAssets(args) => import::run(&args).map_err(Into::into),
+        Command::RenderSheet(args) => render::run(&args).map_err(Into::into),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
