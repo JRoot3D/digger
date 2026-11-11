@@ -14,6 +14,7 @@
 pub mod assets;
 mod error;
 pub mod geom;
+pub mod sprite;
 pub mod video;
 
 pub use error::{AssetError, Error};

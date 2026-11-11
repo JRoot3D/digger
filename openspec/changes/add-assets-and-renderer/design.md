@@ -206,13 +206,16 @@ size, as the reference build does. The fixed capacity (the largest image,
 ### D6. Sprite layer: one owner, bit sets, no recursion
 
 ```rust
-pub struct SpriteLayer { sprites: [Sprite; 18], collisions: Collisions }
+pub struct SpriteLayer { sprites: Box<[Sprite; 18]>, collisions: Collisions }  // boxed once: ~18 KB inline
 struct Sprite { enabled: bool, pos: Px, image: ImageId, pending: ImageId, saved: Option<SavedRect> }
 pub enum SpriteClass { Bonus, Bag, Monster, Fireball, Digger }
 pub struct SpriteId(u8);            // 0..18, constructors per class: SpriteId::bag(i) -> Option<SpriteId>
 pub struct Collisions(u32);         // bit n set = slot n collided; iterated per class, ascending
 ```
 
+- The 18 records with their inline saved backgrounds take about 18 KB, so
+  `SpriteLayer::new()` puts them on the heap once (clippy's large-stack-array
+  lint); no operation allocates afterwards.
 - The layer is a field of the future `Game`; operations take
   `&mut Framebuffer` as an argument (`layer.move_to(&mut fb, id, px)`), so the
   borrow checker sees two disjoint fields and no global is needed.
