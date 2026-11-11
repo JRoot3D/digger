@@ -213,7 +213,6 @@ impl SlotInput {
 
     /// The fire state that decides whether the slot's digger fires on this
     /// tick: the one read on the previous tick.
-    #[allow(dead_code, reason = "decides firing from task group 9 on")]
     pub(crate) const fn fire_active(&self) -> bool {
         self.fire_active
     }

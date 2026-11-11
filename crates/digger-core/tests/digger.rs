@@ -9,8 +9,8 @@
 use digger_core::geom::Px;
 use digger_core::testkit::{Run, Scenario, Script};
 use digger_core::{
-    CellPos, Controls, DiggerId, Direction, EmeraldStep, GameMode, Movement, Observer, PenaltySite,
-    ScoreId, SlotId, SoundCommand,
+    CellPos, Controls, DiggerId, Direction, EmeraldStep, FireballId, FireballStage, GameMode,
+    Movement, Observer, PenaltySite, ScoreId, SlotId, SoundCommand,
 };
 
 const FIRST: DiggerId = DiggerId::ALL[0];
@@ -444,4 +444,72 @@ fn run_restarts_after_9_idle_ticks() {
     assert_eq!(fourth_note_after_pause(4), [0, 1, 2, 0]);
     // Eaten 8 ticks after: the run continues.
     assert_eq!(fourth_note_after_pause(3), [0, 1, 2, 3]);
+}
+
+// Fireballs (task group 9).
+
+const FIRST_FIREBALL: FireballId = FireballId::ALL[0];
+
+/// The number of fire cues for the first fireball among `sounds`.
+fn fire_cues(sounds: &[SoundCommand]) -> usize {
+    sounds
+        .iter()
+        .filter(|s| **s == SoundCommand::Fire(FIRST_FIREBALL))
+        .count()
+}
+
+#[test]
+fn fire_right_spawns_at_160_184() {
+    let mut run = Scenario::new(GameMode::OnePlayer).build();
+    run.start();
+    run.take_sounds();
+    run.set_script(Script::parse("F .").expect("valid script"));
+    // Fire read on tick 1 is acted on on tick 2.
+    run.run_ticks(1);
+    assert!(run.state().digger(FIRST).not_firing());
+    run.run_ticks(1);
+    let digger = run.state().digger(FIRST);
+    assert!(!digger.not_firing(), "a fireball is in play");
+    assert!(!digger.fire_ready(), "shown without the fire-ready look");
+    let fireball = digger.fireball();
+    assert_eq!(fireball.position(), Px::new(160, 184));
+    assert_eq!(fireball.direction(), Direction::Right);
+    assert_eq!(fireball.stage(), FireballStage::Flying);
+    let sprites = run.state().sprites();
+    let sprite = FIRST_FIREBALL.sprite();
+    assert!(sprites.is_enabled(sprite));
+    assert_eq!(sprites.position(sprite), Px::new(160, 184));
+    // The digger is drawn with a right-facing image without the look.
+    let image = sprites.image(FIRST.sprite()).number();
+    assert!((4..=6).contains(&image), "image {image}");
+    assert_eq!(fire_cues(&run.take_sounds()), 1);
+}
+
+#[test]
+fn fire_on_tick_21_after_press_on_tick_20() {
+    let mut run = Scenario::new(GameMode::OnePlayer).build();
+    run.set_script(Script::parse(".*19 F .").expect("valid script"));
+    run.run_ticks(20);
+    assert_eq!(run.ticks(), 20);
+    assert!(run.state().digger(FIRST).not_firing(), "not yet on tick 20");
+    assert_eq!(fire_cues(run.sounds()), 0);
+    run.run_ticks(1);
+    assert!(
+        !run.state().digger(FIRST).not_firing(),
+        "launched on tick 21"
+    );
+    assert_eq!(fire_cues(run.sounds()), 1);
+}
+
+#[test]
+fn no_second_fireball_while_one_exists() {
+    // Fire held throughout: one launch, then nothing while the fireball
+    // flies, explodes and the digger recharges.
+    let mut run = Scenario::new(GameMode::OnePlayer).build();
+    run.set_script(Script::parse("F*40").expect("valid script"));
+    run.run_ticks(2);
+    assert!(!run.state().digger(FIRST).not_firing());
+    run.run_ticks(38);
+    assert_eq!(fire_cues(run.sounds()), 1, "a single launch in 40 ticks");
+    assert!(!run.state().digger(FIRST).fire_ready());
 }

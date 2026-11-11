@@ -140,6 +140,12 @@ impl<'a> StateView<'a> {
         self.gfx.fb()
     }
 
+    /// The sprite layer: where every sprite is, what it shows and whether
+    /// it is enabled.
+    pub fn sprites(self) -> &'a crate::sprite::SpriteLayer {
+        self.gfx.sprites()
+    }
+
     /// Writes the one-line tick trace of this state into `out`, without a
     /// line break (design D11).
     ///

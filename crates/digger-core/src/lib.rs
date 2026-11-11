@@ -36,7 +36,7 @@
 //!
 //! ```
 //! use digger_core::video::Framebuffer;
-//! use digger_core::{FinishReason, FrameInput, Game, GameConfig, SoundCommand};
+//! use digger_core::{FinishReason, Fireball, FireballStage, FrameInput, Game, GameConfig, SoundCommand};
 //!
 //! fn present(_picture: &Framebuffer) {}
 //! fn play(_command: SoundCommand) {}
@@ -130,12 +130,12 @@ pub mod video;
 pub use sim::testkit;
 pub use sim::{
     BagId, BonusEffect, CUSTOM_LEVELS_LEN, Cell, CellPos, ConfigError, Controls, DeathStage,
-    Difficulty, Digger, DiggerId, Direction, EmeraldMap, Field, FinishReason, FrameInput,
-    FrameKind, FrameLength, Game, GameConfig, GameMode, GameRng, GameSummary, GauntletSeconds,
-    IdOutOfRange, LevelError, LevelLayout, LevelNumber, LevelSet, Located, Modulus, MonsterSlot,
-    Movement, NoopObserver, Observer, Penalty, PenaltySite, PlayerId, PlayerResult, ScoreEvent,
-    ScoreId, ScoreSummary, Scores, SlotId, StartLevel, StateView, StepOutcome, locate, reverse_of,
-    round_seed, within_limits,
+    Difficulty, Digger, DiggerId, Direction, EmeraldMap, Field, FinishReason, Fireball,
+    FireballStage, FrameInput, FrameKind, FrameLength, Game, GameConfig, GameMode, GameRng,
+    GameSummary, GauntletSeconds, IdOutOfRange, LevelError, LevelLayout, LevelNumber, LevelSet,
+    Located, Modulus, MonsterSlot, Movement, NoopObserver, Observer, Penalty, PenaltySite,
+    PlayerId, PlayerResult, ScoreEvent, ScoreId, ScoreSummary, Scores, SlotId, StartLevel,
+    StateView, StepOutcome, locate, reverse_of, round_seed, within_limits,
 };
 pub use sound_cmd::{EmeraldStep, FireballId, SoundCommand, Tempo, Tune};
 

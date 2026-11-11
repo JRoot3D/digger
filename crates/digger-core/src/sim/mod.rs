@@ -67,6 +67,8 @@ use digger::{AnimFrame, START_LIVES};
 pub use digger::{DeathStage, Digger};
 use draw::{DrawProgress, LevelDraw};
 use field::PlayerFields;
+use fireball::FlameFrame;
+pub use fireball::{Fireball, FireballStage};
 use gauntlet::GauntletClock;
 use gfx::Gfx;
 use input::SlotInput;
@@ -233,6 +235,8 @@ pub(crate) struct Sim {
     diggers_visible: bool,
     /// The animation counter of each digger sprite, by unit (not hashed).
     digger_frames: [AnimFrame; DiggerId::COUNT],
+    /// The animation counter of each fireball sprite, by unit (not hashed).
+    fireball_frames: [FlameFrame; DiggerId::COUNT],
     /// Both scores.
     scores: Scores,
     /// The gauntlet clock, in the gauntlet modes.
@@ -287,6 +291,7 @@ impl Sim {
             diggers,
             diggers_visible: false,
             digger_frames: [AnimFrame::START; DiggerId::COUNT],
+            fireball_frames: [FlameFrame::START; DiggerId::COUNT],
             scores,
             gauntlet: mode.gauntlet().map(GauntletClock::start),
             inputs: [SlotInput::new(); SlotId::COUNT],

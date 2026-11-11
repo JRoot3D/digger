@@ -21,6 +21,7 @@ use crate::sprite::Collisions;
 
 use super::draw::{self, Carve};
 use super::field::EmeraldMap;
+use super::fireball::Fireball;
 use super::geom::{CellPos, Direction, Located, MAX_X, MAX_Y, MIN_X, MIN_Y, locate};
 use super::gfx::Gfx;
 use super::ids::{BagId, DiggerId, PlayerId};
@@ -215,6 +216,8 @@ pub struct Digger {
     pub(crate) dead: bool,
     /// Whether the digger is alive and controllable (`dob.alive`).
     pub(crate) alive: bool,
+    /// The digger's fireball (`bob`).
+    pub(crate) fireball: Fireball,
 }
 
 impl Default for Digger {
@@ -254,6 +257,7 @@ impl Digger {
         invincibility: 0,
         dead: false,
         alive: false,
+        fireball: Fireball::ZEROED,
     };
 
     /// Lives left, the one being played included (hashed as `lives`).
@@ -361,6 +365,12 @@ impl Digger {
         self.alive
     }
 
+    /// The digger's fireball (hashed as `bob`), stale values included
+    /// while none is in play.
+    pub const fn fireball(&self) -> &Fireball {
+        &self.fireball
+    }
+
     /// Puts the record at the start of a round in cell (`column`, row 9)
     /// facing `facing`, with no push pause, a ready fireball, no emerald
     /// run and an eat multiplier of 1 (digger spec, "Start position and
@@ -397,6 +407,7 @@ impl Digger {
             invincibility: 0,
             dead: false,
             alive: true,
+            fireball: Fireball::ZEROED,
         };
     }
 
@@ -568,13 +579,14 @@ impl Sim {
 
 impl Ctx<'_> {
     /// Resets both digger sprites to the blank image, disabled, and their
-    /// animation counters, as when the sprites are set up for a round
+    /// animation counters, and the fireball sprites likewise, as when the sprites are set up for a round
     /// (research 02 §2, `initdbfspr`).
     pub(crate) fn reset_digger_sprites(&mut self) {
         for unit in DiggerId::ALL {
             self.gfx.reset(unit.sprite(), ImageId::BLANK);
             *unit.of_mut(&mut self.sim.digger_frames) = AnimFrame::START;
         }
+        self.reset_fireball_sprites();
     }
 
     /// Places every digger record in play at its start position, or takes
@@ -629,7 +641,7 @@ impl Ctx<'_> {
             let slot = unit.slot();
             let raw = self.obs.controls(tick, slot, input.slot(slot));
             slot.of_mut(&mut self.sim.inputs).read(raw);
-            // The fireball is updated here from task group 9 on.
+            self.update_fireball(unit, record);
             if self.sim.diggers_visible {
                 let digger = *record.of(&self.sim.diggers);
                 if digger.can_move() {
