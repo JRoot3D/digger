@@ -12,8 +12,8 @@
 //! with the "all" variant it asks for every function action under
 //! `OTHER:`. In a mode with one Digger, a player-2 key that player 1 took
 //! is replaced by player 1's old key for the same control, and player 2's
-//! action is asked for only when that key is taken as well. A line that would reach the bottom of the screen starts a
-//! second column.
+//! action is asked for only when that key is taken as well. A line that
+//! would reach the bottom of the screen starts a second column.
 //!
 //! The scene works on a copy of the key table: the pressed key becomes the
 //! asked action's only key in the copy, which is handed to the shell only
