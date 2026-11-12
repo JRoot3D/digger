@@ -293,8 +293,14 @@ the tick count passes `take_over_after` (or on `request_take_over()`), it
 switches state; from then on the `ReplayObserver` hooks return the
 simulation's own values (derived seeds, built-in or configured levels, the
 live controls of the caller's `FrameInput`), the `Verifier` stops comparing
-and the outcome becomes `TakenOver`. Recorders only observe and do not
-notice. The decision to support this now, rather than leave it to phase 6,
+and the outcome becomes `TakenOver`. Recorders only observe; the one that
+is told is an eDRF recorder converting a DRF playback, which switches from
+the DRF's records to the live raw controls (otherwise the live part would
+be recorded as resolved directions, not as the bits that were pressed).
+The `max_ticks` safety net applies only while the recording plays. A
+request is refused once the game has finished, the recording has run out
+or the playback is being stopped. No playback, taken over or not, is
+eligible for the high-score table; the report says so for the frontend. The decision to support this now, rather than leave it to phase 6,
 is that it costs one state and three tests here, whereas adding it later
 would reopen the driver. `add-desktop-app` exposes it as the option
 `--take-over-at <tick>` (alias `/T:n`); there is no take-over key.

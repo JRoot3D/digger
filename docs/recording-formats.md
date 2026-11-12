@@ -463,3 +463,69 @@ erased (quirk P11).
 | bag | 165 |
 | game | 12 to 21 |
 <!-- state-hash-table:end -->
+
+## Playback rules
+
+How `digger_core::replay` plays a recording (game-recording spec, "Playback
+settings come only from the recording", "Taking over from a playback";
+replay-verification spec, "Configuration isolation during playback";
+design D6 to D8).
+
+### Settings
+
+The game is configured from the recording alone (`playback_config`): mode,
+gauntlet time and start level from the mode line, the bonus-life interval
+from the bonus line, the eight plans from a DRF header (an eDRF's maps
+arrive through its `L` records). Unlimited lives is always off, whatever
+the mode line says (quirk P9). There is no parameter through which the
+caller's settings could reach a playback, the driver never sees the
+high-score table, and the caller's own `GameConfig` is never touched, so
+nothing needs to be restored afterwards (`isolation_*`). No playback is
+ever eligible for the high-score table (`ReplayReport::high_score_eligible`
+is always false).
+
+### Pacing and ending
+
+`Replay::step` advances exactly one frame and never waits; the caller
+paces it. Of the caller's `FrameInput` only pause and quit count until a
+take-over. The game is quit at the start of the frame after the recording
+runs out, after the first failure (unless `stop_at_first_failure` is off),
+on the caller's quit, or once `max_ticks` ticks have been played.
+`Replay::finish` quits a game still running and classifies the outcome:
+failed, stopped, truncated, taken over, then verified (eDRF) or completed
+(DRF).
+
+### Take-over
+
+A playback is handed over to live controls between two frames, either once
+the tick count reaches `ReplayOptions::take_over_after` (with `Some(500)`
+ticks 1 to 500 are played from the recording and tick 501 onward live) or
+on `Replay::request_take_over()`. A request is refused (returns `false`)
+when the game has finished, the recording has run out or the playback is
+being stopped; there is then nothing left to take over. From the
+hand-over on:
+
+- round seeds are the game's own derived seeds, levels are the
+  configuration's (the DRF header's plans, the built-in ones for an
+  eDRF), and the caller's `FrameInput` controls drive every slot;
+- no checkpoint is compared, and `max_ticks` no longer applies: only the
+  caller's quit or the loss of the last life ends the game;
+- a recorder made with `Replay::recording_as` goes on recording; an eDRF
+  recorder converting a DRF playback switches from the DRF's records to
+  the live raw controls. The new recording replays the whole game, the
+  played-back part followed by the live part (`takeover_rerecorded_game_replays`);
+- the outcome is `TakenOver` (exit status 0, no diagnostics) unless the
+  playback had already failed, and the game is not eligible for the
+  high-score table (`takeover_not_eligible_for_high_score`).
+
+### Frontend mapping
+
+The game binary's options (change `add-desktop-app`) map onto these calls:
+
+| Option | Library calls |
+|---|---|
+| play a recording (`--play <file>`, `/P:file`) | `recording::parse`, `Replay::new(&recording, ReplayOptions::default())`, `Replay::step` once per paced frame, presenting `Replay::game()` and `Replay::drain_sound()`; `Replay::finish` at the end |
+| verify a recording (`--verify <file>`, `/E:file`) | `replay::verify(bytes, ReplayOptions::default())`, then `ReplayReport::result_line`, `ReplayReport::diagnostics` and `ReplayReport::exit_status` |
+| record a live game (`--record <file>`, `/R:file`) | `DrfRecorder::new` or `EdrfRecorder::new` passed as the observer of `Game::step_observed`; `EdrfRecorder::take_pending` streamed to disk every frame, `DrfRecorder::text` at the end |
+| record a playback (`--play` with `--record`) | `Replay::recording_as(&recording, options, kind)`, `Replay::recorder_mut()` drained with `Recorder::take_pending`, `Replay::finish_with_recording` |
+| take over (`--take-over-at <tick>`, `/T:n`) | `ReplayOptions { take_over_after: Some(tick), .. }`; the live controls go in the `FrameInput` given to `Replay::step`; `ReplayReport::high_score_eligible` (false) before offering initials entry |

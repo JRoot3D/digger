@@ -607,6 +607,16 @@ impl Recorder {
         }
     }
 
+    /// Tells the recorder that the playback it records was handed over to
+    /// live controls (design D8): an eDRF recorder converting a DRF
+    /// playback takes each slot's raw controls from now on, as for a live
+    /// game. A DRF recorder needs no telling.
+    pub(crate) const fn hand_over(&mut self) {
+        if let Self::Edrf(edrf) = self {
+            edrf.source = ControlSource::Raw;
+        }
+    }
+
     /// Notes a level set up, with whether a playback supplied its layout.
     pub(crate) fn note_level(&mut self, level: LevelNumber, layout: &LevelLayout, replaced: bool) {
         match self {

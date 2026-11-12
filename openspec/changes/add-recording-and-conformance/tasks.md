@@ -82,9 +82,9 @@ at a time and group 13 forbids any that remain.
 
 ## 9. Take-over and configuration isolation
 
-- [ ] 9.1 Implement take-over in the playback source (`take_over_after`, `request_take_over`; afterwards the hooks return the simulation's own values and the caller's live `FrameInput` drives the game, verifier disabled, outcome `TakenOver`, not eligible for high score) and document it under "Playback rules" in `docs/recording-formats.md` together with the library calls that `add-desktop-app`'s play, record, verify and take-over options map to; verify with `takeover.rs` tests `takeover_switches_after_tick`, `takeover_rerecorded_game_replays`, `takeover_not_eligible_for_high_score`
-- [ ] 9.2 Add `isolation.rs`: replay one corpus recording under caller configurations with unlimited lives on, start level 5, gauntlet mode, two diggers and a different bonus interval, and assert identical `ReplayReport`s and an untouched caller configuration; verify tests `isolation_unlimited_lives`, `isolation_start_level`, `isolation_mode` pass (on a scripted recording until the corpus one passes)
-- [ ] 9.3 Run the gate and commit (`feat(core): support take-over and isolate playback from user settings`)
+- [x] 9.1 Implement take-over in the playback source (`take_over_after`, `request_take_over`; afterwards the hooks return the simulation's own values and the caller's live `FrameInput` drives the game, verifier disabled, outcome `TakenOver`, not eligible for high score) and document it under "Playback rules" in `docs/recording-formats.md` together with the library calls that `add-desktop-app`'s play, record, verify and take-over options map to; verify with `takeover.rs` tests `takeover_switches_after_tick`, `takeover_rerecorded_game_replays`, `takeover_not_eligible_for_high_score`
+- [x] 9.2 Add `isolation.rs`: replay one corpus recording under caller configurations with unlimited lives on, start level 5, gauntlet mode, two diggers and a different bonus interval, and assert identical `ReplayReport`s and an untouched caller configuration; verify tests `isolation_unlimited_lives`, `isolation_start_level`, `isolation_mode` pass (on a scripted recording until the corpus one passes)
+- [x] 9.3 Run the gate and commit (`feat(core): support take-over and isolate playback from user settings`)
 
 ## 10. Triage tooling
 

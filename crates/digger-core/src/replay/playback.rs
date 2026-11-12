@@ -180,12 +180,25 @@ enum Feed {
     Edrf(EdrfPlayback),
 }
 
+/// Whether a playback source still plays its recording (design D8).
+#[derive(Debug, Clone)]
+enum SourceState {
+    /// The recording supplies the round seeds, the level maps and the
+    /// controls.
+    Playing(Feed),
+    /// The game was handed over to live controls: from now on every hook
+    /// returns the simulation's own value (game-recording spec, "Taking
+    /// over from a playback").
+    HandedOver,
+}
+
 /// Where the values of a played-back game come from: a DRF or an eDRF
 /// recording. It replaces the values the simulation would otherwise use
-/// (design D4).
+/// (design D4), until the game is handed over to live controls
+/// ([`hand_over`](Self::hand_over), design D8).
 #[derive(Debug, Clone)]
 pub(crate) struct PlaybackSource {
-    feed: Feed,
+    state: SourceState,
     /// The first failure found, if any.
     failure: Option<PlaybackFailure>,
     /// Set when the caller stops the playback before the recording ends:
@@ -212,7 +225,7 @@ impl PlaybackSource {
             }),
         };
         Self {
-            feed,
+            state: SourceState::Playing(feed),
             failure: None,
             stopping: false,
             tick: 0,
@@ -230,11 +243,35 @@ impl PlaybackSource {
     /// the control queues decide; this is what upstream's lazy reader
     /// finds when its input queues are empty and the file has no line
     /// left.
+    ///
+    /// A source that was handed over is never exhausted: live controls
+    /// have no end.
     pub(crate) fn exhausted(&self) -> bool {
-        match &self.feed {
-            Feed::Drf(drf) => drf.ended,
-            Feed::Edrf(edrf) => edrf.controls.iter().all(ControlRuns::is_empty),
+        match &self.state {
+            SourceState::Playing(Feed::Drf(drf)) => drf.ended,
+            SourceState::Playing(Feed::Edrf(edrf)) => {
+                edrf.controls.iter().all(ControlRuns::is_empty)
+            }
+            SourceState::HandedOver => false,
         }
+    }
+
+    /// Hands the game over to live controls (design D8). From now on the
+    /// recording supplies nothing: the hooks return the simulation's own
+    /// values. Nothing happens, and `false` is returned, when the source
+    /// was already handed over, when the recording has run out or when
+    /// the caller has already stopped the playback.
+    pub(crate) fn hand_over(&mut self) -> bool {
+        if self.handed_over() || self.exhausted() || self.stopping {
+            return false;
+        }
+        self.state = SourceState::HandedOver;
+        true
+    }
+
+    /// Whether the game was handed over to live controls.
+    pub(crate) const fn handed_over(&self) -> bool {
+        matches!(self.state, SourceState::HandedOver)
     }
 
     /// The first failure found, if any.
@@ -264,12 +301,16 @@ impl PlaybackSource {
     /// recording, or a game that ended by itself with another round's seed
     /// still to come; the trailer after the last `EOL` (`EOG`, initials)
     /// holds no round.
+    ///
+    /// A game that was handed over is never stopped: the recording had
+    /// nothing more to say about it.
     pub(crate) fn stopped_early(&self) -> bool {
-        match &self.feed {
-            Feed::Drf(drf) => {
+        match &self.state {
+            SourceState::Playing(Feed::Drf(drf)) => {
                 !drf.ended && (self.stopping || drf.cursor.round_follows(&drf.recording))
             }
-            Feed::Edrf(_) => !self.exhausted(),
+            SourceState::Playing(Feed::Edrf(_)) => !self.exhausted(),
+            SourceState::HandedOver => false,
         }
     }
 
@@ -277,8 +318,8 @@ impl PlaybackSource {
     /// one an eDRF names (or none) once the eDRF has run out, as upstream
     /// does; slot 0 for a DRF and for a playback quit before its end.
     pub(crate) fn quit_slot(&self) -> Option<SlotId> {
-        match &self.feed {
-            Feed::Edrf(edrf) if self.exhausted() => edrf.recording.quit(),
+        match &self.state {
+            SourceState::Playing(Feed::Edrf(edrf)) if self.exhausted() => edrf.recording.quit(),
             _ => SlotId::new(0),
         }
     }
@@ -294,7 +335,11 @@ impl PlaybackSource {
 impl Observer for PlaybackSource {
     fn round_seed(&mut self, _round: u32, derived: i32) -> i32 {
         let tick = self.tick;
-        match &mut self.feed {
+        let SourceState::Playing(feed) = &mut self.state else {
+            // Handed over: seeds are generated as in live play.
+            return derived;
+        };
+        match feed {
             Feed::Drf(drf) => match drf.cursor.next_seed(&drf.recording) {
                 Ok(seed) => seed.cast_signed(),
                 Err(RecordingError::BadDrfBody {
@@ -329,8 +374,9 @@ impl Observer for PlaybackSource {
         level: LevelNumber,
         _layout: &LevelLayout,
     ) -> Option<LevelLayout> {
-        let Feed::Edrf(edrf) = &mut self.feed else {
-            // A DRF's maps are the configuration's level set (quirk P6).
+        let SourceState::Playing(Feed::Edrf(edrf)) = &mut self.state else {
+            // A DRF's maps are the configuration's level set (quirk P6);
+            // after a hand-over so are an eDRF's.
             return None;
         };
         let recorded = *edrf.recording.levels().get(edrf.next_level)?;
@@ -346,8 +392,12 @@ impl Observer for PlaybackSource {
         Some(recorded.layout)
     }
 
-    fn controls(&mut self, _tick: u32, slot: SlotId, _raw: Controls) -> Controls {
-        match &mut self.feed {
+    fn controls(&mut self, _tick: u32, slot: SlotId, raw: Controls) -> Controls {
+        let SourceState::Playing(feed) = &mut self.state else {
+            // Handed over: the caller's live controls drive the game.
+            return raw;
+        };
+        match feed {
             // Quirk P3: during DRF playback the raw controls are all off,
             // so on a tick without a control read the next tick's fire is
             // "not pressed"; the record of a control read supplies the
@@ -365,7 +415,7 @@ impl Observer for PlaybackSource {
 
     fn movement(&mut self, _slot: SlotId, sample: Movement) -> Movement {
         let tick = self.tick.wrapping_add(1);
-        let Feed::Drf(drf) = &mut self.feed else {
+        let SourceState::Playing(Feed::Drf(drf)) = &mut self.state else {
             return sample;
         };
         if drf.ended {
@@ -395,7 +445,7 @@ impl Observer for PlaybackSource {
 
     fn round_end(&mut self, state: StateView<'_>) {
         let skip = self.failure.is_some() || self.stopping;
-        let Feed::Drf(drf) = &mut self.feed else {
+        let SourceState::Playing(Feed::Drf(drf)) = &mut self.state else {
             return;
         };
         if skip {
@@ -495,9 +545,35 @@ impl ReplayObserver {
         self.verifier.as_ref()
     }
 
-    /// Whether the verifier still compares: no failure has been found.
+    /// Hands a playback over to live controls between two frames (design
+    /// D8): the playback source stops supplying values, the verifier stops
+    /// comparing and a recorder converting a DRF playback takes the live
+    /// raw controls from now on. `false`, and nothing changed, when there
+    /// is no playback source or it cannot be handed over (see
+    /// [`PlaybackSource::hand_over`]).
+    pub(crate) fn hand_over(&mut self) -> bool {
+        let handed = self.source.as_mut().is_some_and(PlaybackSource::hand_over);
+        if handed && let Some(recorder) = self.recorder.as_mut() {
+            recorder.hand_over();
+        }
+        handed
+    }
+
+    /// Whether the playback was handed over to live controls.
+    pub(crate) fn handed_over(&self) -> bool {
+        self.source
+            .as_ref()
+            .is_some_and(PlaybackSource::handed_over)
+    }
+
+    /// Whether the verifier still compares: no failure has been found and
+    /// the game was not handed over.
     fn verifying_active(&self) -> bool {
-        self.failure.is_none() && self.source.as_ref().is_none_or(|s| s.failure().is_none())
+        self.failure.is_none()
+            && self
+                .source
+                .as_ref()
+                .is_none_or(|s| s.failure().is_none() && !s.handed_over())
     }
 
     /// Keeps the first failure found by the source or the verifier.

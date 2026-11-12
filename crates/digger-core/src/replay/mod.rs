@@ -35,7 +35,7 @@
 //! - [`Replay`], [`ReplayOptions`], [`ReplayReport`], [`Outcome`] and
 //!   [`verify()`], the headless verify run;
 //! - `playback`: the playback sources (DRF and eDRF), [`ReplayObserver`],
-//!   [`playback_config`], and later take-over;
+//!   [`playback_config`] and take-over;
 //! - `verifier`: checkpoint comparison and divergence reports;
 //! - `recorder`: the DRF and eDRF recorders;
 //! - `trace`: per-tick trace lines and the decoded state dump.
@@ -70,7 +70,14 @@ pub struct ReplayOptions {
     pub stop_at_first_failure: bool,
     /// A safety net: the game is quit on the frame after its tick count
     /// reaches this many ticks, so that no recording can play for ever.
+    /// It does not apply once the game was taken over.
     pub max_ticks: u32,
+    /// Hand the game over to live controls once this many ticks have
+    /// been played from the recording (game-recording spec, "Taking over
+    /// from a playback"): with `Some(500)` ticks 1 to 500 use the recorded
+    /// controls and tick 501 onward the caller's. `None` plays the
+    /// recording to its end. See [`Replay::request_take_over`].
+    pub take_over_after: Option<u32>,
 }
 
 impl Default for ReplayOptions {
@@ -78,6 +85,7 @@ impl Default for ReplayOptions {
         Self {
             stop_at_first_failure: true,
             max_ticks: DEFAULT_MAX_TICKS,
+            take_over_after: None,
         }
     }
 }
@@ -100,6 +108,14 @@ pub enum ReplayStep {
 /// at the start of the frame after the recording runs out, after the
 /// first failure (unless [`ReplayOptions::stop_at_first_failure`] is
 /// off), or after [`ReplayOptions::max_ticks`] ticks.
+///
+/// A playback can be taken over ([`ReplayOptions::take_over_after`],
+/// [`request_take_over`](Self::request_take_over); design D8): from then
+/// on the game generates its own round seeds, plays the configuration's
+/// levels and is driven by the caller's controls, nothing more is
+/// verified, a recorder made with [`recording_as`](Self::recording_as)
+/// goes on recording, and the playback ends as
+/// [`Outcome::TakenOver`].
 #[derive(Debug)]
 pub struct Replay {
     game: Box<Game>,
@@ -108,9 +124,6 @@ pub struct Replay {
     kind: RecordingKind,
     /// Whether the game was quit because it reached the tick limit.
     tick_limit_reached: bool,
-    /// Whether the player took the game over from the recording. Nothing
-    /// sets it yet: take-over is added by task group 9.
-    taken_over: bool,
 }
 
 impl Replay {
@@ -131,7 +144,6 @@ impl Replay {
             options,
             kind: recording.kind(),
             tick_limit_reached: false,
-            taken_over: false,
         })
     }
 
@@ -177,19 +189,45 @@ impl Replay {
         (self.report(), text)
     }
 
+    /// Hands the game over to live controls before the next frame
+    /// (design D8): from then on `input`'s controls drive the game. It
+    /// returns whether the game is now taken over: `false` when the game
+    /// has finished, the recording has run out or the playback is being
+    /// stopped, so that there is nothing left to take over; `true` also
+    /// when it was taken over before.
+    pub fn request_take_over(&mut self) -> bool {
+        if self.game.summary().is_some() {
+            return self.taken_over();
+        }
+        self.observer.hand_over() || self.taken_over()
+    }
+
+    /// Whether the game was taken over from the recording.
+    pub fn taken_over(&self) -> bool {
+        self.observer.handed_over()
+    }
+
     /// Advances the playback by exactly one frame. It never waits.
     ///
     /// Of `input` only the pause and quit requests have an effect: a quit
     /// stops the playback there. Its controls are replaced by the
     /// recording's on every tick (raw controls from an eDRF, none at all
     /// during DRF playback, where each control read takes a record).
-    /// `extra` is told every hook after the replay's own observer, with
-    /// the values actually used; what it returns is ignored. Once the game has finished every step reports the same
+    /// Once the game has been taken over its controls drive the game as
+    /// in live play. `extra` is told every hook after the replay's own
+    /// observer, with the values actually used; what it returns is
+    /// ignored. Once the game has finished every step reports the same
     /// summary.
     pub fn step(&mut self, input: &FrameInput, extra: &mut dyn Observer) -> ReplayStep {
         if let Some(summary) = self.game.summary() {
             return ReplayStep::Finished(summary);
         }
+        if let Some(after) = self.options.take_over_after
+            && self.game.state().ticks() >= after
+        {
+            self.observer.hand_over();
+        }
+        let taken_over = self.taken_over();
         // The caller's controls go in as they are: the playback source
         // replaces every slot's raw controls on every tick (quirks P3, P4).
         let mut frame = *input;
@@ -197,7 +235,13 @@ impl Replay {
         let options = self.options;
         let failed = self.observer.failure().is_some();
         if let Some(source) = self.observer.source_mut() {
-            if source.exhausted() {
+            if taken_over {
+                // A live game: only the caller ends it.
+                if input.quit {
+                    frame.quit = true;
+                    source.stop();
+                }
+            } else if source.exhausted() {
                 frame.quit = true;
             } else if input.quit || (failed && options.stop_at_first_failure) {
                 frame.quit = true;
@@ -305,9 +349,11 @@ impl Replay {
             .observer
             .verifier()
             .is_some_and(verifier::Verifier::has_end);
+        // A game is taken over only while its recording still has data,
+        // so the data of a taken-over eDRF never ran out.
         match self.kind {
-            RecordingKind::Edrf if !has_end => Outcome::Truncated,
-            _ if self.taken_over => Outcome::TakenOver,
+            RecordingKind::Edrf if !has_end && !self.taken_over() => Outcome::Truncated,
+            _ if self.taken_over() => Outcome::TakenOver,
             RecordingKind::Edrf => Outcome::Verified,
             RecordingKind::Drf => Outcome::Completed,
         }
@@ -396,6 +442,15 @@ impl ReplayReport {
         }
         let _ = writeln!(line, " level={} ticks={}", self.level, self.ticks);
         line
+    }
+
+    /// Whether the game's score may enter the high-score table: never. A
+    /// playback leaves the table unchanged, and a game taken over from a
+    /// playback is not eligible either (game-recording spec, "Playback
+    /// settings come only from the recording", "Taking over from a
+    /// playback"); a frontend asks this before offering initials entry.
+    pub const fn high_score_eligible(&self) -> bool {
+        false
     }
 
     /// The verify run's exit status (replay-verification spec, "Verify
