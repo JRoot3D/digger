@@ -202,6 +202,10 @@ impl Archive {
                 .compression_method(zip::CompressionMethod::Deflated)
                 .compression_level(Some(9))
                 .last_modified_time(time)
+                // Unix attributes on every host: the zip crate marks
+                // entries written on Windows as DOS by default, which drops
+                // the modes and makes the bytes depend on the build host.
+                .system(zip::System::Unix)
                 .unix_permissions(entry.mode());
             let fail = |error: &dyn std::fmt::Display| {
                 format!("cannot add {path} to the zip file: {error}")
