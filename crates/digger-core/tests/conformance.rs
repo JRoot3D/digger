@@ -159,11 +159,11 @@ macro_rules! recordings {
 }
 
 recordings! {
-    recording!(edrf_2riptest01, "2riptest01.edrf", quick, pending);
+    recording!(edrf_2riptest01, "2riptest01.edrf", quick, passing);
     recording!(drf_2test01, "2test01.drf", quick, passing);
     recording!(edrf_2test01, "2test01.edrf", quick, passing);
     recording!(edrf_2test02, "2test02.edrf", quick, passing);
-    recording!(edrf_2test03, "2test03.edrf", quick, pending);
+    recording!(edrf_2test03, "2test03.edrf", quick, passing);
     recording!(drf_dror0, "dror0.drf", quick, passing);
     recording!(edrf_dror0, "dror0.edrf", quick, passing);
     recording!(edrf_gauntlet01, "gauntlet01.edrf", quick, passing);

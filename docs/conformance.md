@@ -263,18 +263,25 @@ recorded controls, so a window may extend beyond the first failure.
 
 One row per corpus recording, generated from the first full-tier report
 (`cargo xtask conformance --tier full`, 48 of 50 passing) and kept current
-by task group 12. *Status* is `passing` or `failing` and matches the
+by task group 12. After the group, all 50 pass (`cargo xtask conformance
+--tier full`, release build, about 17 s): the two failures of the first run
+had one cause, quirk P17 in `docs/compat-quirks.md`, and the *First failing
+checkpoint* column keeps the checkpoint that exposed it. The failures
+clustered as follows: both at an `E` checkpoint written for a recorded quit
+(`Q 0`) in a two-digger game, with every `C` checkpoint before it matching;
+none in the one-digger, DRF, gauntlet or long clusters. *Status* is
+`passing` or `failing` and matches the
 recording's `passing`/`pending` entry in
 `crates/digger-core/tests/conformance.rs`
 (`tracking_table_lists_every_recording`).
 
 | Recording | Status | Outcome | First failing checkpoint | Last matching tick | Cause | Fixing commit |
 |---|---|---|---|---|---|---|
-| `2riptest01.edrf` | failing | failed | E at tick 1024 | 1024 | not yet localised (task group 12) | — |
+| `2riptest01.edrf` | passing | verified | E at tick 1024 (fixed) | 1024 | quirk P17: a quit in the main phase did not hide the diggers before the round-end `E` checkpoint | `beacd9e` |
 | `2test01.drf` | passing | completed | — | — | — | — |
 | `2test01.edrf` | passing | verified | — | 4489 | — | — |
 | `2test02.edrf` | passing | verified | — | 10461 | — | — |
-| `2test03.edrf` | failing | failed | E at tick 2391 | 2369 | not yet localised (task group 12) | — |
+| `2test03.edrf` | passing | verified | E at tick 2391 (fixed) | 2391 | quirk P17, as `2riptest01.edrf` | `beacd9e` |
 | `a1104675.drf` | passing | completed | — | — | — | — |
 | `a1104675.edrf` | passing | verified | — | 111324 | — | — |
 | `a1195000.drf` | passing | completed | — | — | — | — |
