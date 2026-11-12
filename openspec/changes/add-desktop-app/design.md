@@ -154,6 +154,8 @@ Re-anchoring also happens on pause end, on focus return and after a scene change
 
 Unpaced mode (speed 0): `ControlFlow::Poll`; each `about_to_wait` runs frames for a budget of 8 ms, then returns to the event loop; a redraw is requested when 16 ms have passed since the last one. Paced presentation is always once per frame.
 
+The pacer's interface is one batch per wake-up (decided in task 6.1): `begin()` fixes the frames due (paced) or the 8 ms budget (unpaced); `next_frame()` is asked before each frame, so the unpaced budget is measured against the clock as frames run and the first frame of a batch always runs; `end() -> Wake { redraw, control }` gives the redraw decision and `Control::WaitUntil(deadline)` or `Control::Poll`. `set_frame_time` ends the open batch, so a speed change takes effect from the next frame; changing to or from unpaced restarts the schedule at the current time. `reanchor()` serves pause end, focus return and scene changes. Deadlines are durations on the clock's timeline; the real clock converts them to an `Instant`.
+
 *Alternatives considered:* a dedicated game thread with a sleep loop (needs `Game` behind a mutex or a channel of pictures, and macOS requires the window on the main thread anyway); pacing from the audio callback's sample count (precise, but ties the game to a device that may not exist).
 
 ### D5. Presentation with softbuffer

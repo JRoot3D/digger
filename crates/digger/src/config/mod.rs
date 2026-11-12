@@ -74,6 +74,11 @@ impl FrameTime {
         Self(Duration::from_micros(u64::from(micros)))
     }
 
+    /// A frame time of `duration`; zero means unpaced.
+    pub(crate) const fn from_duration(duration: Duration) -> Self {
+        Self(duration)
+    }
+
     /// The frame time in whole microseconds.
     pub(crate) fn as_micros(self) -> u128 {
         self.0.as_micros()

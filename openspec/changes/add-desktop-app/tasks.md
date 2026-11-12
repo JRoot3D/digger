@@ -48,10 +48,10 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 6. Pacing and presentation maths
 
-- [ ] 6.1 Implement `Clock` and `Pacer` with absolute deadlines, the cap of 3 due frames and re-anchoring. Verify: unit tests `pacer_no_drift_7500_frames` (jittered fake clock, 600 s → 7500 ± 1 frames), `pacer_stall_reanchors`, `pacer_speed_change`. Include unpaced mode (8 ms step budget, 16 ms redraw interval), verified by `pacer_unpaced_budget`.
-- [ ] 6.2 Implement `present::scale::viewport` for `integer`, `fit`, `stretch` and the column and row maps. Verify: unit tests `viewport_integer_1920x1080` (1280×800 at 320,140), `viewport_integer_1300x1300`, `viewport_fit_1920x1080` (1728×1080), `viewport_integer_small_falls_back` (500×312), `viewport_stretch`, `maps_monotonic`.
-- [ ] 6.3 Implement `present::blit` (indices through a 16-entry colour table into an XRGB buffer with black borders). Verify: unit tests `blit_scale_1`, `blit_scale_2_replicates`, `blit_borders_black`, `blit_palette_switch`.
-- [ ] 6.4 Run the three workspace checks; commit `feat(digger): frame pacer and scaling maths`.
+- [x] 6.1 Implement `Clock` and `Pacer` with absolute deadlines, the cap of 3 due frames and re-anchoring. Verify: unit tests `pacer_no_drift_7500_frames` (jittered fake clock, 600 s → 7500 ± 1 frames), `pacer_stall_reanchors`, `pacer_speed_change`. Include unpaced mode (8 ms step budget, 16 ms redraw interval), verified by `pacer_unpaced_budget`.
+- [x] 6.2 Implement `present::scale::viewport` for `integer`, `fit`, `stretch` and the column and row maps. Verify: unit tests `viewport_integer_1920x1080` (1280×800 at 320,140), `viewport_integer_1300x1300`, `viewport_fit_1920x1080` (1728×1080), `viewport_integer_small_falls_back` (500×312), `viewport_stretch`, `maps_monotonic`.
+- [x] 6.3 Implement `present::blit` (indices through a 16-entry colour table into an XRGB buffer with black borders). Verify: unit tests `blit_scale_1`, `blit_scale_2_replicates`, `blit_borders_black`, `blit_palette_switch`.
+- [x] 6.4 Run the three workspace checks; commit `feat(digger): frame pacer and scaling maths`.
 
 ## 7. Shell core and the play scene
 
