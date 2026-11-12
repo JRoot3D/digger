@@ -10,3 +10,7 @@
 *.bin binary
 *.zz binary
 *.rgba binary
+
+# The upstream recording corpus is stored byte-for-byte (one file has CR LF
+# line ends) so that tests/recordings/MANIFEST.sha256 stays valid everywhere.
+tests/recordings/** -text
