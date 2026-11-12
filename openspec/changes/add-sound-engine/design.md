@@ -197,7 +197,7 @@ pub fn sound_link(config: SoundConfig, tables: &TuneTables)
 
 - `SoundHandle` (game/frontend thread): `send(SoundCommand)`, `control(SoundControl)`, `poll_event() -> Option<SoundEvent>`, `status() -> SoundStatus { sound_on, music_on, dropped }`.
 - `AudioSource` (moved into the device callback; `Send`, not `Sync`): `fill(&mut [i16])`. It owns the `Synth`.
-- Game to audio: `rtrb::RingBuffer<Input>` with capacity 4096 (upstream's queue length). `rtrb` is a wait-free single-producer single-consumer ring with no allocation after construction. On a full ring the input is dropped and an `AtomicU32` counter is incremented; the sender never blocks. All commands are drained at each tick (upstream's batch limit of 64 is not kept; the ring bounds the work).
+- Game to audio: `rtrb::RingBuffer<Input>` with capacity 4096 (upstream's queue length). `rtrb` is a wait-free single-producer single-consumer ring with no allocation after construction. On a full ring the input is dropped and a counter is incremented; the sender never blocks. The counter is a plain `u32` field of `SoundHandle`, because only the sending thread writes and reads it (`status().dropped`). All commands are drained at each tick (upstream's batch limit of 64 is not kept; the ring bounds the work).
 - Audio to game: a second `rtrb` ring of `SoundEvent`, capacity 16; if full, the event is dropped.
 - Status: two `AtomicBool`s (sound on, music on) written by the audio side after each tick, read by the frontend for display. They are needed because "sound on forces music on" is decided on the audio side.
 - The `unsafe` inside `rtrb` is in the dependency; `digger-sound` itself keeps `#![forbid(unsafe_code)]`.

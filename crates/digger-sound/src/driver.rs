@@ -2,11 +2,15 @@
 //!
 //! - [`ManualDriver`] runs the engine tick by tick on the calling thread.
 //!   Tests and tools use it to check timing on [`TickTrace`]s.
-//! - [`SoundSink`] is the sending interface shared by every driver, so a
-//!   frontend's frame loop is written once.
+//! - [`NullDriver`] accepts everything and discards it. A frontend uses it
+//!   when no audio device can be opened, and during fast-forward.
+//! - [`SoundSink`] is the sending interface shared by every driver and by
+//!   [`SoundHandle`](crate::link::SoundHandle), so a frontend's frame loop
+//!   is written once.
 
 use crate::command::{Input, SoundCommand, SoundControl, SoundEvent};
 use crate::config::SoundConfig;
+use crate::link::SoundStatus;
 use crate::music::TuneTables;
 use crate::synth::Synth;
 use crate::voice::TickTrace;
@@ -107,6 +111,41 @@ impl SoundSink for ManualDriver {
     }
 }
 
+/// A driver with no engine behind it: every command and control is
+/// accepted and discarded at once, without error or delay.
+///
+/// Its status reports sound and music off and nothing dropped, and it never
+/// reports an event.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NullDriver;
+
+impl NullDriver {
+    /// A driver that discards everything.
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Always `None`: there is no engine to report anything.
+    pub const fn poll_event(&mut self) -> Option<SoundEvent> {
+        None
+    }
+
+    /// Sound and music off, nothing dropped.
+    pub const fn status(&self) -> SoundStatus {
+        SoundStatus {
+            sound_on: false,
+            music_on: false,
+            dropped: 0,
+        }
+    }
+}
+
+impl SoundSink for NullDriver {
+    fn send(&mut self, _command: SoundCommand) {}
+
+    fn control(&mut self, _control: SoundControl) {}
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +222,40 @@ mod tests {
             effect_offer: None,
             music_level: crate::synth::INITIAL_MUSIC_LEVEL,
         }
+    }
+
+    #[test]
+    fn null_driver_accepts_everything() {
+        let mut null = NullDriver::new();
+        let sink: &mut dyn SoundSink = &mut null;
+        for _ in 0..10_000 {
+            sink.send(SoundCommand::LevelDone);
+            sink.send(SoundCommand::Gold);
+            sink.send(SoundCommand::StopAll);
+            sink.control(SoundControl::ToggleSound);
+            sink.control(SoundControl::SetFilter(false));
+        }
+        assert_eq!(null.poll_event(), None);
+        assert_eq!(
+            null.status(),
+            SoundStatus {
+                sound_on: false,
+                music_on: false,
+                dropped: 0
+            }
+        );
+    }
+
+    /// Compiles only if `T` can be moved to another thread.
+    const fn assert_send<T: Send>() {}
+
+    #[test]
+    fn audio_source_is_send() {
+        // The audio side is moved into the device callback, the game side
+        // to the game thread; both must be `Send`.
+        assert_send::<crate::link::AudioSource>();
+        assert_send::<crate::link::SoundHandle>();
+        assert_send::<NullDriver>();
+        assert_send::<ManualDriver>();
     }
 }
