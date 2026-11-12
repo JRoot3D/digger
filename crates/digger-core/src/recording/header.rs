@@ -20,6 +20,15 @@ const VERSION_DATE_OFFSET: usize = 7;
 /// versions whose monster behaviour the port does not reproduce (research
 /// 05 §4.1, the `kludge` flag; porting plan, "Dropped feature").
 pub const LAST_UNSUPPORTED_DATE: i64 = 19_981_125;
+/// The version line the port writes: two fields and an 8-digit date at
+/// byte offset 7, later than [`LAST_UNSUPPORTED_DATE`]. The date names the
+/// revision of the recording writer, not the build, so that output is
+/// reproducible (design D9).
+pub const WRITER_VERSION_LINE: &str = "RS DIG 20261111";
+/// The first line of a DRF the port writes.
+pub(crate) const DRF_FIRST_LINE_TEXT: &str = "DRF";
+/// The first line of an eDRF the port writes.
+pub(crate) const EDRF_FIRST_LINE_TEXT: &str = "eDRF 2";
 /// The longest gauntlet a mode line may ask for, in seconds.
 const MAX_MODE_GAUNTLET: u32 = 3599;
 /// The highest start level a mode line may ask for.
@@ -232,6 +241,31 @@ pub(crate) fn parse_bonus_line(line: &[u8]) -> Option<u16> {
         (value, []) => u16::try_from(value).ok(),
         _ => None,
     }
+}
+
+/// The mode line a game in `mode` starting on `start` is recorded with
+/// (game-recording spec, "Writing a DRF recording"; research 05 §4.4):
+/// `M2` and an optional `G<n>` with two diggers, else `G<n>` for a
+/// gauntlet, else the number of alternating players; then `I<n>` when the
+/// start level is above 1. The unlimited-lives option is never written.
+pub fn mode_line_for(mode: GameMode, start: StartLevel) -> String {
+    let mut line = if mode.two_diggers() {
+        match mode.gauntlet() {
+            Some(time) => format!("M{}G{}", mode.diggers(), time.seconds()),
+            None => format!("M{}", mode.diggers()),
+        }
+    } else {
+        match mode.gauntlet() {
+            Some(time) => format!("G{}", time.seconds()),
+            None => format!("{}", mode.players()),
+        }
+    };
+    let level = start.level().get();
+    if level > 1 {
+        line.push('I');
+        line.push_str(&level.to_string());
+    }
+    line
 }
 
 /// The header lines common to DRF and eDRF.

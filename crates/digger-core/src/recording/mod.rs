@@ -23,6 +23,7 @@ mod drf;
 mod edrf;
 mod error;
 mod header;
+mod naming;
 
 pub use drf::{DRF_PLANS, DrfCursor, DrfRecord, DrfRecording, DrfStep, OutOfStep};
 pub use edrf::{
@@ -31,7 +32,11 @@ pub use edrf::{
 };
 
 pub use error::{DrfProblem, HeaderProblem, Location, RecordingError};
-pub use header::{Header, LAST_UNSUPPORTED_DATE, RecordingKind, detect_kind};
+pub(crate) use header::{DRF_FIRST_LINE_TEXT, EDRF_FIRST_LINE_TEXT};
+pub use header::{
+    Header, LAST_UNSUPPORTED_DATE, RecordingKind, WRITER_VERSION_LINE, detect_kind, mode_line_for,
+};
+pub use naming::{DEFAULT_TWO_PLAYER_NAME, default_file_name, kind_for_name};
 
 /// A recording in either format. Both are boxed: the DRF header maps
 /// and the eDRF queues make them a few hundred bytes to a kilobyte.

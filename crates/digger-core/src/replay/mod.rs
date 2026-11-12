@@ -46,6 +46,9 @@ mod trace;
 mod verifier;
 
 pub use playback::{Failure, PlaybackFailure, ReplayObserver, playback_config};
+pub use recorder::{
+    DRF_MAX_RUN, DRF_WRAP_COLUMNS, DrfRecorder, EDRF_CHUNK, EdrfRecorder, Recorder, SlotSample,
+};
 pub use verifier::{CHECKPOINT_EVERY, Divergence};
 
 use core::fmt::Write as _;
@@ -132,6 +135,48 @@ impl Replay {
         })
     }
 
+    /// A playback of `recording` that also records the game as it is
+    /// played, in the format `kind` (game-recording spec, "Re-recording
+    /// and conversion between formats"). Recording a DRF playback as eDRF
+    /// converts it: each read slot's value is the direction and fire the
+    /// DRF supplied at the slot's control read, 0 on a tick without one.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Replay::new`].
+    pub fn recording_as(
+        recording: &Recording,
+        options: ReplayOptions,
+        kind: RecordingKind,
+    ) -> Result<Self, RecordingError> {
+        let mut replay = Self::new(recording, options)?;
+        let config = playback_config(recording);
+        let drf_playback = recording.kind() == RecordingKind::Drf;
+        replay
+            .observer
+            .set_recorder(Recorder::new(kind, &config, drf_playback));
+        Ok(replay)
+    }
+
+    /// The recorder of a playback made with
+    /// [`recording_as`](Self::recording_as), for draining its text as the
+    /// game goes.
+    pub const fn recorder_mut(&mut self) -> Option<&mut Recorder> {
+        self.observer.recorder_mut()
+    }
+
+    /// Ends the playback as [`finish`](Self::finish) does, and returns the
+    /// text its recorder has not yet handed out (for a DRF the whole
+    /// recording), if it has one.
+    pub fn finish_with_recording(mut self) -> (ReplayReport, Option<String>) {
+        self.run_to_end();
+        let text = self
+            .observer
+            .take_recorder()
+            .map(|mut recorder| recorder.take_pending());
+        (self.report(), text)
+    }
+
     /// Advances the playback by exactly one frame. It never waits.
     ///
     /// Of `input` only the pause and quit requests have an effect: a quit
@@ -211,14 +256,23 @@ impl Replay {
     /// A game still running is quit first, which makes the playback
     /// stopped unless it had already failed or run out of recording.
     pub fn finish(mut self) -> ReplayReport {
+        self.run_to_end();
+        self.report()
+    }
+
+    /// Quits the game if it still runs.
+    fn run_to_end(&mut self) {
         let quit = FrameInput {
             quit: true,
             ..FrameInput::NONE
         };
-        let summary = loop {
-            if let ReplayStep::Finished(summary) = self.step(&quit, &mut crate::NoopObserver) {
-                break summary;
-            }
+        while let ReplayStep::Running(_) = self.step(&quit, &mut crate::NoopObserver) {}
+    }
+
+    /// The report of the finished playback.
+    fn report(&self) -> ReplayReport {
+        let Some(summary) = self.game.summary() else {
+            unreachable!("the report is made once the game has finished")
         };
         let outcome = self.outcome();
         let last_good_checkpoint = self

@@ -42,6 +42,14 @@ impl<'a> StateView<'a> {
         self.sim.cfg.mode
     }
 
+    /// Why the game finished, once it has (already when the observer's
+    /// `game_end` hook is told); `None` while it runs. A recorder writes
+    /// the quit records (`EOG`, `Q`) from it (game-recording spec,
+    /// "Writing a DRF recording", "Writing an eDRF recording").
+    pub fn finish_reason(self) -> Option<super::FinishReason> {
+        self.sim.finish_reason
+    }
+
     /// Ticks run since the game started (hashed as `ticks`).
     pub fn ticks(self) -> u32 {
         self.sim.ticks

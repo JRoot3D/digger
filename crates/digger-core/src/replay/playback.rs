@@ -273,6 +273,16 @@ impl PlaybackSource {
         }
     }
 
+    /// The slot a re-recording names as the one whose player quit: the
+    /// one an eDRF names (or none) once the eDRF has run out, as upstream
+    /// does; slot 0 for a DRF and for a playback quit before its end.
+    pub(crate) fn quit_slot(&self) -> Option<SlotId> {
+        match &self.feed {
+            Feed::Edrf(edrf) if self.exhausted() => edrf.recording.quit(),
+            _ => SlotId::new(0),
+        }
+    }
+
     /// Records `failure` unless an earlier one was found.
     fn fail(&mut self, failure: PlaybackFailure) {
         if self.failure.is_none() {
@@ -459,6 +469,22 @@ impl ReplayObserver {
         }
     }
 
+    /// Adds `recorder`, which from then on is told every hook with the
+    /// value actually used.
+    pub(crate) fn set_recorder(&mut self, recorder: Recorder) {
+        self.recorder = Some(recorder);
+    }
+
+    /// The recorder, if there is one.
+    pub(crate) const fn recorder_mut(&mut self) -> Option<&mut Recorder> {
+        self.recorder.as_mut()
+    }
+
+    /// Removes the recorder, if there is one.
+    pub(crate) const fn take_recorder(&mut self) -> Option<Recorder> {
+        self.recorder.take()
+    }
+
     /// The first failure found, by the playback source or the verifier.
     pub(crate) const fn failure(&self) -> Option<&Failure> {
         self.failure.as_ref()
@@ -540,8 +566,13 @@ impl Observer for ReplayObserver {
             .and_then(|source| source.level_plan(player, level, layout));
         self.note_failure();
         let used = replaced.as_ref().unwrap_or(layout);
-        for obs in self.observers().into_iter().flatten() {
-            obs.level_plan(player, level, used);
+        // The recorder writes a supplied layout as it is, the stored one
+        // as played (quirk P6).
+        if let Some(recorder) = self.recorder.as_mut() {
+            recorder.note_level(level, used, replaced.is_some());
+        }
+        if let Some(trace) = self.trace.as_mut() {
+            trace.level_plan(player, level, used);
         }
         replaced
     }
@@ -614,6 +645,16 @@ impl Observer for ReplayObserver {
         }
         self.note_failure();
         if let Some(recorder) = self.recorder.as_mut() {
+            // A re-recorded eDRF playback that ran out was quit by the
+            // player its recording names (or by nobody, if it was cut
+            // short); any other quit game by slot 0's player.
+            if let Recorder::Edrf(edrf) = recorder {
+                let quit = self
+                    .source
+                    .as_ref()
+                    .map_or(SlotId::new(0), PlaybackSource::quit_slot);
+                edrf.set_quit_slot(quit);
+            }
             recorder.game_end(state);
         }
         // A game that ended before its recording ran out is stopped, not

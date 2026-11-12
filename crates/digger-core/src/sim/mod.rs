@@ -407,6 +407,10 @@ pub(crate) struct Sim {
     /// so a change of lives can switch between the main and the last-life
     /// tune (research 04 §3.1, `musicrefresh`).
     main_tune: Option<Tune>,
+    /// Why the game finished, from the moment it does (before the
+    /// observer's `game_end` hook sees the final state); `None` while it
+    /// is running.
+    finish_reason: Option<FinishReason>,
 }
 
 impl Sim {
@@ -468,6 +472,7 @@ impl Sim {
             redraw_pending: false,
             flash_player: mode.alternating(),
             main_tune: None,
+            finish_reason: None,
             cfg: config,
         };
         // Both player positions are always set up, the first then the
@@ -1072,6 +1077,7 @@ impl Ctx<'_> {
             self.sound.push(SoundCommand::StopAll);
         }
         let summary = self.sim.summary(reason);
+        self.sim.finish_reason = Some(reason);
         self.obs.game_end(StateView::new(self.sim, self.gfx));
         summary
     }

@@ -173,7 +173,7 @@ Mapping to upstream's hook points:
 | `edrf_level` on playback | `Observer::level_plan` returns the recorded layout, or records a level-number mismatch |
 | `edrf_quitting`, `playend → escape` | the source sets an end flag; `Replay::step` puts `quit` into the next frame's `FrameInput` |
 | `recputrand`, `recputdir`, `recputeol`, `recputeog` | the same hooks, observed → `DrfRecorder` |
-| `edrf_input`/`edrf_movement`/`edrf_tick`/`edrf_roundend`/`edrf_gameend` when recording | the same hooks plus `tick_end`/`round_end`/`game_end` → `EdrfRecorder` (a slot counts as read on a tick when `movement` was called for it) |
+| `edrf_input`/`edrf_movement`/`edrf_tick`/`edrf_roundend`/`edrf_gameend` when recording | the same hooks plus `tick_end`/`round_end`/`game_end` → `EdrfRecorder` (a slot counts as read on every tick on which a digger plays from it, as upstream's `readdirect` runs for every digger in play on every tick, dead, paused or not; corrected in task 8.2 from "when `movement` was called for it", which `edrf.c` does not support) |
 | checkpoint comparison | `tick_end`/`round_end`/`game_end` → `Verifier` |
 
 Seeds are `i32` in the simulation; the codecs convert from and to the files'
