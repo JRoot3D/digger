@@ -15,7 +15,7 @@ use crate::{
 
 use super::recorder::Recorder;
 use super::trace::TraceSink;
-use super::verifier::Verifier;
+use super::verifier::{Divergence, Verifier};
 
 /// The game configuration a recording is played back under, built from
 /// the recording alone (game-recording spec, "Playback settings come only
@@ -114,6 +114,44 @@ impl fmt::Display for PlaybackFailure {
 
 impl std::error::Error for PlaybackFailure {}
 
+/// Why a playback failed: the first checkpoint mismatch, or the first
+/// failure of the playback itself, whichever came first
+/// (replay-verification spec, "Playback outcome classification").
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Failure {
+    /// A `C`, `E` or `Z` checkpoint did not match.
+    Divergence(Divergence),
+    /// A level-number mismatch, a bad DRF record or a DRF playback out of
+    /// step.
+    Playback(PlaybackFailure),
+}
+
+impl Failure {
+    /// The tick count at which the failure was found.
+    pub const fn tick(&self) -> Option<u32> {
+        match self {
+            Self::Divergence(divergence) => Some(divergence.tick()),
+            Self::Playback(
+                PlaybackFailure::OutOfStep { tick, .. } | PlaybackFailure::BadDrfBody { tick, .. },
+            ) => Some(*tick),
+            Self::Playback(PlaybackFailure::LevelMismatch { .. }) => None,
+        }
+    }
+}
+
+impl fmt::Display for Failure {
+    /// The message of the divergence report, without a line end.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Divergence(divergence) => divergence.fmt(f),
+            Self::Playback(failure @ PlaybackFailure::LevelMismatch { .. }) => {
+                write!(f, "eDRF: {failure}")
+            }
+            Self::Playback(failure) => write!(f, "DRF: {failure}"),
+        }
+    }
+}
+
 /// A DRF being played: the recording and the reading position in its
 /// body (design D3).
 #[derive(Debug, Clone)]
@@ -208,6 +246,31 @@ impl PlaybackSource {
     /// recording does.
     pub(crate) const fn stop(&mut self) {
         self.stopping = true;
+    }
+
+    /// Whether the round ending now was cut short by the caller before
+    /// the recording ran out: the recording then has nothing to compare
+    /// it with.
+    pub(crate) fn cut_short(&self) -> bool {
+        self.stopping && !self.exhausted()
+    }
+
+    /// Whether the game, once over, ended while the recording still held
+    /// unused controls or rounds (replay-verification spec, "Playback
+    /// outcome classification": stopped).
+    ///
+    /// For an eDRF that is any control value left unused. For a DRF it is
+    /// a game the caller ended before a control read found the end of the
+    /// recording, or a game that ended by itself with another round's seed
+    /// still to come; the trailer after the last `EOL` (`EOG`, initials)
+    /// holds no round.
+    pub(crate) fn stopped_early(&self) -> bool {
+        match &self.feed {
+            Feed::Drf(drf) => {
+                !drf.ended && (self.stopping || drf.cursor.round_follows(&drf.recording))
+            }
+            Feed::Edrf(_) => !self.exhausted(),
+        }
     }
 
     /// Records `failure` unless an earlier one was found.
@@ -363,6 +426,8 @@ pub struct ReplayObserver {
     recorder: Option<Recorder>,
     verifier: Option<Verifier>,
     trace: Option<TraceSink>,
+    /// The first failure, of the playback source or the verifier.
+    failure: Option<Failure>,
 }
 
 impl ReplayObserver {
@@ -381,6 +446,54 @@ impl ReplayObserver {
         }
     }
 
+    /// An observer playing `recording` back and, for an eDRF, comparing
+    /// its checkpoints.
+    pub(crate) fn verifying(recording: &Recording) -> Self {
+        let verifier = match recording {
+            Recording::Drf(_) => None,
+            Recording::Edrf(edrf) => Some(Verifier::new(edrf)),
+        };
+        Self {
+            verifier,
+            ..Self::playing(recording)
+        }
+    }
+
+    /// The first failure found, by the playback source or the verifier.
+    pub(crate) const fn failure(&self) -> Option<&Failure> {
+        self.failure.as_ref()
+    }
+
+    /// The verifier, if there is one.
+    pub(crate) const fn verifier(&self) -> Option<&Verifier> {
+        self.verifier.as_ref()
+    }
+
+    /// Whether the verifier still compares: no failure has been found.
+    fn verifying_active(&self) -> bool {
+        self.failure.is_none() && self.source.as_ref().is_none_or(|s| s.failure().is_none())
+    }
+
+    /// Keeps the first failure found by the source or the verifier.
+    fn note_failure(&mut self) {
+        if self.failure.is_some() {
+            return;
+        }
+        self.failure = self
+            .source
+            .as_ref()
+            .and_then(PlaybackSource::failure)
+            .cloned()
+            .map(Failure::Playback)
+            .or_else(|| {
+                self.verifier
+                    .as_ref()
+                    .and_then(Verifier::divergence)
+                    .copied()
+                    .map(Failure::Divergence)
+            });
+    }
+
     /// The playback source, if there is one.
     pub(crate) const fn source(&self) -> Option<&PlaybackSource> {
         self.source.as_ref()
@@ -391,11 +504,12 @@ impl ReplayObserver {
         self.source.as_mut()
     }
 
-    /// The components that only observe, in the order they are told.
-    fn observers(&mut self) -> [Option<&mut dyn Observer>; 3] {
+    /// The components that only observe and see every hook, in the order
+    /// they are told. The verifier, told between the two, is fed only the
+    /// hooks it compares at.
+    fn observers(&mut self) -> [Option<&mut dyn Observer>; 2] {
         [
             self.recorder.as_mut().map(|r| r as &mut dyn Observer),
-            self.verifier.as_mut().map(|v| v as &mut dyn Observer),
             self.trace.as_mut().map(|t| t as &mut dyn Observer),
         ]
     }
@@ -407,6 +521,7 @@ impl Observer for ReplayObserver {
             Some(source) => source.round_seed(round, derived),
             None => derived,
         };
+        self.note_failure();
         for obs in self.observers().into_iter().flatten() {
             obs.round_seed(round, seed);
         }
@@ -423,6 +538,7 @@ impl Observer for ReplayObserver {
             .source
             .as_mut()
             .and_then(|source| source.level_plan(player, level, layout));
+        self.note_failure();
         let used = replaced.as_ref().unwrap_or(layout);
         for obs in self.observers().into_iter().flatten() {
             obs.level_plan(player, level, used);
@@ -446,6 +562,7 @@ impl Observer for ReplayObserver {
             Some(source) => source.movement(slot, sample),
             None => sample,
         };
+        self.note_failure();
         for obs in self.observers().into_iter().flatten() {
             obs.movement(slot, used);
         }
@@ -456,8 +573,17 @@ impl Observer for ReplayObserver {
         if let Some(source) = &mut self.source {
             source.tick_end(tick, state);
         }
-        for obs in self.observers().into_iter().flatten() {
-            obs.tick_end(tick, state);
+        self.note_failure();
+        if let Some(recorder) = self.recorder.as_mut() {
+            recorder.tick_end(tick, state);
+        }
+        let active = self.verifying_active();
+        if let Some(verifier) = &mut self.verifier {
+            verifier.tick_end(tick, state, active);
+        }
+        self.note_failure();
+        if let Some(trace) = self.trace.as_mut() {
+            trace.tick_end(tick, state);
         }
     }
 
@@ -465,8 +591,20 @@ impl Observer for ReplayObserver {
         if let Some(source) = &mut self.source {
             source.round_end(state);
         }
-        for obs in self.observers().into_iter().flatten() {
-            obs.round_end(state);
+        self.note_failure();
+        if let Some(recorder) = self.recorder.as_mut() {
+            recorder.round_end(state);
+        }
+        // Upstream compares no round the caller cut short before the
+        // recording ran out.
+        let active =
+            self.verifying_active() && !self.source.as_ref().is_some_and(PlaybackSource::cut_short);
+        if let Some(verifier) = &mut self.verifier {
+            verifier.round_end(state, active);
+        }
+        self.note_failure();
+        if let Some(trace) = self.trace.as_mut() {
+            trace.round_end(state);
         }
     }
 
@@ -474,8 +612,23 @@ impl Observer for ReplayObserver {
         if let Some(source) = &mut self.source {
             source.game_end(state);
         }
-        for obs in self.observers().into_iter().flatten() {
-            obs.game_end(state);
+        self.note_failure();
+        if let Some(recorder) = self.recorder.as_mut() {
+            recorder.game_end(state);
+        }
+        // A game that ended before its recording ran out is stopped, not
+        // compared with the end record.
+        let active = self.verifying_active()
+            && !self
+                .source
+                .as_ref()
+                .is_some_and(PlaybackSource::stopped_early);
+        if let Some(verifier) = &mut self.verifier {
+            verifier.game_end(state, active);
+        }
+        self.note_failure();
+        if let Some(trace) = self.trace.as_mut() {
+            trace.game_end(state);
         }
     }
 }

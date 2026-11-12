@@ -10,6 +10,7 @@ mod deps;
 mod import;
 mod recordings;
 mod render;
+mod verify;
 
 use std::process::ExitCode;
 
@@ -39,6 +40,11 @@ enum Command {
     /// tests/recordings/ and write MANIFEST.sha256; refuses a checkout whose
     /// HEAD is not the pinned commit unless --allow-other-commit is given.
     ImportRecordings(recordings::ImportRecordingsArgs),
+    /// Play a DRF or eDRF recording headless and check it: the result line
+    /// on standard output on success, diagnostics on standard error, exit
+    /// status 0 verified or completed, 1 unreadable, 2 failed, 3 stopped,
+    /// 4 truncated.
+    Verify(verify::VerifyArgs),
 }
 
 fn main() -> ExitCode {
@@ -48,6 +54,7 @@ fn main() -> ExitCode {
         Command::ImportAssets(args) => import::run(&args).map_err(Into::into),
         Command::RenderSheet(args) => render::run(&args).map_err(Into::into),
         Command::ImportRecordings(args) => recordings::run(&args).map_err(Into::into),
+        Command::Verify(args) => return ExitCode::from(verify::run(&args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

@@ -20,7 +20,7 @@ use std::fs;
 use std::path::Path;
 
 use digger_core::recording::{OutOfStep, Recording, parse};
-use digger_core::replay::{PlaybackFailure, Replay, ReplayOptions, ReplayStep};
+use digger_core::replay::{Failure, PlaybackFailure, Replay, ReplayOptions, ReplayStep};
 use digger_core::{
     Cell, CellPos, Controls, DiggerId, Direction, FinishReason, FrameInput, FrameKind, GameSummary,
     LevelLayout, LevelNumber, Movement, NoopObserver, Observer, PlayerId, SlotId, StateView,
@@ -286,12 +286,15 @@ fn edrf_level_number_mismatch() {
     let three = LevelNumber::new(3).expect("a level");
     assert_eq!(
         *failure,
-        PlaybackFailure::LevelMismatch {
+        Failure::Playback(PlaybackFailure::LevelMismatch {
             started: three,
             recorded: 4
-        }
+        })
     );
-    assert_eq!(failure.to_string(), "level 3 starts, recorded level 4");
+    assert_eq!(
+        failure.to_string(),
+        "eDRF: level 3 starts, recorded level 4"
+    );
     // The recorded map is used all the same, and the playback stops at
     // the first failure, before any tick.
     assert_eq!(log.levels.len(), 1);
@@ -508,10 +511,10 @@ fn drf_out_of_step_at_round_end() {
     let recording = drf("1", &plan, &plan, "00000000\nr50\nEOL\n");
     let (replay, summary, log) = play(&recording);
     let reads = u32::try_from(log.reads(S0).len()).expect("small");
-    let Some(PlaybackFailure::OutOfStep {
+    let Some(Failure::Playback(PlaybackFailure::OutOfStep {
         tick,
         problem: OutOfStep::RepeatsPending { remaining },
-    }) = replay.failure()
+    })) = replay.failure()
     else {
         panic!("out of step expected, got {:?}", replay.failure());
     };
