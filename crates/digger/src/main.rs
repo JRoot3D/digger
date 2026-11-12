@@ -20,6 +20,8 @@ mod config;
 mod error;
 mod headless;
 mod input;
+#[cfg(test)]
+mod manual_doc;
 mod pacing;
 mod platform;
 mod present;

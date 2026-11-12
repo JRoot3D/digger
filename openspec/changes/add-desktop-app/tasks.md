@@ -114,8 +114,8 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 14. Documentation and platform verification
 
-- [ ] 14.1 Write `docs/manual.md`: starting the game, modes, default keys and pads, redefinition, every option with its upstream alias, exit statuses, the full settings table, file locations per platform, recordings, differences from upstream. Verify: unit test `manual_settings_table_matches_schema` and `manual_option_list_matches_cli` pass.
-- [ ] 14.2 Write `docs/testing/desktop-checklist.md` from design.md D15 with one results column per platform. Verify: the file lists every manual item of D15.
+- [x] 14.1 Write `docs/manual.md`: starting the game, modes, default keys and pads, redefinition, every option with its upstream alias, exit statuses, the full settings table, file locations per platform, recordings, differences from upstream. Verify: unit test `manual_settings_table_matches_schema` and `manual_option_list_matches_cli` pass.
+- [x] 14.2 Write `docs/testing/desktop-checklist.md` from design.md D15 with one results column per platform. Verify: the file lists every manual item of D15.
 - [ ] 14.3 Run the checklist on Linux X11 and Linux Wayland; fix or file what fails. Verify: both columns filled in, no open failures.
 - [ ] 14.4 Run the checklist on Windows and on macOS. Verify: both columns filled in, no open failures.
 - [ ] 14.5 Play one full recorded game per mode (one player, two players, two simultaneous, gauntlet, two-player gauntlet), then verify each recording with `digger --verify <file> --headless`. Verify: every run prints its result line and exits 0.

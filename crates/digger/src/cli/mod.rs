@@ -18,6 +18,8 @@ use crate::error::AppError;
 
 pub(crate) mod legacy;
 pub(crate) mod levels;
+#[cfg(test)]
+mod manual_tests;
 
 use legacy::Translated;
 
