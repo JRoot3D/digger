@@ -16,6 +16,13 @@ pub(crate) enum Level {
     /// The program ends.
     Error,
     /// Something in the user's input was ignored.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(
+            dead_code,
+            reason = "temporary: the web stub entry point of task 1.2 reports no warnings"
+        )
+    )]
     Warning,
     /// The program carries on with less (no sound, scores not saved).
     Notice,
@@ -48,6 +55,13 @@ pub(crate) fn emit(level: Level, message: impl fmt::Display) {
 /// Prints `line` on standard error as it is, without the prefix: for
 /// reports whose wording another specification fixes, such as a replay's
 /// divergence report (replay-verification spec, "Divergence report").
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        dead_code,
+        reason = "temporary: the web stub entry point verifies nothing"
+    )
+)]
 pub(crate) fn emit_raw(line: &str) {
     let _ = writeln!(std::io::stderr().lock(), "{line}");
 }
@@ -58,6 +72,7 @@ pub(crate) fn error(message: impl fmt::Display) {
 }
 
 /// Prints `digger: warning: <message>` on standard error.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn warning(message: impl fmt::Display) {
     emit(Level::Warning, message);
 }

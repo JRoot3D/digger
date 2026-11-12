@@ -14,8 +14,10 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(not(target_arch = "wasm32"))]
 use directories::ProjectDirs;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::error::AppError;
 
 /// The configuration file's name in the configuration directory.
@@ -36,6 +38,7 @@ pub(crate) struct Paths {
 }
 
 impl Paths {
+    #[cfg(not(target_arch = "wasm32"))]
     /// The paths for this user: each override if given, else the
     /// platform's directory.
     ///

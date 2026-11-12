@@ -14,16 +14,49 @@ name = "digger"
 path = "src/main.rs"
 
 [dependencies]
-clap.workspace = true
 cpal.workspace = true
 digger-core = { path = "../digger-core" }
 digger-sound = { path = "../digger-sound" }
-directories.workspace = true
 gilrs.workspace = true
 serde.workspace = true
 softbuffer.workspace = true
 toml.workspace = true
 winit.workspace = true
+
+# The command line and the per-user directories exist only on the desktop
+# (add-web-build-and-releases, design decision 4).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+clap.workspace = true
+directories.workspace = true
+
+# The browser bindings of the web build (design decisions 3 and 8). The
+# `web-sys` feature list is trimmed to what the code uses in task 3.8.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = [
+  "Blob",
+  "BlobPropertyBag",
+  "Document",
+  "DomTokenList",
+  "Element",
+  "Event",
+  "EventTarget",
+  "File",
+  "FileList",
+  "HtmlAnchorElement",
+  "HtmlCanvasElement",
+  "HtmlElement",
+  "HtmlInputElement",
+  "Location",
+  "Storage",
+  "Url",
+  "VisibilityState",
+  "Window",
+  "console",
+] }
+web-time.workspace = true
 
 [dev-dependencies]
 # The end-to-end input tests drive scenario games (task 5.5).

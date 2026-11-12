@@ -75,7 +75,12 @@ install wasm-bindgen-cli --version <v> --locked` command. CI installs it the
 same way and caches it.
 
 The `web-release` profile inherits `release` with `opt-level = "s"`,
-`lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`.
+`lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = "debuginfo"`.
+It does not use `strip = true`: stripping symbols also removes the
+`target_features` custom section, and `wasm-bindgen` 0.2.130 then warns that
+it "cannot detect which Wasm features are enabled" and generates different
+glue code (found in task 1.2). `strip = "debuginfo"` keeps that section;
+`wasm-bindgen` drops it from its output, so nothing of it is shipped.
 `wasm-opt` is not used: it is a C++ tool outside the Rust toolchain, and the
 budget is expected to be met without it (see Risks).
 
@@ -448,6 +453,24 @@ row and the fact that the hidden-tab pause uses the game's own pause phase.
   `opt-level = "z"`, drop unused `winit`/`cpal` default features. Only if
   those fail, add `wasm-opt` as a pinned release-only step and say so in
   `docs/releasing.md`.
+
+  Baseline measured in task 1.2 (2026-11-12, Rust 1.99, `wasm-bindgen`
+  0.2.130, `web-release` profile, a stub web `main` that runs phase 6's shell
+  in the `winit` window, so the game, presenter, `softbuffer`, `cpal` and
+  `gilrs` are all linked; output of `wasm-bindgen --target web
+  --no-typescript`, gzip at level 9):
+
+  | File | Uncompressed | Gzip -9 |
+  |---|---|---|
+  | `digger_bg.wasm` | 926,703 B (0.88 MiB) | 266,201 B (0.25 MiB) |
+  | `digger.js` | 51,173 B | 8,522 B |
+  | Total | 977,876 B (0.93 MiB) | 274,723 B (0.26 MiB) |
+
+  Both totals are below 75% of the budget (1.5 MiB and 0.75 MiB), so no
+  lever was applied. About a quarter of the `.wasm` is the function-name section that
+  `wasm-bindgen` keeps by default: with `--remove-name-section` the file is
+  696,164 B (232,949 B gzip), an extra lever if the finished web code grows
+  past the limit.
 - [A needed browser call has no `web-sys` binding, tempting use of the
   `#[wasm_bindgen]` macro] → Use `js_sys::Reflect` and `js_sys::Function`,
   which are safe, or put the few lines in `boot.js`.

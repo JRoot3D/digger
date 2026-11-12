@@ -20,6 +20,7 @@ clap = { version = "4.6", features = ["derive"] }
 cpal = "0.18.2"
 directories = "6.0.0"
 gilrs = "0.11.2"
+js-sys = "0.3.107"
 md-5 = "0.11.0"
 miniz_oxide = "0.9.1"
 proptest = "1.12.0"
@@ -28,6 +29,13 @@ serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.11.1"
 softbuffer = "0.4.8"
 toml = "1.2.1"
+# The browser binding layer of the web build. `wasm-bindgen-cli` must be the
+# exact version of `wasm-bindgen` in Cargo.lock (add-web-build-and-releases,
+# design decision 2).
+wasm-bindgen = "0.2.130"
+wasm-bindgen-futures = "0.4.80"
+web-sys = "0.3.107"
+web-time = "1.1.0"
 winit = "0.30.12"
 
 [workspace.lints.rust]
@@ -70,6 +78,22 @@ opt-level = 2
 # full` runs the long recordings quickly; checks stay on, as in dev.
 [profile.xtask]
 inherits = "dev"
+
+# The browser build (add-web-build-and-releases, design decision 2): small
+# rather than fast code, whole-program optimisation, and no unwinding tables,
+# to stay inside the size budget without `wasm-opt`. Used only with
+# `--target wasm32-unknown-unknown`.
+[profile.web-release]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+# Not `strip = true`: stripping symbols also removes the `target_features`
+# custom section that `wasm-bindgen` reads to learn which Wasm features
+# (reference types, multi-value) the module uses (task 1.2 finding,
+# recorded in design.md, decision 2).
+strip = "debuginfo"
 
 [profile.xtask.package.digger-core]
 opt-level = 2

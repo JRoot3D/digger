@@ -434,7 +434,12 @@ pub(super) struct CpalBackend;
 
 /// A playing cpal stream; dropping it stops the device.
 pub(super) struct CpalStream(
-    #[expect(dead_code, reason = "kept only to keep the stream playing")] cpal::Stream,
+    // cpal's browser stream type is never reported unread.
+    #[cfg_attr(
+        not(target_arch = "wasm32"),
+        expect(dead_code, reason = "kept only to keep the stream playing")
+    )]
+    cpal::Stream,
 );
 
 impl fmt::Debug for CpalStream {

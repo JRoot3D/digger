@@ -566,9 +566,14 @@ dependencies = [
  "digger-sound",
  "directories",
  "gilrs",
+ "js-sys",
  "serde",
  "softbuffer",
  "toml",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
  "winit",
 ]
 

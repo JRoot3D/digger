@@ -9,15 +9,28 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::ExitCode;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(not(target_arch = "wasm32"))]
 use digger_core::recording::RecordingKind;
 
 mod cli;
 mod config;
 mod error;
+// The web stub entry point of task 1.2 runs no verification yet (temporary
+// until task 3.8 of add-web-build-and-releases).
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        dead_code,
+        reason = "temporary: the web stub entry point verifies nothing"
+    )
+)]
 mod headless;
 mod input;
 #[cfg(test)]
@@ -29,8 +42,10 @@ mod report;
 mod scores;
 mod shell;
 
+#[cfg(not(target_arch = "wasm32"))]
 use error::AppError;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -43,10 +58,12 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The environment variable that turns on the debug frame counter (design
 /// D15): any value but empty or `0`.
 const FRAME_COUNTER_VAR: &str = "DIGGER_FRAME_COUNTER";
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The program: parse the command line; run a headless verification, or
 /// load the configuration file, resolve the settings, check the level
 /// file, and run the shell in the window until it ends; then save what the
@@ -125,6 +142,7 @@ fn run() -> Result<(), AppError> {
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The end of the single shutdown path, after the platform stopped the
 /// sound and the shell wrote any pending recording (`desktop-app` spec,
 /// clean shutdown): the settings the player changed are saved (a failure
@@ -153,6 +171,7 @@ fn finish(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// A base seed for live games from the system clock: games differ from
 /// run to run, while the simulation itself stays deterministic.
 fn clock_seed() -> u64 {
@@ -162,4 +181,22 @@ fn clock_seed() -> u64 {
             // Seconds and nanoseconds folded into 64 bits.
             since.as_secs().rotate_left(32) ^ u64::from(since.subsec_nanos())
         })
+}
+
+/// A stub entry point for the web build (add-web-build-and-releases, task
+/// 1.2): the shell with default settings, an in-memory score table and no
+/// files, run in the window, so the size baseline links the whole game.
+/// There is no command line, configuration file or data directory in a
+/// browser; task 3.8 replaces this with the web platform's launch.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let shell = shell::Shell::new(config::Settings::default(), shell::Setup::default());
+    let window = platform::WindowOptions {
+        fullscreen: false,
+        scale: config::ScaleMode::default(),
+        frame_counter: false,
+    };
+    if let Err(error) = platform::run(shell, window) {
+        report::error(&error);
+    }
 }
