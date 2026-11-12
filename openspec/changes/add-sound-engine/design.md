@@ -282,7 +282,7 @@ Kept (audible shape of the original):
 | SQ9 | Sound-only LCG with wrapping 32-bit arithmetic, seed 0, never reseeded by stop-all | `NoiseRng` | `noise_first_values` |
 | SQ10 | Switching sound on switches music on | `Synth::apply` | `sound_on_forces_music_on` |
 | SQ11 | Music switched off freezes the tune position | `Synth::tick` | `music_off_freezes_position` |
-| SQ12 | The dirge loops through silent rests after its audible part until stopped | `MusicPlayer` | `dirge_finishes_on_tick_513` |
+| SQ12 | The dirge plays its silent rests after its audible part and then loops to its first note until stopped; its finish is reported once per start | `MusicPlayer` | `dirge_finishes_on_tick_513`, `dirge_event_reported_once` |
 
 Fixed (presentation bugs, with the reason):
 

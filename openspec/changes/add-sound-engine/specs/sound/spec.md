@@ -337,7 +337,7 @@ A music tone's peak amplitude SHALL be (level - 1) / 49 of the full-amplitude pe
 - **THEN** the output is 0 until the next note raises the level
 
 ### Requirement: Death dirge
-The dirge SHALL play even when music is switched off, without changing the music switch. Starting it SHALL end the death effect. Its audible part is the 12 notes before the first rest (50 units): at the normal tempo the first rest loads on tick 513 (7.05 s), at the quick tempo on tick 363. On that tick the engine SHALL report that the dirge has finished. The dirge SHALL then continue silently through its rests until stopped. (research 04 §3.2, §3.3, §5)
+The dirge SHALL play even when music is switched off, without changing the music switch. Starting it SHALL end the death effect. Its audible part is the 12 notes before the first rest (50 units): at the normal tempo the first rest loads on tick 513 (7.05 s), at the quick tempo on tick 363. On that tick the engine SHALL report once that the dirge has finished; it SHALL then go on through its silent rests and loop until stopped. (research 04 §3.2, §3.3, §5)
 
 #### Scenario: Dirge with music off
 - **WHEN** music is switched off and a play-music command for the dirge takes effect
@@ -346,6 +346,10 @@ The dirge SHALL play even when music is switched off, without changing the music
 #### Scenario: Finish report
 - **WHEN** the dirge has been playing at the normal tempo for 513 ticks
 - **THEN** a dirge-finished event is reported once and the output is silent from that tick
+
+#### Scenario: Rests, then the loop
+- **WHEN** the dirge keeps playing at the normal tempo after its finish report
+- **THEN** its 12 rests of 16 units keep it silent for 1932 ticks, it then starts again from its first note, and no second finish event is reported
 
 #### Scenario: Death effect ends
 - **WHEN** the dirge starts on tick 12 of a death effect
@@ -452,7 +456,7 @@ No state of the sound engine SHALL be readable by the simulation, and the simula
 - **THEN** both replays produce the same scores, level, tick count and state checkpoints
 
 ### Requirement: Completion events are informational
-The engine SHALL report two events to the program's frontend: level-done jingle finished (on tick 232 of the jingle, or when a stop-all cuts it short) and dirge finished. Each SHALL be reported once per occurrence. The events SHALL be available for presentation purposes only and SHALL NOT be an input of the simulation. (research 04 §1.5, §5)
+The engine SHALL report two events to the program's frontend: level-done jingle finished (at the end of the jingle's 231st and last tick, so it is available before tick 232, or when a stop-all cuts it short) and dirge finished. Each SHALL be reported once per occurrence. The events SHALL be available for presentation purposes only and SHALL NOT be an input of the simulation. (research 04 §1.5, §5)
 
 #### Scenario: Jingle finished
 - **WHEN** a level-done jingle plays to its end

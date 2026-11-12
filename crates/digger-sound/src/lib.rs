@@ -9,7 +9,9 @@
 //!   engine's [`SoundEvent`]s.
 //! - [`config`]: the [`SoundConfig`] an engine is created with.
 //! - [`music`]: the tune tables, decoded from the embedded asset into
-//!   [`TuneTables`].
+//!   [`TuneTables`], the per-tune [`TuneParams`] and note envelope, and
+//!   the [`MusicPlayer`].
+//! - [`jingle`]: the level-done jingle, [`LevelDone`].
 //! - [`units`]: the newtypes the engine counts in.
 //! - [`voice`]: the single [`Voice`] chosen on each tick, the rules that
 //!   decide whether it is audible, and the [`TickTrace`] a tick reports.
@@ -25,6 +27,7 @@ pub mod command;
 pub mod config;
 pub mod driver;
 pub mod effects;
+pub mod jingle;
 pub mod music;
 pub mod noise;
 pub mod synth;
@@ -36,7 +39,8 @@ pub use command::{
 };
 pub use config::{ConfigError, SoundConfig};
 pub use driver::{ManualDriver, SoundSink};
-pub use music::{Note, TableError, TuneTables};
+pub use jingle::LevelDone;
+pub use music::{MusicPlayer, Note, TableError, TuneParams, TuneTables};
 pub use noise::NoiseRng;
 pub use synth::Synth;
 pub use units::{Divisor, Hertz, Level, SampleRate, SoundTicks, Volume};

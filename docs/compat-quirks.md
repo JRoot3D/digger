@@ -234,8 +234,8 @@ None of these affects the simulation: the sound engine never feeds back
 into the game. They are listed because this file is the project's single
 register (design D14 of `add-sound-engine`). Test names are those of the
 `digger-sound` crate, with the module path for library tests; run one with
-`cargo test -p digger-sound <name>`. Entries SQ6 to SQ12, SF1 to SF5, SF7,
-SF8 and SF10 are added with the tunes, switches, synthesis and drivers.
+`cargo test -p digger-sound <name>`. Entries SQ10, SQ11, SF2 to SF4, SF7,
+SF8 and SF10 are added with the switches, synthesis and drivers.
 
 Kept (the audible shape of the original):
 
@@ -246,7 +246,11 @@ Kept (the audible shape of the original):
 | SQ3 | Effect priority is the original's updater order (the last effect to offer a divisor on a tick is heard), and an effect that offers nothing on a tick lets a lower one through; with both fireballs sounding the one heard alternates by a round-robin turn that is kept across ticks and stop-all (research 04 §1.3, §2) | Presentation, kept | `Effects::tick` and `Turn` (`crates/digger-sound/src/effects/mod.rs`) | `effect_priority_pairs`, `two_fireballs_alternate`, `two_explosions_alternate` (`tests/effects_trace.rs`) |
 | SQ4 | A fire-start for a flying fireball resets its base divisor to 500 but not its two-tick cadence; fire-stop and explode reset both (research 04 §2) | Presentation, kept | `FireSlot` (`crates/digger-sound/src/effects/fire.rs`) | `fire_restart_keeps_cadence` (`tests/effects_trace.rs`) |
 | SQ5 | Gold and death still sound on the tick on which they end, so they last 31 and 51 ticks (research 04 §2) | Presentation, kept | `Step { offer, done }` (`crates/digger-sound/src/effects/mod.rs`), `Gold` and `Death` | `gold_lasts_31_ticks`, `death_lasts_51_ticks` (`tests/effects_trace.rs`) |
+| SQ6 | The music level is carried from note to note and from tune to tune: it is 8 when the engine is created, neither a new tune, stop-music nor stop-all resets it, and the level-done jingle leaves it at 50 (research 04 §1.3, §3.1, §3.3) | Presentation, kept | `MusicPlayer::level` (`crates/digger-sound/src/music/player.rs`); the jingle branch of `Synth::tick` | `level_carries_across_tunes`, `jingle_freezes_effects_and_music` (`tests/music_trace.rs`) |
+| SQ7 | The normal tune releases every note after a fixed 2 units (a staccato), the other tunes one unit before the note's end; a note occupies its duration times the ticks per unit plus one loading tick (research 04 §3.3) | Presentation, kept | `GateRule` and `TuneParams::note_timing` (`crates/digger-sound/src/music/envelope.rs`) | `music::envelope::tests::normal_tune_two_unit_note_levels`, `note_lengths` (`tests/music_trace.rs`) |
+| SQ8 | The quick tempo is 0.7 of the standard ticks per unit, truncated: 4, 2, 7 and 1 for the normal, bonus, dirge and battle tunes instead of 6, 3, 10 and 2; it is kept as an integer table, not computed in floating point (research 04 §3.2) | Presentation, kept | `TuneParams::ticks_per_unit` (`crates/digger-sound/src/music/envelope.rs`) | `music::envelope::tests::tempo_table`, `quick_dirge_finishes_on_tick_363` (`tests/music_trace.rs`) |
 | SQ9 | The fireball noise comes from a sound-only 32-bit LCG (`state * 0x15A4E35 + 1`, wrapping), seeded 0 when the engine is created, drawn only on ticks on which a flight sounds and never reseeded by stop-all; it never touches the game's random numbers (research 04 §2) | Presentation, kept | `NoiseRng` (`crates/digger-sound/src/noise.rs`) | `noise::tests::noise_first_values`, `effects::tests::stop_all_empties_every_slot_but_keeps_the_noise` |
+| SQ12 | The dirge's audible part is the 12 notes before its first rest after the opening one (50 units; the first rest loads on tick 513, or 363 at the quick tempo); it then plays its 12 silent 16-unit rests (1932 ticks) and, unless stopped, starts again from the top, as the original's table loops; the finish is reported once per dirge started (research 04 §3.3, §5) | Presentation, kept | `Playing::load` (`crates/digger-sound/src/music/player.rs`) | `dirge_finishes_on_tick_513`, `dirge_event_reported_once` (`tests/music_trace.rs`) |
 
 Also kept, without an id because the spec states it directly: a start
 command for a running wobble or bonus siren keeps its position (the
@@ -260,8 +264,10 @@ Fixed (presentation bugs, with the reason):
 
 | Id | Upstream behaviour | Port | Isolated in | Test |
 |---|---|---|---|---|
+| SF1 | The level-done jingle is silent until some music has played since start-up (the mode its first oscillator plays in is only set by the music player), for example with music off from the start | The jingle always sounds: it is a voice of its own, independent of the music switch and of whether any tune has played | `jingle::note_voice` (`crates/digger-sound/src/jingle.rs`), the jingle branch of `Synth::tick` | `jingle_audible_before_any_music` (`tests/music_trace.rs`) |
+| SF5 | A dirge requested with music off switches the music flag on and restores it later (at the dirge's first rest or at stop-music), a hidden state that a toggle in between could leave wrong | The dirge plays and advances whatever the music switch says, and never changes the switch: after it, a normal-tune request stays silent while music is off | the `music_on \|\| dirge` rule in `Synth::tick` (`crates/digger-sound/src/synth.rs`) | `dirge_plays_with_music_off` (`tests/music_trace.rs`) |
 | SF6 | The fall effect's on/off phase survives a stop and a restart, so a restarted fall may sound up to 2 ticks (27 ms) earlier or later | A fall-start always begins the same cycle, tone on its third tick at divisor 1000 | `Fall::new` (`crates/digger-sound/src/effects/fall.rs`) | `fall_first_three_tones`, `fall_restart_begins_same_cycle` (`tests/effects_trace.rs`) |
-| SF9 | The emerald step indexes the divisor table without a bounds check | `EmeraldStep` holds only 0 to 7, so the lookup cannot go out of range | `emerald_divisor` (`crates/digger-sound/src/effects/emerald.rs`) | `effects::tests::emerald_step_range` |
+| SF9 | The emerald step indexes the divisor table without a bounds check; the jingle's tone gate divides by the beat frequency, which is a division by zero if the two frequencies were equal | `EmeraldStep` holds only 0 to 7, so the lookup cannot go out of range; the beat is computed from two valid divisors and 0 Hz means "never gated off" | `emerald_divisor` (`crates/digger-sound/src/effects/emerald.rs`), `jingle::beat` (`crates/digger-sound/src/jingle.rs`) | `effects::tests::emerald_step_range`, `jingle::tests::zero_beat_is_ungated` |
 
 ## Not ported
 

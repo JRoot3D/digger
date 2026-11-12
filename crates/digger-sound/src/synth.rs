@@ -5,16 +5,15 @@
 //! with [`Synth::apply`], in the order they were sent, and then calls
 //! [`Synth::tick`]. Nothing here allocates or fails.
 
-use crate::command::{Input, SoundEvent};
+use crate::command::{Input, SoundCommand, SoundEvent, Tune};
 use crate::config::SoundConfig;
 use crate::effects::{Effects, EffectsTick};
-use crate::music::TuneTables;
+use crate::jingle::LevelDone;
+use crate::music::{MusicPlayer, MusicTick, TuneTables};
 use crate::units::Level;
 use crate::voice::{TickTrace, Voice};
 
-/// The music level the engine starts with (kept quirk SQ6; research 04
-/// §1.3).
-pub const INITIAL_MUSIC_LEVEL: Level = Level::saturating(8);
+pub use crate::music::INITIAL_MUSIC_LEVEL;
 
 /// Events produced by ticks and not yet collected by the driver.
 ///
@@ -32,7 +31,12 @@ pub struct Synth {
     config: SoundConfig,
     tables: TuneTables,
     effects: Effects,
-    music_level: Level,
+    music: MusicPlayer,
+    /// The music switch. Tunes other than the dirge advance and sound only
+    /// while it is on (design D4, fixed quirk SF5).
+    music_on: bool,
+    /// The level-done jingle, while it plays.
+    jingle: Option<LevelDone>,
     events: PendingEvents,
 }
 
@@ -44,7 +48,9 @@ impl Synth {
             config,
             tables,
             effects: Effects::new(),
-            music_level: INITIAL_MUSIC_LEVEL,
+            music: MusicPlayer::new(),
+            music_on: config.music_on,
+            jingle: None,
             events: PendingEvents::default(),
         }
     }
@@ -63,27 +69,86 @@ impl Synth {
     /// [`Synth::tick`], before anything advances on that tick.
     pub fn apply(&mut self, input: Input) {
         match input {
-            Input::Game(command) => self.effects.apply(command),
-            // The tunes, the jingle, pause and the controls are added by
-            // the later task groups; until then they are ignored.
+            Input::Game(command) => self.apply_command(command),
+            // Pause and the controls are added by the next task group;
+            // until then they are ignored.
             Input::Control(_) => {}
         }
     }
 
+    /// Applies one command from the simulation.
+    fn apply_command(&mut self, command: SoundCommand) {
+        match command {
+            SoundCommand::StopAll => {
+                self.effects.stop_all();
+                self.music.stop();
+                if self.jingle.take().is_some() {
+                    self.events.level_done = true;
+                }
+            }
+            SoundCommand::Music { tune, tempo } => {
+                self.music.play(tune, tempo);
+                if tune == Tune::Dirge {
+                    self.effects.stop_death();
+                }
+            }
+            SoundCommand::MusicOff => self.music.stop(),
+            // A new jingle replaces one that is still playing.
+            SoundCommand::LevelDone => self.jingle = Some(LevelDone::new()),
+            command => self.effects.apply(command),
+        }
+    }
+
     /// Advances the engine by one tick and reports what sounds on it.
+    ///
+    /// While the level-done jingle plays, it alone advances and sounds:
+    /// effects and music are frozen, and the music level is set to 50 (kept
+    /// quirk SQ6). Otherwise the tune advances (while music is on, or
+    /// always for the dirge), then the effects; any effect offer displaces
+    /// the music for this tick, and the death effect's first tick stops
+    /// the tune.
     pub fn tick(&mut self) -> TickTrace {
+        if let Some(jingle) = self.jingle.as_mut() {
+            let step = jingle.tick();
+            self.music.set_level(Level::MAX);
+            if step.done {
+                self.jingle = None;
+                self.events.level_done = true;
+            }
+            return TickTrace {
+                voice: step.voice,
+                effect_offer: None,
+                music_level: self.music.level(),
+            };
+        }
+
+        let music = if self.music_on || self.music.tune() == Some(Tune::Dirge) {
+            self.music.tick(&self.tables)
+        } else {
+            MusicTick::default()
+        };
+        self.events.dirge |= music.dirge_finished;
+
         let EffectsTick {
             offer: effect_offer,
             stop_music,
         } = self.effects.tick();
-        // The death effect stops the tune on its first tick; the music
-        // player that acts on this is added with the tunes (task group 5).
-        let _ = stop_music;
-        let voice = effect_offer.map_or(Voice::Silent, Voice::Effect);
+        if stop_music {
+            self.music.stop();
+        }
+
+        let voice = match (effect_offer, music.sounding) {
+            (Some(divisor), _) => Voice::Effect(divisor),
+            (None, Some(divisor)) => Voice::Music {
+                divisor,
+                level: self.music.level(),
+            },
+            (None, None) => Voice::Silent,
+        };
         TickTrace {
             voice,
             effect_offer,
-            music_level: self.music_level,
+            music_level: self.music.level(),
         }
     }
 
