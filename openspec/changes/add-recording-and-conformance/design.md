@@ -118,8 +118,12 @@ dependency, and slower on the 240 KB bodies).
   slot, optional end record, and a `truncated` flag. Research 05 §5.2 notes
   this is equivalent to upstream's lazy reader except that a bad record fails
   before play starts; the specs accept that.
-- `DrfRecording` holds the header, the eight maps and the filtered body.
-  `DrfCursor { pos, run: Option<(Record, remaining)> }` reads it during play.
+- `DrfRecording` holds the header, the eight maps and the body bytes.
+  `DrfCursor { pos, run: Option<(Record, remaining)> }` reads it during play,
+  skipping every byte below 0x20 as it reads; this is the same as reading a
+  filtered copy, and lets errors give the byte offset in the file. A
+  separate `OutOfStep` value (run repeats pending, or no `EOL`) is returned
+  by `end_round` for the playback to report with its tick number.
   The cursor is per-playback state, replacing upstream's never-reset static
   `rlleft`.
 - Control runs are stored as `(value, count)` pairs and consumed by

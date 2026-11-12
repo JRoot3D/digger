@@ -18,3 +18,12 @@
 //! - `naming`: upstream's default file name for a saved recording.
 //!
 //! The format grammars are documented in `docs/recording-formats.md`.
+
+mod drf;
+mod error;
+mod header;
+
+pub use drf::{DRF_PLANS, DrfCursor, DrfRecord, DrfRecording, DrfStep, OutOfStep};
+
+pub use error::{DrfProblem, HeaderProblem, Location, RecordingError};
+pub use header::{Header, LAST_UNSUPPORTED_DATE, RecordingKind, detect_kind};
