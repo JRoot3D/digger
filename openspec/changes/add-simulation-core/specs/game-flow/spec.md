@@ -141,7 +141,7 @@ If a round ends with all diggers dead and the level not complete, each digger in
 - **THEN** player 1 plays the next round without a redraw or announcement
 
 ### Requirement: Game over
-When a round ends with all diggers dead, no lives left among the current player's diggers, and the mode is not gauntlet, that player's game is over: a 0-point scoring call SHALL be made for each score from the first up to the number of diggers (in an alternating game always the first score, whoever's turn it is), the frame's outcome SHALL report the player and final score, and `GAME OVER` SHALL be shown at (104,0) in text colour 3 for 50 frames without ticks. The whole game finishes when, after the notice, the current player has no lives and the turn cannot pass; a bonus life awarded by the 0-point calls lets the same player play on. (research 01 §3.2, §6.3)
+When a round ends with all diggers dead, no lives left among the current player's diggers, and the mode is not gauntlet, that player's game is over: a 0-point scoring call SHALL be made for each score from the first up to the number of diggers (in an alternating game always the first score, whoever's turn it is), the frame's outcome SHALL report the player and final score, and `GAME OVER` SHALL be shown at (104,0) in text colour 3 for 50 frames without ticks. (research 01 §3.2, §6.3)
 
 #### Scenario: One-player game over
 - **WHEN** the digger of a one-player game dies with 1 life
@@ -150,6 +150,13 @@ When a round ends with all diggers dead, no lives left among the current player'
 #### Scenario: Alternating game continues
 - **WHEN** player 1 loses their last life while player 2 has lives
 - **THEN** player 1's final score is reported, `GAME OVER` is shown for 50 frames, and player 2's turn follows
+
+### Requirement: End of the game
+The whole game SHALL finish when, after the `GAME OVER` notice, the current player has no lives and the turn cannot pass. A bonus life awarded by the game over's 0-point scoring calls SHALL let the same player play on after the notice. (research 01 §3.2, §6.3)
+
+#### Scenario: Bonus life from the game-over calls
+- **WHEN** a player's last life is lost with a score whose bonus life is still pending
+- **THEN** the game over's 0-point calls award it, `GAME OVER` is shown and the player's result reported, and the same player then plays on with that life
 
 ### Requirement: Gauntlet clock
 The gauntlet clock SHALL start at duration × 1,193,181 units as an unsigned 32-bit value. At the start of each tick's digger update, in main phase and wind-down alike, the clock display is redrawn, the game is marked timed out if the clock is below 80,000, and 80,000 is subtracted with wrap-around. The clock therefore counts ticks, not real time, and stops whenever ticks stop. (research 01 §7.4)
@@ -228,7 +235,7 @@ At the start of every round the generator state SHALL be set to that round's see
 - **THEN** round 0 is seeded with 0x89025CC1
 
 ### Requirement: Externally supplied seeds and samples
-The game SHALL allow an outside party to observe each round's seed and each movement sample as it is consumed, and to replace them: a supplied seed is used instead of the derived one, and a supplied direction and fire state are used instead of the resolved controls for that movement sample. With the same supplied values the game SHALL behave exactly as the game in which they were observed, provided the fire control was not held on a tick in which a digger took no movement sample (a push pause, a dead or hidden digger): the fire state read on such a tick belongs to no sample, still comes from that tick's controls and takes effect on the next tick, as in the original, whose DRF playback reads it from the live controls. (research 01 §7.2, research 05 §1.6, §1.7, §4.3)
+The game SHALL let an outside party observe each round's seed and each movement sample as it is consumed, and replace them: a supplied seed replaces the derived one, and a supplied direction and fire state replace the resolved controls for that sample. With the same supplied values the game SHALL behave exactly as the game in which they were observed, except that fire held on a tick without a movement sample still comes from that tick's controls. (research 01 §7.2, research 05 §1.6, §1.7, §4.3)
 
 #### Scenario: Re-running from observed values
 - **WHEN** a game's round seeds and movement samples are observed and a second game with the same configuration is fed those values instead of live controls
@@ -236,7 +243,7 @@ The game SHALL allow an outside party to observe each round's seed and each move
 
 #### Scenario: Fire held during a push pause
 - **WHEN** the fire control is held only on the tick of a push pause, in which the digger takes no movement sample
-- **THEN** the digger fires on the next tick, so a second game fed only the observed seeds and samples does not fire there
+- **THEN** the digger fires on the next tick from the controls, as the original's DRF playback reads them, so a second game fed only the observed seeds and samples does not fire there
 
 ### Requirement: Pause
 A pause request on a main-phase tick frame SHALL take effect after that tick completes: the pause cue is emitted, the top line is cleared and `PRESS ANY KEY` is shown at (80,0) in text colour 1. While paused, frames are waiting frames and nothing in the simulation changes, including the gauntlet clock. Pause requests on frames that are not main-phase ticks SHALL be ignored. (research 01 §3.3)

@@ -217,11 +217,14 @@ After being drawn, a flying fireball SHALL: kill every monster it overlaps, scor
 - **THEN** it starts exploding
 
 ### Requirement: Fireball explosion
-An exploding fireball SHALL show explosion frames 1, 2 and 3 on the three ticks after it starts exploding and be removed on the fourth, when the fire cue for it stops and its owner's recharge begins. The explode cue SHALL be emitted when frame 1 is drawn. While exploding it remains an 8×8 obstacle that makes other fireballs explode, but being hit again does not restart its explosion: a fireball's hit makes only flying fireballs explode, and an exploding fireball tests no hits of its own. All fireballs SHALL be removed at the end of a round. (research 02 §3.6)
+An exploding fireball SHALL show explosion frames 1, 2 and 3 on the three ticks after it starts exploding and be removed on the fourth, when the fire cue for it stops and its owner's recharge begins. The explode cue SHALL be emitted when frame 1 is drawn. All fireballs SHALL be removed at the end of a round. (research 02 §3.6)
 
 #### Scenario: Explosion length
 - **WHEN** a fireball starts exploding on tick E
 - **THEN** explosion frames are drawn on ticks E+1, E+2 and E+3, and on tick E+4 the fireball is gone
+
+### Requirement: Exploding fireball as an obstacle
+While exploding, a fireball SHALL remain an 8×8 obstacle that makes other fireballs explode, but being hit again SHALL NOT restart its explosion: a fireball's hit makes only flying fireballs explode, and an exploding fireball tests no hits of its own. (research 02 §3.6)
 
 #### Scenario: Exploding fireball hit again
 - **WHEN** a flying fireball moves onto another digger's fireball that is exploding

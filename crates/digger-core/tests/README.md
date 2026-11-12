@@ -112,7 +112,7 @@ parentheses; `src/...` files hold unit tests in their `tests` module.
 | What a fireball hits | Shooting a bag | `fireball_explodes_on_bag_without_harming_it` (`tests/digger.rs`) |
 | What a fireball hits | Leaving the playfield | `fireball_up_explodes_at_y_11` (`tests/digger.rs`) |
 | Fireball explosion | Explosion length | `explosion_lasts_three_frames_then_removed` (`tests/digger.rs`) |
-| Fireball explosion | Exploding fireball hit again | `exploding_fireball_hit_again_is_not_restarted` (`src/sim/fireball.rs`), `two_fireballs_explode_each_other` (`tests/digger.rs`) |
+| Exploding fireball as an obstacle | Exploding fireball hit again | `exploding_fireball_hit_again_is_not_restarted` (`src/sim/fireball.rs`), `two_fireballs_explode_each_other` (`tests/digger.rs`) |
 | Who can be killed | Digger walks into a monster | `quirk_q26_digger_walking_into_monster_dies_on_monsters_move` (`tests/monsters.rs`) |
 | Who can be killed | Crushed digger hit by a monster | `quirk_q20_carried_digger_can_be_rekilled` (`src/sim/digger.rs`) |
 | Death by monster or fireball | Death arc | `death_arc_heights_177_175_174_174_175_177_180` (`tests/digger.rs`) |
@@ -198,6 +198,7 @@ parentheses; `src/...` files hold unit tests in their `tests` module.
 | Landing | Landing on another bag | `quirk_q34_landing_bag_removes_overlapped_bag` (`tests/gold_bags.rs`) |
 | Breaking after two or more cells | One-cell drop | `one_cell_drop_stays_intact` (`tests/gold_bags.rs`) |
 | Breaking after two or more cells | Two-cell drop | `two_cell_drop_breaks` (`tests/gold_bags.rs`) |
+| Gold opening and expiry | Opening frames | `penalty_table_for_monsters_and_bags_bag_sites` (`tests/gold_bags.rs`), `two_cell_drop_breaks` (`tests/gold_bags.rs`) |
 | Gold lifetime | Lifetime table | `gold_lifetime_table_140_to_50` (`src/sim/bags.rs`) |
 | Gold lifetime | Level 1 gold | `level_1_gold_disappears_139_ticks_after_landing` (`tests/gold_bags.rs`) |
 | Gold lifetime | First level of a one-player game | `quirk_q40_one_player_gold_lifetime_is_150_on_the_first_level` (`tests/gold_bags.rs`) |
@@ -219,7 +220,8 @@ parentheses; `src/...` files hold unit tests in their `tests` module.
 | Crushing | Bag falls on a digger | `falling_bag_kills_digger_below` (`tests/gold_bags.rs`) |
 | Crushing | Digger above the bag | `digger_above_falling_bag_is_safe` (`tests/gold_bags.rs`) |
 | Moving-bag count for the wind-down | Wobbling bag delays the round end | `wobbling_bag_extends_wind_down` (`tests/game_flow.rs`) |
-| Bag sound cues | Bag lands | `fall_stop_emitted_when_last_falling_bag_lands` (`src/sim/bags.rs`) |
+| Bag sound cues | Wobble and fall cues | `first_fall_step_16_ticks_after_wobble_starts` (`tests/gold_bags.rs`) |
+| Stopping the bag cues | Bag lands | `fall_stop_emitted_when_last_falling_bag_lands` (`src/sim/bags.rs`) |
 
 ### scoring
 
@@ -279,6 +281,7 @@ parentheses; `src/...` files hold unit tests in their `tests` module.
 | Death outcome and passing the turn | Other player out of lives | `same_player_continues_when_other_is_out` (`tests/game_flow.rs`) |
 | Game over | One-player game over | `one_player_game_over_after_last_life` (`tests/game_flow.rs`) |
 | Game over | Alternating game continues | `alternating_game_continues_after_player_1_is_out` (`tests/game_flow.rs`) |
+| End of the game | Bonus life from the game-over calls | `quirk_q39_zero_point_call_awards_pending_bonus` (`tests/game_flow.rs`) |
 | Gauntlet clock | Two-minute gauntlet | `quirk_q13_120s_gauntlet_times_out_on_tick_1790_clock_4294949016` (`tests/game_flow.rs`) |
 | Gauntlet clock | Clock runs while dying | `gauntlet_clock_runs_while_dying` (`tests/game_flow.rs`) |
 | Gauntlet time-out | Time-out during the main phase | `time_up_shown_for_50_frames_then_finished` (`tests/game_flow.rs`) |

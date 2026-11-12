@@ -75,8 +75,15 @@ A falling bag SHALL count each cell corner it reaches after leaving its starting
 - **WHEN** a bag falls two cells and lands on tick T
 - **THEN** it is gold from tick T, and the break cue is emitted with the first gold frame on tick T+1
 
+### Requirement: Gold opening and expiry
+Gold SHALL show three opening frames on the 1st, 3rd and 5th ticks after landing and SHALL disappear when its age counter, 1 on the landing tick and rising by 1 per tick, reaches the gold lifetime. (research 02 §5.2)
+
+#### Scenario: Opening frames
+- **WHEN** a bag lands as gold on tick T
+- **THEN** its opening frames are drawn on ticks T+1, T+3 and T+5
+
 ### Requirement: Gold lifetime
-Gold SHALL show three opening frames on the 1st, 3rd and 5th ticks after landing and SHALL disappear when its age counter, 1 on the landing tick and rising by 1 per tick, reaches the gold lifetime. The gold lifetime SHALL be one value for the whole game, set to 150 − 10 × the difficulty index each time a player's level is set up, from that player's level; the level 0 placeholder of the second player in a game without alternating players counts as difficulty 0. At game start the first player's level is set up before the second's, so in a one-player game the first level's gold lifetime is 150; from the first completed level on it follows the level reached. (research 02 §5.1, §5.2, §7; `initbags` sets one global from the current player's level)
+The gold lifetime SHALL be one value for the whole game, set to 150 − 10 × the difficulty index each time a player's level is set up, from that player's level; the level 0 placeholder of the second player in a game without alternating players counts as difficulty 0. At game start the second player's level is set up last, so a one-player game's first level has a lifetime of 150. (research 02 §5.1, §7; `initbags` sets one global from the current player's level)
 
 #### Scenario: Lifetime table
 - **WHEN** the difficulty index is 1, 2, 3, 4, 5, 6, 7, 8, 9 or 10
@@ -193,7 +200,14 @@ A bag SHALL count as "still moving" for the purpose of ending a round while it e
 - **THEN** the wind-down continues at least until that bag has landed and, if it broke, its gold is 10 ticks old
 
 ### Requirement: Bag sound cues
-The fall cue SHALL be emitted when a bag starts falling, the wobble cue on each wobble redraw, the break cue with the first gold frame, and the gold cue when a digger collects gold. After all bags have been updated on a tick, the fall cue SHALL be stopped unless a bag is falling and the wobble cue stopped unless a bag is wobbling without falling; a stop is sent only while the cue runs, so a quiet field sends none. Both SHALL be stopped at the end of a round, which stops all sound. (research 02 §5.2, §5.3, §5.6, research 04 §2)
+The fall cue SHALL be emitted when a bag starts falling, the wobble cue on each wobble redraw, the break cue with the first gold frame, and the gold cue when a digger collects gold. (research 02 §5.2, §5.3, §5.6, research 04 §2)
+
+#### Scenario: Wobble and fall cues
+- **WHEN** a bag wobbles and then starts falling
+- **THEN** the wobble cue is emitted on each wobble redraw and the fall cue when the fall begins
+
+### Requirement: Stopping the bag cues
+After all bags have been updated on a tick, the fall cue SHALL be stopped unless a bag is falling and the wobble cue stopped unless a bag is wobbling without falling; a stop is sent only while the cue runs, so a quiet field sends none. Both SHALL be stopped at the end of a round, which stops all sound. (research 02 §5.2, §5.3, §5.6, research 04 §2)
 
 #### Scenario: Bag lands
 - **WHEN** the only falling bag lands

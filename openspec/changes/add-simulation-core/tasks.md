@@ -151,7 +151,7 @@ Work from the specs in `specs/` and from `design.md` (decision numbers D1–D14,
 - [x] 15.4 Add `quirks_doc_lists_every_quirk_test`, which checks that each id Q01–Q40 in `docs/compat-quirks.md` names an existing test and that every `quirk_q*` test is listed; verify it passes and that no "Implemented in" or "Test" cell is empty
 - [x] 15.5 Check spec coverage: for each `#### Scenario:` in the six spec files confirm a test exists and record the mapping as a table in `crates/digger-core/tests/README.md`; verify the table has no empty row
 - [x] 15.6 Review the public interface against design D2 and D8 (names, rustdoc on every public item, `#[non_exhaustive]` on `SoundCommand` and error enums) and update `docs/porting-plan.md` only if a name in its example differs; verify `cargo doc -p digger-core --no-deps` has no warnings
-- [ ] 15.7 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace` and `openspec validate add-simulation-core --strict`; verify all pass
+- [x] 15.7 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace` and `openspec validate add-simulation-core --strict`; verify all pass
 
 ## Workflow follow-up
 
