@@ -51,6 +51,33 @@ jobs:
       - name: cargo xtask ci
         run: cargo xtask ci
 
+  # The full replay conformance suite: all 50 upstream recordings, in an
+  # optimised build (openspec/changes/add-recording-and-conformance/design.md,
+  # D11; replay-verification spec, "Suite tiers and run time"). The quick
+  # tier, codec, hash, malformed-input and isolation tests already run in
+  # every `check` job through `cargo test --workspace`.
+  conformance:
+    name: conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Conformance tests (quick and full tier)
+        run: cargo test --release -p digger-core --test conformance -- --include-ignored
+      - name: Conformance report (full tier)
+        # The `xtask` profile optimises the simulation (Cargo.toml).
+        run: cargo xtask conformance --tier full
+      - name: Upload the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-report
+          path: target/conformance/report.md
+          if-no-files-found: warn
+
   deny:
     name: deny
     runs-on: ubuntu-latest

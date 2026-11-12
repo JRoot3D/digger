@@ -53,3 +53,14 @@ disallowed_macros = "allow"
 # build (design D11 of add-recording-and-conformance).
 [profile.test.package.digger-core]
 opt-level = 2
+
+# `cargo xtask` builds into its own profile (target/xtask/), so that the
+# `cargo test` run by `cargo xtask ci` never has to replace the running
+# xtask executable, which Windows refuses ("Access is denied"). The
+# simulation is optimised here too, so `cargo xtask conformance --tier
+# full` runs the long recordings quickly; checks stay on, as in dev.
+[profile.xtask]
+inherits = "dev"
+
+[profile.xtask.package.digger-core]
+opt-level = 2

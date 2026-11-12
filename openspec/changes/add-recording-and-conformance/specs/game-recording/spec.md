@@ -127,10 +127,8 @@ The DRF body SHALL be read as one character stream in which every byte below
 optional initials, an 8-digit hexadecimal seed (either case), any number of
 runs, then `EOL`. A run is one of `s r u l d` (stop, right, up, left, down
 without fire) or `S R U L D` (the same with fire), optionally followed by a
-decimal repeat count. `EOG` may follow the last `EOL`. Whatever follows the
-last round is a trailer that playback ignores: upstream's recordings hold
-initials there as `*abc`, twice (`2test01.drf`) or without the `*`
-(`p1092525.drf`, `s1058800.drf`). (research 05 §4.1, §4.2)
+decimal repeat count. `EOG` may follow the last `EOL`. (research 05 §4.1,
+§4.2)
 
 #### Scenario: Grammar
 - **WHEN** a DRF body is parsed
@@ -157,6 +155,16 @@ count  := decimal digits          ; repeat count; 0 and 1 both mean once
 #### Scenario: Initials before a seed
 - **WHEN** the stream at the start of a round is `*mmm0001E240`
 - **THEN** the four characters `*mmm` are skipped and the round's seed is 0x0001E240
+
+### Requirement: DRF trailer ignored
+Whatever follows the last round of a DRF body (and its `EOG`, if any) SHALL
+be a trailer that playback ignores. Upstream's recordings hold the player's
+initials there as `*abc`, but also twice (`2test01.drf`) or without the `*`
+(`p1092525.drf`, `s1058800.drf`). (research 05 §4.1)
+
+#### Scenario: Unusual trailers
+- **WHEN** the DRFs whose bodies end in `*max*max`, `PLA` and `STO` after their last `EOL` are played back
+- **THEN** each plays to its end and the trailer has no effect on the result
 
 ### Requirement: DRF playback supplies one record per control read
 During DRF playback the system SHALL take one record from the stream each

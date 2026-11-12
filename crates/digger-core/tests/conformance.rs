@@ -255,6 +255,22 @@ fn conformance_list_matches_corpus() {
     println!("pending: {pending:?}");
 }
 
+/// The definition of done of `add-recording-and-conformance` (task 13.1):
+/// all 50 upstream recordings pass, 18 in the quick tier and 32 in the
+/// full tier, and none is left pending.
+#[test]
+fn no_pending_recordings() {
+    let pending: Vec<&str> = RECORDINGS
+        .iter()
+        .filter(|e| e.state == State::Pending)
+        .map(|e| e.file)
+        .collect();
+    assert!(pending.is_empty(), "pending recordings: {pending:?}");
+    let quick = RECORDINGS.iter().filter(|e| e.tier == Tier::Quick).count();
+    let full = RECORDINGS.iter().filter(|e| e.tier == Tier::Full).count();
+    assert_eq!((quick, full), (18, 32), "quick and full-tier entries");
+}
+
 #[test]
 fn tracking_table_lists_every_recording() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/conformance.md");

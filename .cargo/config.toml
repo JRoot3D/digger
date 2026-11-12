@@ -1,2 +1,3 @@
 [alias]
-xtask = "run --package xtask --"
+# The `xtask` profile is defined in the workspace manifest.
+xtask = "run --profile xtask --package xtask --"
