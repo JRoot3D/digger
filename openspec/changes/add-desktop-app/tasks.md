@@ -4,11 +4,11 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 1. Interfaces and crate scaffolding
 
-- [ ] 1.1 Compare design.md D3 (points 1–6) with the public interfaces of `digger-core` and `digger-sound` as merged; write any difference and its consequence into design.md D3. Verify: D3 names the real types and methods, and `cargo doc -p digger-core -p digger-sound` builds.
-- [ ] 1.2 Add `winit` 0.30, `softbuffer` 0.4, `cpal` 0.18, `gilrs` 0.11, `clap` 4 (derive), `serde`, `toml`, `directories` to `crates/digger/Cargo.toml`. Verify: `cargo build -p digger` succeeds and `cargo deny check` passes. Add the ALSA and udev development packages to the Linux CI job; CI builds the crate on Linux, Windows and macOS.
-- [ ] 1.3 Create the module tree of design.md D1 with empty modules and `#![forbid(unsafe_code)]`. Verify: `cargo build -p digger` and the new test `platform_imports_are_confined` (no `winit|softbuffer|cpal|gilrs` import outside `src/platform/`) pass.
-- [ ] 1.4 Add the `report` helpers (`error`, `notice`, `warning` with the `digger:` prefix) and `AppError` with `exit_code()` (64, 66, 69, 78, 1–4). Verify: unit test `app_error_exit_codes` passes.
-- [ ] 1.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`; commit `chore(digger): scaffold desktop frontend modules`.
+- [x] 1.1 Compare design.md D3 (points 1–6) with the public interfaces of `digger-core` and `digger-sound` as merged; write any difference and its consequence into design.md D3. Verify: D3 names the real types and methods, and `cargo doc -p digger-core -p digger-sound` builds.
+- [x] 1.2 Add `winit` 0.30, `softbuffer` 0.4, `cpal` 0.18, `gilrs` 0.11, `clap` 4 (derive), `serde`, `toml`, `directories` to `crates/digger/Cargo.toml`. Verify: `cargo build -p digger` succeeds and `cargo deny check` passes. Add the ALSA and udev development packages to the Linux CI job; CI builds the crate on Linux, Windows and macOS.
+- [x] 1.3 Create the module tree of design.md D1 with empty modules and `#![forbid(unsafe_code)]`. Verify: `cargo build -p digger` and the new test `platform_imports_are_confined` (no `winit|softbuffer|cpal|gilrs` import outside `src/platform/`) pass.
+- [x] 1.4 Add the `report` helpers (`error`, `notice`, `warning` with the `digger:` prefix) and `AppError` with `exit_code()` (64, 66, 69, 78, 1–4). Verify: unit test `app_error_exit_codes` passes.
+- [x] 1.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --workspace`; commit `chore(digger): scaffold desktop frontend modules`.
 
 ## 2. Settings model and configuration file
 
