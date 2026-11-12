@@ -28,10 +28,10 @@ standard error every 10 seconds.
 
 | # | Check | Expected | Linux X11 | Linux Wayland | Windows | macOS |
 |---|---|---|---|---|---|---|
-| W1 | Window title | Start `digger`. The title bar reads `D I G G E R`. | — | — | — | — |
+| W1 | Window title | Start `digger`. The title bar reads `D I G G E R`. | pass (Xvfb 21.1, no window manager, scripted 2026-11-12: window name read with xdotool) | — | — | — |
 | W2 | Icon | The window (title bar, task bar or dock, Alt+Tab switcher) shows the Digger icon where the platform has per-window icons. Wayland and macOS have none: note `n/a` if nothing is shown. | — | — | — | — |
-| W3 | Default size | The picture area is 1280×800 physical pixels, picture at scale 2 with no black border. | — | — | — | — |
-| W4 | Resize and letterboxing, `integer` | Resize to about 1920×1080: picture 1280×800 centred, black bars. Resize to 1300×1300: picture 1280×800 at offset (10, 250). Try to shrink below 640×400: the window stops at 640×400. No smoothing: pixels are sharp squares at every size. | — | — | — | — |
+| W3 | Default size | The picture area is 1280×800 physical pixels, picture at scale 2 with no black border. | pass (Xvfb 21.1, no window manager, scripted 2026-11-12: window geometry 1280×800) | — | — | — |
+| W4 | Resize and letterboxing, `integer` | Resize to about 1920×1080: picture 1280×800 centred, black bars. Resize to 1300×1300: picture 1280×800 at offset (10, 250). Try to shrink below 640×400: the window stops at 640×400. No smoothing: pixels are sharp squares at every size. | partial (Xvfb 21.1, no window manager, scripted 2026-11-12: at 1300×1300 the picture is 1280×800 at offset (10, 250); the 640×400 minimum is enforced by a window manager and could not be checked; to be watched on a desktop) | — | — | — |
 | W5 | Scale modes `fit` and `stretch` | `--scale fit` at about 1920×1080: 1728×1080 with 96 black columns each side. `--scale stretch`: the picture fills the window. | — | — | — | — |
 | W6 | Alt+Enter and F11 | On the title screen, in a game and during a pause: Alt+Enter and Alt+keypad Enter switch to borderless fullscreen on the current monitor and back; F11 does the same. The title screen keeps running and no game starts; a pause stays paused. Back in the window, the previous size and position return. | — | — | — | — |
 | W7 | Pointer hidden in fullscreen | In fullscreen the mouse pointer is not visible over the picture; back in the window it is visible again. | — | — | — | — |
@@ -76,14 +76,42 @@ standard error every 10 seconds.
 
 | # | Check | Expected | Linux X11 | Linux Wayland | Windows | macOS |
 |---|---|---|---|---|---|---|
-| R1 | `--verify` status 3 by pressing F10 | `digger --verify tests/recordings/data/sobodig.drf` (in the window): press F10 halfway. The program ends with exit status 3 and prints no result line. | — | — | — | — |
+| R1 | `--verify` status 3 by pressing F10 | `digger --verify tests/recordings/data/sobodig.drf` (in the window): press F10 halfway. The program ends with exit status 3 and prints no result line. | pass (Xvfb 21.1, no window manager, scripted 2026-11-12: F10 sent after 3 s, exit status 3, nothing on standard output) | — | — | — |
 | R2 | Taking over a playback | `digger --play tests/recordings/data/sobodig.drf --take-over-at 200`: until tick 200 (16 s at the default speed) the recording drives Digger and the arrow keys do nothing; after it, the arrow keys and F1 drive Digger. At the game's end no initials are asked for. | — | — | — | — |
 
 ## Results
 
 | Platform | Run by, date, machine | Open failures |
 |---|---|---|
-| Linux X11 | — | — |
+| Linux X11 | Only the scripted Xvfb cells above (no window manager, no audio device, no gamepad); the full run on an X11 desktop is still to do | — |
 | Linux Wayland | — | — |
 | Windows | — | — |
 | macOS | — | — |
+
+## Recorded games per mode (task 14.5)
+
+One full game per mode was played in the game window and recorded with
+`--record <name>.edrf`, then checked with `digger --verify <name>.edrf
+--headless`. Run of 2026-11-12 on Linux under Xvfb (no window manager, no
+audio device), `--speed 10`, with a score file whose tables were full so
+that no initials entry interrupted the script; the keys were synthetic
+key presses (random arrow keys and F1, sent with `xdotool`) delivered
+through the X server to the window, not typed by a person. Each recording
+ended with the end of the game (all lives lost, or the gauntlet clock at
+zero), carries no quit record, and verified with exit status 0:
+
+| Mode | Command-line mode options | Result line |
+|---|---|---|
+| One player | — | `score=675 level=1 ticks=773` |
+| Two players | `--players 2` | `score=150 score2=375 level=1 ticks=1292` |
+| Two players simultaneous | `--two-diggers` | `score=250 score2=0 level=1 ticks=807` |
+| Gauntlet | `--gauntlet=30` | `score=150 level=1 ticks=448` |
+| Two-player gauntlet | `--two-diggers --gauntlet=30` | `score=325 score2=125 level=1 ticks=448` |
+
+Observation to re-check on a desktop (checklist rows W6, C1 and P1 cover
+the same paths): in three of eight scripted runs under Xvfb without a window
+manager, the arrow keys sent after the game started never reached the game:
+the recording holds no movement, only 84 to 130 ticks of play although 10
+to 41 seconds passed, and ends with a quit record. Those runs were discarded and
+repeated. Keyboard focus without a window manager is the likely cause; it
+has not been seen with a person at the keyboard.

@@ -118,5 +118,5 @@ Conventions for every group: work from the specs in this change and `docs/resear
 - [x] 14.2 Write `docs/testing/desktop-checklist.md` from design.md D15 with one results column per platform. Verify: the file lists every manual item of D15.
 - [ ] 14.3 Run the checklist on Linux X11 and Linux Wayland; fix or file what fails. Verify: both columns filled in, no open failures.
 - [ ] 14.4 Run the checklist on Windows and on macOS. Verify: both columns filled in, no open failures.
-- [ ] 14.5 Play one full recorded game per mode (one player, two players, two simultaneous, gauntlet, two-player gauntlet), then verify each recording with `digger --verify <file> --headless`. Verify: every run prints its result line and exits 0.
-- [ ] 14.6 Run `openspec validate add-desktop-app --strict`, then the three workspace checks; commit `docs: user manual and desktop test checklist`.
+- [x] 14.5 Play one full recorded game per mode (one player, two players, two simultaneous, gauntlet, two-player gauntlet), then verify each recording with `digger --verify <file> --headless`. Verify: every run prints its result line and exits 0.
+- [x] 14.6 Run `openspec validate add-desktop-app --strict`, then the three workspace checks; commit `docs: user manual and desktop test checklist`.
