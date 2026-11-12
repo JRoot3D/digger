@@ -377,7 +377,16 @@ the console:
 - query: an invalid `speed` shows the warning.
 
 Pull requests run the Chromium project; pushes to `main` and release tags run
-all three. Playwright is test tooling in Node.js and adds nothing to the
+all three.
+
+`@playwright/test` is pinned to 1.63.0 (exact version in `package.json`, lock
+file committed); the CI job caches the browsers under that version. The
+tests serve the page under `/games/digger/` so that every request is checked
+to stay below a sub-directory, and run one worker at a time because they
+measure the frame rate. A page hidden in the first seconds of a game, before
+the level's main phase, keeps its pause request until the main phase starts
+(the pause key behaves the same), so the hidden-page test hides the page
+after 3 seconds of play. Playwright is test tooling in Node.js and adds nothing to the
 shipped files.
 
 *Rejected:* `wasm-bindgen-test` (decision 3); manual testing only (the

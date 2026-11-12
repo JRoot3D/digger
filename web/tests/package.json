@@ -1,0 +1,13 @@
+{
+  "name": "digger-web-tests",
+  "private": true,
+  "description": "Browser smoke tests of the Digger web build (add-web-build-and-releases, design decision 12).",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

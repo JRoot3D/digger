@@ -38,12 +38,16 @@ impl WebStore {
         Self { storage }
     }
 
-    /// Why local storage cannot be used, if it cannot.
+    /// Why local storage cannot be used, if it cannot. The reason also
+    /// says what follows for the player, since the one storage notice of
+    /// the page is raised from it (`web-build` spec, play without usable
+    /// storage: the notice says settings and scores will not be kept).
     pub(crate) fn unavailable(&self) -> Option<StoreError> {
-        self.storage
-            .as_ref()
-            .err()
-            .map(|reason| StoreError::Unavailable(reason.clone()))
+        self.storage.as_ref().err().map(|reason| {
+            StoreError::Unavailable(format!(
+                "{reason}; settings and high scores are kept only until the page is closed"
+            ))
+        })
     }
 }
 

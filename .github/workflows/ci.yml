@@ -85,6 +85,81 @@ jobs:
           path: target/conformance/report.md
           if-no-files-found: warn
 
+  # The web build with its size budget and the browser smoke tests
+  # (openspec/changes/add-web-build-and-releases/design.md, decision 12):
+  # Chromium on pull requests and branch pushes, Chromium, Firefox and
+  # WebKit on pushes to main.
+  web:
+    name: web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ENGINES: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'chromium firefox webkit' || 'chromium' }}
+    steps:
+      - uses: actions/checkout@v4
+      # rustup reads rust-toolchain.toml, which lists wasm32-unknown-unknown.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+      # The command-line tool must be the version of the library in
+      # Cargo.lock; `cargo xtask web` refuses any other.
+      - name: Read the pinned tool versions
+        id: versions
+        run: |
+          bindgen=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' Cargo.lock)
+          playwright=$(node -p 'require("./web/tests/package-lock.json").packages["node_modules/@playwright/test"].version')
+          test -n "$bindgen" && test -n "$playwright"
+          echo "wasm-bindgen=$bindgen" >> "$GITHUB_OUTPUT"
+          echo "playwright=$playwright" >> "$GITHUB_OUTPUT"
+      - name: Cache wasm-bindgen-cli
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ runner.os }}-${{ steps.versions.outputs.wasm-bindgen }}
+      - name: Install wasm-bindgen-cli
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked wasm-bindgen-cli --version "${{ steps.versions.outputs.wasm-bindgen }}" --bin wasm-bindgen
+      - name: Web build and size budget
+        run: cargo xtask web
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/tests/package-lock.json
+      - name: Install the test tools
+        working-directory: web/tests
+        run: npm ci
+      - name: Cache the browsers
+        id: browser-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.versions.outputs.playwright }}-${{ env.ENGINES }}
+      - name: Install the browsers
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        working-directory: web/tests
+        run: npx playwright install --with-deps $ENGINES
+      - name: Install the browsers' system libraries
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        working-directory: web/tests
+        run: npx playwright install-deps $ENGINES
+      - name: Browser smoke tests
+        working-directory: web/tests
+        run: |
+          projects=()
+          for engine in $ENGINES; do projects+=("--project=$engine"); done
+          npx playwright test "${projects[@]}"
+      - name: Upload the test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: web/tests/test-results/
+          if-no-files-found: ignore
+
   deny:
     name: deny
     runs-on: ubuntu-latest
