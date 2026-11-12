@@ -128,9 +128,9 @@ impl Replay {
     /// Of `input` only the pause and quit requests have an effect: a quit
     /// stops the playback there. Its controls are replaced by the
     /// recording's on every tick (raw controls from an eDRF, none at all
-    /// during DRF playback, where each control read takes a record). `extra` is told every hook after the replay's
-    /// own observer, with the values actually used; what it returns is
-    /// ignored. Once the game has finished every step reports the same
+    /// during DRF playback, where each control read takes a record).
+    /// `extra` is told every hook after the replay's own observer, with
+    /// the values actually used; what it returns is ignored. Once the game has finished every step reports the same
     /// summary.
     pub fn step(&mut self, input: &FrameInput, extra: &mut dyn Observer) -> ReplayStep {
         if let Some(summary) = self.game.summary() {
