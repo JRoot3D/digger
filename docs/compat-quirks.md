@@ -172,7 +172,7 @@ the state of the game.
 Each entry reproduces a rule of upstream's recording formats, playback or
 state hash, so that the port's recordings and checkpoints agree with
 upstream's corpus. The ids follow the design of `add-recording-and-conformance`
-(P1 to P16); later task groups of that change add the rows not yet listed.
+(P1 to P16).
 
 | Id | Behaviour | Class | Implemented in | Test |
 |---|---|---|---|---|
@@ -187,7 +187,11 @@ upstream's corpus. The ids follow the design of `add-recording-and-conformance`
 | P9 | The `U` (unlimited lives) option of a mode line is accepted and ignored: a playback never has unlimited lives, and takes its mode, start level, gauntlet time and bonus interval from the recording alone (research 05 §4.1, §4.6; research 01 §2.1) | Affects the simulation | `parse_mode_line` (`crates/digger-core/src/recording/header.rs`); `playback_config` (`crates/digger-core/src/replay/playback.rs`) | `replay::playback::tests::mode_u_ignored`, `replay::playback::tests::config_from_header_modes` |
 | P10 | The state hash covers both digger slots, all six monster slots and all seven bag slots whether or not they are in use; it includes the per-digger `firepressed` and `levdone` flags, which the original keeps but never sets (always 0); and a monster slot's body values (sprite position and facing, alive, nobbin) only while the slot holds a monster body, from its spawn until the next round's monster reset, so a killed monster keeps them (research 01 §8, research 02 §2, §4.2, §4.7) | Format | the field table `state_hash::layout` (`crates/digger-core/src/state_hash/layout.rs`); the constant flags and the body condition in `StateHashFields::from_view` (`crates/digger-core/src/state_hash/view.rs`) | `state_hash::layout::tests::layout_golden`, `state_hash::tests::monster_block_is_variable_length`, `state_hash::tests::hash_stream_length_fresh_game` |
 | P11 | The round-end hash (`E` records) is taken after the round's clean-up, with fireballs and the bonus removed, the bags tidied, the field saved and the monster sprites erased (the slots keep their "in use" flags, as upstream's `erasemonsters` only erases sprites), and appends the tick count (research 01 §8, research 05 §4.6) | Format | the `Observer::round_end` call site in `Ctx::end_round` (`crates/digger-core/src/sim/mod.rs`); `StateHashFields::hash_at_round_end` (`crates/digger-core/src/state_hash/mod.rs`) | `state_hash::tests::round_end_hash_after_cleanup`, `state_hash::tests::round_end_appends_tick` |
+| P12 | A tick checkpoint (`C`) is taken when the tick count, after being incremented, is a multiple of 256; the controls of the chunk ending there are written first; a round that ends on such a tick writes its `C` and then its round-end `E` (research 05 §5.2, §5.3) | Format | `EdrfRecorder::tick_end` and `EdrfRecorder::round_end` (`crates/digger-core/src/replay/recorder.rs`); `Verifier::tick_end` (`crates/digger-core/src/replay/verifier.rs`) | `checkpoint_then_round_end_order` |
 | P13 | On the tick the gauntlet runs out the clock wraps below zero, and the hash writes the wrapped unsigned 32-bit value followed by the time-out flag (research 01 §7.4, §8) | Affects the simulation | `GauntletClock::count_down` (`crates/digger-core/src/sim/gauntlet.rs`, quirk Q13), read through `StateView::gauntlet_clock` into `GauntletHashFields` (`crates/digger-core/src/state_hash/view.rs`) | `state_hash::tests::gauntlet_clock_wrap_hashed`, `state_hash::tests::gauntlet_appends_clock_and_timeout` |
+| P14 | eDRF `I` records hold at most 32 ticks and are written when the tick count is a multiple of 32 and before any other record. A record has no slot list when every slot agrees on every tick, a slot not read on a tick agreeing with anything (the one-digger form: slot 1 is never read); otherwise it lists each slot that holds a control on some tick and gives one run list per listed slot, in which a run ends wherever the sample changes, so an unread tick and a read 0 make two runs although both print `@`. A slot counts as read on every tick on which a digger plays from it, dead or paused too, as upstream's `readdirect` runs for every digger in play; during DRF playback a read slot's value is the direction and fire of its control read's record, 0 on a tick without one (research 05 §5.2, §5.3; `edrf.c` `flushin`, `allsame`, `edrf_input`, `edrf_movement`) | Format | `EdrfRecorder::flush_controls`, `EdrfRecorder::tick_end` and `EdrfRecorder::for_drf_playback` (`crates/digger-core/src/replay/recorder.rs`) | `edrf_chunk_forms`, `conversion_bits_from_drf_records` |
+| P15 | The DRF writer caps runs at 999 (a longer run continues as a new run of the same letter), counts 1 plus the digits of the count per run into a column counter and writes a line break whenever the counter reaches 60, writes `EOL` on a line of its own, and writes each round seed as eight upper-case hex digits (research 05 §4.4; `record.c` `putrun`, `recputdir`, `recputeol`) | Format | `DrfRecorder::put_record`, `DrfRecorder::put_run` and `DrfRecorder`'s `round_seed` and `round_end` hooks (`crates/digger-core/src/replay/recorder.rs`) | `drf_writer_run_cap_and_wrap` |
+| P16 | Level records (`L`) are written only for participating players: a one-player or two-digger game writes one at game start, an alternating game two (the second player's reusing the first's map), and the placeholder level of player two outside alternating games writes none; maps are written as played, with the two-digger start cells opened unless a playback supplied the map, and a map already written is referred to by its number (research 05 §5.3; `main.c` `initlevel`, `edrf.c` `edrf_level`) | Format | the `Observer::level_plan` call sites (`Ctx::start_game`, `Ctx::set_up_level_observed`, quirk Q06); `EdrfRecorder::note_level` (`crates/digger-core/src/replay/recorder.rs`) | `one_player_game_has_single_level_record`, `edrf_map_reuse_written` |
 
 ## Playback deviations (`add-recording-and-conformance`)
 
@@ -200,6 +204,19 @@ judged or reported, never the game played.
   `ReplayOptions::stop_at_first_failure` is off, so that a long recording
   that fails early is reported at once (replay-verification spec, "Headless
   verify run"). Test: `outcome_failure_takes_precedence`.
+- **Recordings have no size limit and use LF line ends.** Upstream's DRF
+  writer kept a 256 KB buffer that silently started over when full, and
+  wrote files in text mode (CR LF on Windows). The port's recorders grow
+  without limit and write LF on every platform; the readers accept both
+  line ends. Tests: `drf_writer_exceeds_256k`, `drf_writer_mode_lines`.
+- **The quit records follow every quit game.** Upstream writes `EOG`
+  (DRF) and `Q` (eDRF) only when a quit ends a round in progress; a game
+  quit between rounds (during the `PLAYER n` announcement) ends without
+  them, or, in the announcement, without its `Z` record either. The port
+  writes `EOG`, and `Q` before `Z`, whenever the game was quit, as the
+  game-recording spec states. Playback is unaffected: the end of a DRF's
+  data or a run-out eDRF quits the game either way. Test:
+  `drf_writer_quit_appends_eog`.
 - **A DRF game that ends with rounds left is stopped.** Upstream exits with
   status 3 only for a playback ended by the user (`escape`) before the
   recording ran out; a DRF game that ends by itself while another round's

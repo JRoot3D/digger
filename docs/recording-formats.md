@@ -4,8 +4,8 @@ The two recording formats of Digger Remastered as the port reads them: the
 DRF text format and the extended eDRF format (`eDRF 2`). This is the
 reference for `digger_core::recording` (change
 `add-recording-and-conformance`, game-recording spec; research 05 §4 and
-§5). Later sections, added with the writers, the state hash and playback,
-cover writing, the state hash and the playback rules.
+§5), and of the writers in `digger_core::replay` (the "Writing" sections).
+Later sections cover the state hash and the playback rules.
 
 Both formats are text. Lines end in LF or CR LF; the two are read alike
 everywhere. Upstream's 23 `.drf` and 27 `.edrf` recordings in
@@ -101,6 +101,42 @@ are the same with fire. Seeds take hex digits of either case.
   variable never reset.
 - No line-length or file-size limit.
 - Pre-1998 recordings are refused instead of emulated.
+
+### Writing
+
+`digger_core::replay::DrfRecorder` writes a game, live or played back, as
+DRF (game-recording spec, "Writing a DRF recording"; research 05 §4.4):
+
+- The header: `DRF`, the version line, the mode line, the bonus score, then
+  the 80 map rows of the eight plans, 15 characters each, any byte that is
+  not printable written as a space. A plan a playback supplied (an eDRF
+  being converted) is written as supplied; the others are the game's own.
+- The version line is `RS DIG 20261111`: two fields and an eight-digit date
+  at byte offset 7, later than 19981125. The date names the revision of the
+  writer, not the build, so output is reproducible.
+- The mode line: `M2` with two diggers, followed by `G<n>` for a
+  gauntlet; otherwise `G<n>` for a gauntlet; otherwise `1` or `2`, the
+  number of alternating players; then `I<n>` when the start level is above
+  1. `U` is never written. So one player is `1`, two alternating players
+  `2`, two diggers `M2`, a 120-second gauntlet `G120`, a 90-second
+  two-digger gauntlet `M2G90`, one player from level 5 `1I5`.
+- Each round: the seed as eight upper-case hex digits on a line of its own;
+  one record per control read, as runs of at most 999 (a longer run goes on
+  as a new run of the same letter); then `EOL` on a line of its own.
+- Wrap rule: every run adds 1 plus the number of digits of its count (none
+  for a run of 1) to a column counter; when the counter reaches 60 or more
+  a line break is written and the counter starts again from 0. `EOL` is
+  preceded by a line break only if the counter is not 0 (quirk P15).
+- `EOG` on a line of its own follows the last `EOL` when the game was quit;
+  `*abc` when initials are entered for the high-score table.
+
+The text is built in memory and handed out whole (`DrfRecorder::text`).
+
+Deviations from upstream's writer: no size limit (upstream's 256 KB buffer
+silently started over when full); LF line ends on every platform (upstream
+wrote CR LF on Windows); `EOG` follows every quit game, also one quit
+between rounds (upstream wrote it only when the quit ended a round in
+progress).
 
 ## eDRF
 
@@ -220,6 +256,49 @@ and by the grammar above.
   records) and no limit on the file size.
 - A map cut off by the end of the data, and any record after `Z`, are bad
   records; upstream leaves such a level pending or reads on.
+
+### Writing
+
+`digger_core::replay::EdrfRecorder` writes a game as eDRF as it goes
+(game-recording spec, "Writing an eDRF recording"; research 05 §5.2, §5.3).
+Finished lines collect in a buffer that the caller drains with
+`take_pending()`; any prefix drained at a chunk boundary is a playable
+recording, classified as truncated.
+
+- The header: `eDRF 2`, then the version, mode and bonus lines exactly as
+  the DRF writer writes them.
+- `L <level>` and ten map rows (a space and 15 characters each) each time a
+  level is set up for a participating player, or `L <level> <n>` when the
+  map is the n-th distinct map already written. The map is the one played:
+  with two diggers plans 3 and 4 have their start cells opened, unless a
+  playback supplied the map, which is written as supplied. The second
+  player of a one-player or two-digger game gets no record (quirk P16).
+- `R <seed>` at each round start.
+- Controls: each slot's value on every tick goes into a chunk; the chunk is
+  written as one `I` record when the tick count is a multiple of 32 and
+  before any other record. A slot is read on every tick on which a digger
+  plays from it (slot 0; slot 1 with two diggers); the other slot is
+  unread. Chunk forms (quirk P14):
+  - no slot list (`I @8D13A5@3P2@`) when all slots agree on every tick, an
+    unread slot agreeing with anything; a tick no slot read is `@`. This is
+    the form of every one-digger chunk;
+  - otherwise a slot list of each slot that holds a control on some tick,
+    and one run list per listed slot (`I0 D32`, `I1 H6@26`, `I01 D32 H32`).
+    Runs there split wherever the sample changes, so an unread tick and a
+    read 0 are separate runs although both print `@`.
+- During DRF playback (conversion) a read slot's value is the direction
+  and fire of the DRF record its control read used (right 4, up 1, left 8,
+  down 2, stop 0, fire 16), and 0 on a tick without a control read.
+- `C <hash>` after the chunk of every tick whose count is a multiple of
+  256; `E <hash>` at every round end, after a `C` of the same tick (quirk
+  P12).
+- `Q <slot>` when the game was quit: slot 0, or, for a re-recorded eDRF
+  playback that ran out, the slot its recording names (none if it names
+  none). Then `Z <ticks> <hash>`.
+
+Hex numbers are eight upper-case digits; lines end in LF on every platform;
+there is no size limit. A playback recorded in its own format reproduces
+its recording byte for byte (`roundtrip_edrf_*`, `roundtrip_drf_*`).
 
 ## State hash
 
