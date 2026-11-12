@@ -330,6 +330,20 @@ Ids `IN`. The input layer is `crates/digger/src/input/`; tests are run with
 | IN4 | Alternating two-player games drive the digger from the player-1 controls on both players' turns; the player-2 keys do nothing there (research 05 §1.5) | Affects the simulation | the core's slot mapping; the input layer maps `p1_*` to slot 1 and `p2_*` to slot 2 in every mode | `alternating_uses_p1_controls` |
 | IN5 | Upstream repeats a function action for every further key drained in the same poll, and keyboard auto-repeat repeats it while held (research 05 §1.4, §1.5); the port triggers each function action once per press, ignores auto-repeat, and lets several function keys pressed in one frame each act once | Usability bug, fixed | `InputState::key_down` and `InputState::pad_signal` (`input/state.rs`) | `action_once_per_press`, `two_actions_same_frame` |
 
+## Shell (`add-desktop-app`)
+
+The device-free shell (`crates/digger/src/shell/`) runs one scene per
+frame; the game's own behaviour stays in the core, which the play scene
+only steps. Ids `SH`; tests are run with `cargo test -p digger <name>`.
+
+| Id | Behaviour | Class | Isolated in | Test |
+|---|---|---|---|---|
+| SH1 | The speed-up action shortens the frame time by 10000 µs only while it is above 10000 µs (so 14000 µs becomes 4000 µs and stays there); slow-down lengthens it by 10000 µs, capped at 1000000 µs (the cap is a port decision); speed changes are never saved and do not change a game's course (research 05 §1.1, §6.3) | Kept | `Shell::speed_up`, `Shell::speed_down` (`shell/mod.rs`) | `speed_floor`, `speed_cap` |
+| SH2 | A pause consumes no ticks and the gauntlet clock stands still: the shell only asks the core, whose pause phase holds the game and shows `PRESS ANY KEY`; the request is kept until the game reports it is paused, since the core honours it on a main-phase tick only (research 01 §3.3) | Kept | `Pause` in `shell/play.rs`; the core's pause phase and `Game::is_paused` | `pause_consumes_no_ticks`, `pause_text_comes_from_core`, `focus_loss_pauses_during_level_draw_once_play_starts` |
+| SH3 | The key or button press that ends a pause does not also act as a game control: the controls it holds stay off until released (research 01 §3.3 describes the resume key being consumed by `getkey`; holding it on is a port decision) | Kept | `Pause::before_step` and `consume` (`shell/play.rs`) | `resume_key_not_a_control` |
+| SH4 | Upstream cannot switch sound on after `/Q`; the port's sound toggle always works, switching music on with it (sound quirk SQ10), and asks the platform to open the audio device if it is closed | Usability bug, fixed | `Shell::function_actions` (`shell/mod.rs`) | `quiet_start_then_toggle_enables_sound`, `toggles_recorded_for_save` |
+| SH5 | Losing focus or a pad pauses a game played by a person; the title screen and playbacks keep running (port decision) | Port decision | `Pause::before_step` with `live` (`shell/play.rs`) | `focus_loss_pauses_live_game`, `focus_loss_ignored_on_title_and_playback` |
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user
