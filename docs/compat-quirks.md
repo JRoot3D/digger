@@ -189,6 +189,26 @@ upstream's corpus. The ids follow the design of `add-recording-and-conformance`
 | P11 | The round-end hash (`E` records) is taken after the round's clean-up, with fireballs and the bonus removed, the bags tidied, the field saved and the monster sprites erased (the slots keep their "in use" flags, as upstream's `erasemonsters` only erases sprites), and appends the tick count (research 01 §8, research 05 §4.6) | Format | the `Observer::round_end` call site in `Ctx::end_round` (`crates/digger-core/src/sim/mod.rs`); `StateHashFields::hash_at_round_end` (`crates/digger-core/src/state_hash/mod.rs`) | `state_hash::tests::round_end_hash_after_cleanup`, `state_hash::tests::round_end_appends_tick` |
 | P13 | On the tick the gauntlet runs out the clock wraps below zero, and the hash writes the wrapped unsigned 32-bit value followed by the time-out flag (research 01 §7.4, §8) | Affects the simulation | `GauntletClock::count_down` (`crates/digger-core/src/sim/gauntlet.rs`, quirk Q13), read through `StateView::gauntlet_clock` into `GauntletHashFields` (`crates/digger-core/src/state_hash/view.rs`) | `state_hash::tests::gauntlet_clock_wrap_hashed`, `state_hash::tests::gauntlet_appends_clock_and_timeout` |
 
+## Playback deviations (`add-recording-and-conformance`)
+
+Class: presentation or usability bug. These change how a playback is
+judged or reported, never the game played.
+
+- **Verification stops at the first failure.** Upstream plays on with the
+  recorded values after the first mismatch and only skips further checks;
+  the port quits the game on the frame after it unless
+  `ReplayOptions::stop_at_first_failure` is off, so that a long recording
+  that fails early is reported at once (replay-verification spec, "Headless
+  verify run"). Test: `outcome_failure_takes_precedence`.
+- **A DRF game that ends with rounds left is stopped.** Upstream exits with
+  status 3 only for a playback ended by the user (`escape`) before the
+  recording ran out; a DRF game that ends by itself while another round's
+  seed follows exits 0 there. The port applies the spec's rule to both
+  formats: a game that ends while the recording still holds unused
+  controls or rounds is stopped (status 3), so a wrong game over cannot
+  pass as completed. The trailer after the last `EOL` (`EOG`, initials)
+  holds no round. Test: `outcome_stopped_when_game_ends_early`.
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user

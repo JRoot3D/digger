@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod ci;
+mod conformance;
 mod deps;
 mod import;
 mod recordings;
@@ -45,6 +46,10 @@ enum Command {
     /// status 0 verified or completed, 1 unreadable, 2 failed, 3 stopped,
     /// 4 truncated.
     Verify(verify::VerifyArgs),
+    /// Verify the upstream corpus (all 50 recordings, or the quick tier),
+    /// one line per recording, and write target/conformance/report.md;
+    /// fails if any recording does not pass.
+    Conformance(conformance::ConformanceArgs),
 }
 
 fn main() -> ExitCode {
@@ -54,6 +59,7 @@ fn main() -> ExitCode {
         Command::ImportAssets(args) => import::run(&args).map_err(Into::into),
         Command::RenderSheet(args) => render::run(&args).map_err(Into::into),
         Command::ImportRecordings(args) => recordings::run(&args).map_err(Into::into),
+        Command::Conformance(args) => conformance::run(&args).map_err(Into::into),
         Command::Verify(args) => return ExitCode::from(verify::run(&args)),
     };
     match result {

@@ -110,7 +110,7 @@ pub(crate) struct Summary {
 
 /// Runs `cargo xtask import-recordings` into `tests/recordings/`.
 pub(crate) fn run(args: &ImportRecordingsArgs) -> Result<(), RecordingsError> {
-    let out = default_out_dir();
+    let out = corpus_dir();
     let summary = import(&args.from, &out, args.allow_other_commit)?;
     println!(
         "imported {} .drf, {} .edrf and {} .out files from {} into {}",
@@ -124,7 +124,7 @@ pub(crate) fn run(args: &ImportRecordingsArgs) -> Result<(), RecordingsError> {
 }
 
 /// The corpus directory: `tests/recordings/` in the workspace root.
-fn default_out_dir() -> PathBuf {
+pub(crate) fn corpus_dir() -> PathBuf {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
         .parent()
