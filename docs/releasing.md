@@ -42,8 +42,11 @@ cargo xtask ci
 cargo deny check
 ```
 
-Commit the change (`chore(release): 0.2.0`) on `main` through the usual
-pull request, so CI has run on exactly the commit that will be tagged.
+Commit the change (`chore(release): 0.2.0`) on the default branch and
+wait until the CI run of that commit has passed on Linux, Windows and macOS
+before tagging it. Each native build job of the release runs the same
+checks again on its own runner, so a platform failure stops the release
+before anything is published.
 
 Before tagging, the tag can be checked against the version as the workflow
 will check it (it prints the version and whether it is a pre-release):
@@ -93,10 +96,10 @@ tag again.
 | Job | Runner | What it does |
 |---|---|---|
 | `verify` | `ubuntu-24.04` | Checks the tag against the workspace version (`.github/scripts/release-version.sh`), runs `cargo xtask ci` (format, Clippy, tests, documentation, dependency direction) and the licence gate `cargo deny check` |
-| `linux-x86_64` | `ubuntu-22.04` | `cargo xtask dist --platform linux-x86_64`: `digger-V-linux-x86_64.tar.gz` |
-| `linux-aarch64` | `ubuntu-22.04-arm` | The same on a hosted arm64 runner: `digger-V-linux-aarch64.tar.gz` |
-| `windows-x86_64` | `windows-2022` | MSVC build with the C runtime linked statically: `digger-V-windows-x86_64.zip` |
-| `macos-universal` | `macos-15` | Both Apple targets, joined with `lipo`, ad-hoc signed, in `Digger.app`: `digger-V-macos-universal.tar.gz` |
+| `linux-x86_64` | `ubuntu-22.04` | `cargo xtask ci` on the build runner, then `cargo xtask dist --platform linux-x86_64`: `digger-V-linux-x86_64.tar.gz` |
+| `linux-aarch64` | `ubuntu-22.04-arm` | The same (checks, then the archive) on a hosted arm64 runner: `digger-V-linux-aarch64.tar.gz` |
+| `windows-x86_64` | `windows-2022` | `cargo xtask ci`, then the MSVC build with the C runtime linked statically: `digger-V-windows-x86_64.zip` |
+| `macos-universal` | `macos-15` | `cargo xtask ci`, then both Apple targets, joined with `lipo`, ad-hoc signed, in `Digger.app`: `digger-V-macos-universal.tar.gz` |
 | `web` | `ubuntu-24.04` | `cargo xtask dist --platform web` (`digger-V-web.tar.gz`), then the Playwright smoke tests in Chromium, Firefox and WebKit against the `site/` of that archive |
 | `reproducible` | `ubuntu-22.04` | Builds the Linux x86_64 and the web archive twice each, in two copies of the tree in different directories, and fails unless the SHA-256 values agree |
 | `publish` | `ubuntu-24.04` | Collects the five archives, writes `SHA256SUMS` (one `sha256  file` line per archive, sorted by name), creates the draft release with all six files, and deploys the web `site/` to GitHub Pages unless the tag has a pre-release suffix |

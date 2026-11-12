@@ -87,6 +87,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/release-setup
+      # Every check of CI on the platform the archive is built on: `verify`
+      # runs on Linux only, and platform differences (such as the zip
+      # writer on Windows before 0.1.0) must stop the release here.
+      - name: cargo xtask ci
+        run: cargo xtask ci
       - name: cargo xtask dist
         run: cargo xtask dist --platform "${{ matrix.platform }}" --version "$VERSION"
       - name: Upload the archive
