@@ -1305,6 +1305,17 @@ impl Game {
         StateView::new(&self.sim, &self.gfx)
     }
 
+    /// Whether the game is in its pause: a pause request was honoured on a
+    /// main-phase tick and no resume request has followed yet.
+    ///
+    /// The frame that pauses reports [`FrameKind::Tick`] (its tick ran
+    /// first), and a wind-down tick ignores a pause request while also
+    /// reporting `Tick`, so a frontend that keeps requesting a pause until
+    /// it takes effect reads this rather than the frame kind.
+    pub fn is_paused(&self) -> bool {
+        matches!(self.phase, Phase::Paused { .. })
+    }
+
     /// The summary of the game once it has finished.
     pub fn summary(&self) -> Option<GameSummary> {
         match self.phase {
@@ -1331,6 +1342,27 @@ mod tests {
             assert!(waits < 1000, "no tick within 1000 frames");
         }
         waits
+    }
+
+    #[test]
+    fn is_paused_follows_the_pause_phase() {
+        let mut game = one_player();
+        frames_to_first_tick(&mut game);
+        assert!(!game.is_paused());
+        let pause = FrameInput {
+            pause: true,
+            ..FrameInput::NONE
+        };
+        // The pausing frame runs its tick first and reports it.
+        assert_eq!(game.step(&pause).frame, FrameKind::Tick);
+        assert!(game.is_paused());
+        assert_eq!(game.step(&FrameInput::NONE).frame, FrameKind::Paused);
+        assert!(game.is_paused());
+        // The resuming frame is still a pause frame, but the game is not
+        // paused after it.
+        assert_eq!(game.step(&pause).frame, FrameKind::Paused);
+        assert!(!game.is_paused());
+        assert_eq!(game.step(&FrameInput::NONE).frame, FrameKind::Tick);
     }
 
     #[test]
