@@ -13,5 +13,17 @@ publish = false
 name = "digger"
 path = "src/main.rs"
 
+[dependencies]
+clap.workspace = true
+cpal.workspace = true
+digger-core = { path = "../digger-core" }
+digger-sound = { path = "../digger-sound" }
+directories.workspace = true
+gilrs.workspace = true
+serde.workspace = true
+softbuffer.workspace = true
+toml.workspace = true
+winit.workspace = true
+
 [lints]
 workspace = true

@@ -18,7 +18,15 @@ all-features = true
 [advisories]
 # Every RustSec advisory (vulnerability, unmaintained, unsound, yanked) fails
 # the check unless it is listed here with a reason.
-ignore = []
+ignore = [
+  # ttf-parser is unmaintained (no vulnerability). It reaches the build only
+  # through winit's default `wayland-csd-adwaita` feature (sctk-adwaita ->
+  # ab_glyph), which draws the window title into the client-side frame on
+  # Wayland compositors without server-side decorations. No maintained
+  # release of that chain exists yet; revisit when sctk-adwaita moves to
+  # another font parser (add-desktop-app, task 1.2).
+  { id = "RUSTSEC-2026-0192", reason = "unmaintained, not a vulnerability; only used to draw the Wayland title bar text" },
+]
 
 [licenses]
 # The workspace is GPL-2.0-or-later. Only licences that may be combined with
@@ -63,9 +71,20 @@ deny = [
   { crate = "sdl3", reason = "no SDL: the port uses Rust-only platform crates" },
   { crate = "sdl2-sys", reason = "no SDL: the port uses Rust-only platform crates" },
   { crate = "sdl3-sys", reason = "no SDL: the port uses Rust-only platform crates" },
-  { crate = "cc", reason = "no C: nothing may be compiled from C at build time" },
+  # The one crate allowed to depend on `cc` is `wayland-backend` (through
+  # winit and softbuffer on Linux), whose build script compiles C only with
+  # its `log` feature; `[[bans.features]]` below denies that feature, so the
+  # build script never calls `cc` (add-desktop-app, task 1.2).
+  { crate = "cc", wrappers = ["wayland-backend"], reason = "no C: nothing may be compiled from C at build time" },
   { crate = "bindgen", reason = "no C: no bindings to C headers" },
 ]
+
+# `wayland-backend`'s `log` feature compiles two C shims with `cc`; it must
+# stay off (see the `cc` ban above).
+[[bans.features]]
+crate = "wayland-backend"
+deny = ["log"]
+reason = "no C: the log feature compiles C shims at build time"
 
 [sources]
 unknown-registry = "deny"
