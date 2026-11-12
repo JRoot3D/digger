@@ -121,9 +121,12 @@
 pub mod assets;
 mod error;
 pub mod geom;
+pub mod recording;
+pub mod replay;
 mod sim;
 mod sound_cmd;
 pub mod sprite;
+pub mod state_hash;
 pub mod video;
 
 #[cfg(any(test, feature = "testkit"))]

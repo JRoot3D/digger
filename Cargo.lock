@@ -163,7 +163,9 @@ name = "digger-core"
 version = "0.1.0"
 dependencies = [
  "digger-core",
+ "md-5",
  "miniz_oxide",
+ "sha2",
 ]
 
 [[package]]
@@ -196,6 +198,16 @@ name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+
+[[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest",
+]
 
 [[package]]
 name = "miniz_oxide"
