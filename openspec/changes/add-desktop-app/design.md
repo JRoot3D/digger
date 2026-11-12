@@ -288,7 +288,7 @@ quit = []
 ### D10. Score tables and score file
 
 - `ScoreTable` is `[Entry; 10]` with `Entry { initials: [u8; 3], score: u32 }`. `qualifies(score) = score > entries[9].score`. `insert` finds the first index whose score is `<=` the new score, shifts the rest down and drops the last; this reproduces upstream's "ties go above" without its 1-based, off-by-one arrays.
-- `TableKey { levels: LevelSet, gauntlet: bool, two_diggers: bool }` with `LevelSet::Builtin | Custom(String)`; the game mode maps to a key in one function (`two-players` → one-Digger normal table).
+- `TableKey { levels: LevelSet, kind: TableKind }` with `LevelSet::Builtin | Custom(String)` and `TableKind::{Normal1, Gauntlet1, Normal2, Gauntlet2}` (the file's `kind` names; `gauntlet()` and `two_diggers()` read it back), so the four tables are one enum rather than two flags; the game mode maps to a key in one function (`two-players` → one-Digger normal table). The custom set is named by the level file's name without directory (`hard.dlf`). `Scores` holds the tables read or written (a table it does not hold is fresh); `ScoreStore` owns `Scores`, the file path and whether the old file must still be kept as `.bad`.
 - File schema, version 1:
 
 ```toml
@@ -304,7 +304,7 @@ entries = [
 ```
 
 - Loading returns `(Scores, LoadStatus)` where `LoadStatus` is `Fresh | Loaded | Recovered { reason }`. A table with the wrong entry count, non-letter initials other than `...`, a score above 999999 or unsorted entries makes the whole file `Recovered`. `Recovered` remembers that the old file must be renamed to `scores.toml.bad` before the next save.
-- Saving writes `scores.toml.tmp` and renames it over `scores.toml`. Failure is a notice, not an error.
+- Saving writes `scores.toml.tmp` and renames it over `scores.toml`. Failure is a notice, not an error. A file that could not be read for a reason other than its absence (permissions, a directory in its place) is treated like an unparsable one: fresh tables, one notice, renamed to `.bad` before the next save. The `format` key is checked before the rest of the file, so a newer format is reported as such even when its structure is unknown; unknown keys in a format 1 file are a wrong structure. Each table may appear at most once per level set.
 
 ### D11. Recordings in the shell
 

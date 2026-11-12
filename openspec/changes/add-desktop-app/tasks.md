@@ -30,11 +30,11 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 4. High-score tables and storage
 
-- [ ] 4.1 Implement `ScoreTable` with `qualifies` and `insert`, and `TableKey::from_mode`. Verify: unit tests `qualify_strict`, `qualify_zero_against_empty`, `insert_tie_above`, `insert_drops_tenth`, `table_key_mapping`. Include the row text formatter (initials, two spaces, six-character right-aligned score), verified by `score_row_text` (`ABC   12345`, `...       0`).
-- [ ] 4.2 Implement the `scores.toml` version 1 schema: serialise and parse, default tables for absent ones, custom level-set keys. Verify: unit tests `scores_round_trip` and `scores_custom_level_set_separate`.
-- [ ] 4.3 Implement loading with recovery (`Fresh`, `Loaded`, `Recovered`) for missing, unparsable, structurally wrong and newer-format files. Verify: unit tests `scores_missing_is_fresh`, `scores_garbage_recovers`, `scores_newer_format_recovers`.
-- [ ] 4.4 Implement atomic saving, the rename to `scores.toml.bad` after recovery, and the notice on write failure. Verify: unit tests `scores_save_atomic`, `scores_bad_file_preserved`, `scores_unwritable_keeps_memory`.
-- [ ] 4.5 Run the three workspace checks; commit `feat(digger): high-score tables and score file`.
+- [x] 4.1 Implement `ScoreTable` with `qualifies` and `insert`, and `TableKey::from_mode`. Verify: unit tests `qualify_strict`, `qualify_zero_against_empty`, `insert_tie_above`, `insert_drops_tenth`, `table_key_mapping`. Include the row text formatter (initials, two spaces, six-character right-aligned score), verified by `score_row_text` (`ABC   12345`, `...       0`).
+- [x] 4.2 Implement the `scores.toml` version 1 schema: serialise and parse, default tables for absent ones, custom level-set keys. Verify: unit tests `scores_round_trip` and `scores_custom_level_set_separate`.
+- [x] 4.3 Implement loading with recovery (`Fresh`, `Loaded`, `Recovered`) for missing, unparsable, structurally wrong and newer-format files. Verify: unit tests `scores_missing_is_fresh`, `scores_garbage_recovers`, `scores_newer_format_recovers`.
+- [x] 4.4 Implement atomic saving, the rename to `scores.toml.bad` after recovery, and the notice on write failure. Verify: unit tests `scores_save_atomic`, `scores_bad_file_preserved`, `scores_unwritable_keeps_memory`.
+- [x] 4.5 Run the three workspace checks; commit `feat(digger): high-score tables and score file`.
 
 ## 5. Input layer
 
