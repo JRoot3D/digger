@@ -23,13 +23,17 @@
     )
 )]
 
+use std::path::PathBuf;
+
 use digger_core::recording::{Recording, RecordingError, RecordingKind};
+use digger_core::replay::ReplayOptions;
 use digger_core::video::Framebuffer;
 use digger_core::{GameConfig, GauntletSeconds, LevelSet, SoundCommand, StartLevel};
 use digger_sound::SoundControl;
 
 use crate::config::{FrameTime, GameMode, Layer, Settings};
 use crate::input::{Action, InputFrame};
+use crate::scores::store::ScoreStore;
 use crate::scores::{self, ScoreTable, Scores, TableKey};
 
 mod game_over;
@@ -39,6 +43,8 @@ mod recording;
 mod redefine;
 mod title;
 
+#[cfg(test)]
+mod game_over_tests;
 #[cfg(test)]
 mod harness;
 #[cfg(test)]
@@ -158,6 +164,13 @@ pub(crate) struct Setup {
     /// The level set the score tables are kept for: the built-in levels
     /// or the level file's name.
     pub(crate) score_levels: scores::LevelSet,
+    /// The `--record` file: every game played by a person is written to
+    /// it when it ends (design D11).
+    pub(crate) record_path: Option<PathBuf>,
+    /// The `recordings` folder of the data directory, where the
+    /// save-recording action writes the last game; `None` when there is
+    /// nowhere to save.
+    pub(crate) recordings_dir: Option<PathBuf>,
 }
 
 impl Default for Setup {
@@ -167,6 +180,8 @@ impl Default for Setup {
             record_kind: RecordingKind::Drf,
             base_seed: 0,
             score_levels: scores::LevelSet::Builtin,
+            record_path: None,
+            recordings_dir: None,
         }
     }
 }
@@ -180,8 +195,8 @@ pub(crate) struct Context<'a> {
     mode: &'a mut GameMode,
     /// The settings the player changed at run time.
     runtime: &'a mut Layer,
-    /// The high-score tables.
-    scores: &'a Scores,
+    /// The high-score tables and their file.
+    scores: &'a mut ScoreStore,
     /// The set-up of the program.
     setup: &'a Setup,
     /// How many live games were started so far.
@@ -205,10 +220,12 @@ impl Context<'_> {
 
     /// The score table of the selected mode.
     fn table(&self) -> &ScoreTable {
-        self.scores.table(&TableKey::from_mode(
-            *self.mode,
-            self.setup.score_levels.clone(),
-        ))
+        self.scores.scores().table(&self.table_key(*self.mode))
+    }
+
+    /// The name of the table games in `mode` are entered in.
+    fn table_key(&self, mode: GameMode) -> TableKey {
+        TableKey::from_mode(mode, self.setup.score_levels.clone())
     }
 
     /// Selects the next game mode and enters it in the runtime changes,
@@ -232,16 +249,40 @@ impl Context<'_> {
             .base_seed
             .wrapping_add(self.games_started.wrapping_mul(0x9E37_79B9_7F4A_7C15));
         *self.games_started = self.games_started.wrapping_add(1);
+        let mode = *self.mode;
         Scene::Playing(Box::new(PlayScene::new(
             self.game_config(),
             seed,
             self.setup.record_kind,
+            mode,
+            self.table_key(mode),
         )))
     }
 
-    /// Keeps the recording of a game that has ended (design D11).
+    /// Takes the recording of a game that has ended (design D11): with
+    /// `--record` it is written to that file at once; otherwise it is kept
+    /// as the last game for the save-recording action.
     fn finished(&mut self, recording: FinishedRecording) {
-        *self.last_game = Some(recording);
+        match &self.setup.record_path {
+            Some(path) => {
+                recording::save_record_file(&recording, path);
+                *self.last_game = None;
+            }
+            None => *self.last_game = Some(recording),
+        }
+    }
+
+    /// The save-recording action: writes the last game into the
+    /// recordings folder under its automatic name, once; nothing happens
+    /// when there is no unsaved game (`desktop-app` spec, other title
+    /// screen actions).
+    fn save_last_game(&mut self) {
+        let Some(dir) = &self.setup.recordings_dir else {
+            return;
+        };
+        if let Some(recording) = self.last_game.take() {
+            recording::save_to_recordings(&recording, dir);
+        }
     }
 }
 
@@ -289,8 +330,8 @@ pub(crate) struct Shell {
     games_started: u64,
     /// The recording of the last finished game, until it is saved.
     last_game: Option<FinishedRecording>,
-    /// The high-score tables.
-    scores: Scores,
+    /// The high-score tables and their file.
+    scores: ScoreStore,
     /// The current scene.
     scene: Scene,
 }
@@ -301,10 +342,19 @@ impl Shell {
         Self::with_scores(settings, setup, Scores::default())
     }
 
-    /// A shell on the title screen, showing the tables of `scores`.
+    /// A shell on the title screen, showing the tables of `scores`, which
+    /// are kept in memory only.
     pub(crate) fn with_scores(settings: Settings, setup: Setup, scores: Scores) -> Self {
+        Self::with_store(settings, setup, ScoreStore::in_memory(scores))
+    }
+
+    /// A shell on the title screen, showing and saving the tables of
+    /// `scores`.
+    pub(crate) fn with_store(settings: Settings, setup: Setup, scores: ScoreStore) -> Self {
         let mode = settings.mode;
-        let table = scores.table(&TableKey::from_mode(mode, setup.score_levels.clone()));
+        let table = scores
+            .scores()
+            .table(&TableKey::from_mode(mode, setup.score_levels.clone()));
         Self {
             runtime: Layer::default(),
             mode,
@@ -328,7 +378,7 @@ impl Shell {
             settings: &self.settings,
             mode: &mut self.mode,
             runtime: &mut self.runtime,
-            scores: &self.scores,
+            scores: &mut self.scores,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
@@ -357,7 +407,13 @@ impl Shell {
     /// music and fullscreen (`desktop-app` spec; `input-controls` spec,
     /// function actions fire once per press).
     fn function_actions(&mut self, input: &ShellInput, out: &mut Pending) {
+        // During initials entry every key but quit and the fullscreen
+        // chord is ignored (`input-controls` spec, typing initials).
+        let entering = self.entering_initials();
         for &action in &input.input.actions {
+            if entering && action != Action::Fullscreen {
+                continue;
+            }
             match action {
                 Action::SpeedUp => self.speed_up(),
                 Action::SpeedDown => self.speed_down(),
@@ -426,7 +482,7 @@ impl Shell {
             settings: &self.settings,
             mode: &mut self.mode,
             runtime: &mut self.runtime,
-            scores: &self.scores,
+            scores: &mut self.scores,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
@@ -437,8 +493,28 @@ impl Shell {
 
     /// Starts playing `recording` back.
     pub(crate) fn start_playback(&mut self, recording: &Recording) -> Result<(), RecordingError> {
-        self.scene = Scene::Playback(Box::new(PlaybackScene::new(recording)?));
+        self.start_playback_with(recording, ReplayOptions::default())
+    }
+
+    /// Starts playing `recording` back with `options` (a take-over tick,
+    /// for example).
+    pub(crate) fn start_playback_with(
+        &mut self,
+        recording: &Recording,
+        options: ReplayOptions,
+    ) -> Result<(), RecordingError> {
+        self.scene = Scene::Playback(Box::new(PlaybackScene::with_options(recording, options)?));
         Ok(())
+    }
+
+    /// Whether a new-high-score screen is shown.
+    pub(crate) fn entering_initials(&self) -> bool {
+        matches!(&self.scene, Scene::Playing(play) if play.initials().is_some())
+    }
+
+    /// The high-score tables.
+    pub(crate) fn scores(&self) -> &Scores {
+        self.scores.scores()
     }
 
     /// The current scene.

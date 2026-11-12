@@ -144,9 +144,12 @@ impl TitleScene {
         if input.close_requested || input.has(Action::Quit) {
             return Transition::Exit(0);
         }
-        // Key redefinition (task group 10) and saving the last game's
-        // recording (task 9.6) are title actions too; neither starts a
-        // game, as the input layer already leaves them out of `start_key`.
+        // Saving the last game's recording and key redefinition (task
+        // group 10) are title actions too; neither starts a game, as the
+        // input layer already leaves them out of `start_key`.
+        if input.has(Action::SaveRecording) {
+            cx.save_last_game();
+        }
         for _ in input
             .input
             .actions

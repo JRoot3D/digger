@@ -19,6 +19,13 @@
 //! Quitting, or closing the window, ends the game at once through the
 //! core's quit request, so the recording gets its end-of-game marker; quit
 //! returns to the title without `GAME OVER`, close ends the program.
+//!
+//! When a step reports that a player is out, the scene hands over to the
+//! game-over sequence ([`GameOver`]): it suspends the game while a
+//! new-high-score screen is shown for each qualifying digger, then resumes
+//! stepping on the frame the last entry is complete, so the core's
+//! 50-frame `GAME OVER` or `TIME UP` notice follows. Quit and close work
+//! there too and add no entry.
 
 use digger_core::recording::{Recording, RecordingError, RecordingKind};
 use digger_core::replay::{Recorder, Replay, ReplayOptions, ReplayStep};
@@ -27,9 +34,13 @@ use digger_core::{
     Controls, FrameInput, FrameKind, Game, GameConfig, GameSummary, SoundCommand, StepOutcome,
 };
 
+use super::game_over::{GameOver, GameOverStep};
+use super::initials::InitialsScene;
 use super::recording::LiveRecording;
 use super::{Context, ShellInput, Transition};
+use crate::config::GameMode;
 use crate::input::{Action, PadChange};
+use crate::scores::TableKey;
 
 /// A frame that only asks the core to quit the game.
 const QUIT: FrameInput = FrameInput {
@@ -163,12 +174,25 @@ pub(crate) struct PlayScene {
     frames: u64,
     /// What the last step reported.
     last_outcome: Option<StepOutcome>,
+    /// The game's mode.
+    mode: GameMode,
+    /// The score table the game's entries go to.
+    table: TableKey,
+    /// The game-over sequence while it shows a new-high-score screen.
+    game_over: Option<GameOver>,
 }
 
 impl PlayScene {
     /// A new game under `config` with base seed `seed`, recorded as
-    /// `kind`.
-    pub(crate) fn new(config: GameConfig, seed: u64, kind: RecordingKind) -> Self {
+    /// `kind`; it is played in `mode` and its high scores go to the table
+    /// named by `table`.
+    pub(crate) fn new(
+        config: GameConfig,
+        seed: u64,
+        kind: RecordingKind,
+        mode: GameMode,
+        table: TableKey,
+    ) -> Self {
         let recorder = Recorder::new(kind, &config, false);
         Self {
             game: Game::new(config, seed),
@@ -176,10 +200,14 @@ impl PlayScene {
             pause: Pause::new(),
             frames: 0,
             last_outcome: None,
+            mode,
+            table,
+            game_over: None,
         }
     }
 
-    /// Runs one frame: exactly one step of the game.
+    /// Runs one frame: exactly one step of the game, unless a
+    /// new-high-score screen holds it.
     pub(crate) fn frame(&mut self, input: &ShellInput, cx: &mut Context<'_>) -> Transition {
         if input.close_requested {
             self.end(&QUIT, cx);
@@ -188,6 +216,22 @@ impl PlayScene {
         if input.has(Action::Quit) {
             self.end(&QUIT, cx);
             return to_title(cx);
+        }
+        if let Some(over) = self.game_over.as_mut() {
+            match over.frame(&input.input, cx) {
+                GameOverStep::Entering => return Transition::Stay,
+                GameOverStep::Entered(entry) => {
+                    if let Some(recording) = self.recording.as_mut() {
+                        recording.add_initials(entry);
+                    }
+                    if !over.is_done() {
+                        return Transition::Stay;
+                    }
+                    // The last entry is in: the game resumes on this
+                    // frame with the core's notice.
+                    self.game_over = None;
+                }
+            }
         }
         let pause = self.pause.before_step(input, true);
         let frame = FrameInput {
@@ -200,6 +244,14 @@ impl PlayScene {
         if let Some(summary) = outcome.finished {
             self.finish(summary, cx);
             return to_title(cx);
+        }
+        if let Some(out) = outcome.player_out {
+            self.game_over = GameOver::begin(&self.game, out, self.mode, self.table.clone(), cx);
+            if self.game_over.is_some() {
+                // All sound stops while the new-high-score screen is
+                // shown (`high-scores` spec, new high score screen).
+                cx.sound([SoundCommand::StopAll]);
+            }
         }
         Transition::Stay
     }
@@ -221,8 +273,9 @@ impl PlayScene {
     }
 
     /// Ends the game with one more step of `input` (a quit request) and
-    /// keeps its recording.
+    /// keeps its recording. An entry being typed is dropped.
     fn end(&mut self, input: &FrameInput, cx: &mut Context<'_>) {
+        self.game_over = None;
         let outcome = self.step(input, cx);
         if let Some(summary) = outcome.finished {
             self.finish(summary, cx);
@@ -236,9 +289,18 @@ impl PlayScene {
         }
     }
 
-    /// The picture to present: the game's own.
+    /// The picture to present: the new-high-score screen while one is
+    /// shown, otherwise the game's own.
     pub(crate) fn picture(&self) -> &Framebuffer {
-        self.game.framebuffer()
+        match self.initials() {
+            Some(screen) => screen.picture(),
+            None => self.game.framebuffer(),
+        }
+    }
+
+    /// The new-high-score screen being shown, if any.
+    pub(crate) fn initials(&self) -> Option<&InitialsScene> {
+        self.game_over.as_ref().and_then(GameOver::screen)
     }
 
     /// The game.
@@ -280,10 +342,14 @@ pub(crate) struct PlaybackScene {
 }
 
 impl PlaybackScene {
-    /// A playback of `recording` from its first frame.
-    pub(crate) fn new(recording: &Recording) -> Result<Self, RecordingError> {
+    /// A playback of `recording` from its first frame, with `options`
+    /// (a take-over tick, for example).
+    pub(crate) fn with_options(
+        recording: &Recording,
+        options: ReplayOptions,
+    ) -> Result<Self, RecordingError> {
         Ok(Self {
-            replay: Replay::new(recording, ReplayOptions::default())?,
+            replay: Replay::new(recording, options)?,
             pause: Pause::new(),
             last_step: None,
         })
@@ -299,12 +365,21 @@ impl PlaybackScene {
             self.step(&QUIT, cx);
             return to_title(cx);
         }
-        let pause = self.pause.before_step(input, false);
-        // The recording supplies every control; only the pause request
-        // goes in.
+        // Once taken over, the game is a live one: the player's controls
+        // drive it and losing focus pauses it. It still never enters the
+        // score tables, as a playback reports no player result.
+        let taken_over = self.replay.taken_over();
+        let pause = self.pause.before_step(input, taken_over);
+        // Before that the recording supplies every control; only the
+        // pause request goes in.
         let frame = FrameInput {
+            slots: if taken_over {
+                pause.slots
+            } else {
+                [Controls::NONE; 2]
+            },
             pause: pause.request,
-            ..FrameInput::NONE
+            quit: false,
         };
         let step = self.step(&frame, cx);
         self.pause.after_step(self.replay.game().is_paused());

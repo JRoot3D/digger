@@ -10,6 +10,7 @@
 #![allow(clippy::panic, reason = "a misused harness is a failed test")]
 
 use digger_core::recording::RecordingKind;
+use digger_core::video::Palette;
 use digger_core::{FrameKind, Game, SoundCommand};
 use digger_sound::SoundControl;
 
@@ -22,6 +23,8 @@ use crate::input::{Bindings, InputState, KeyName, KeyPress, PadSignal};
 pub(super) struct Captured {
     /// The CRC-32 of the presented picture's indices.
     pub(super) picture_crc: u32,
+    /// The palette the picture was presented in.
+    pub(super) palette: Palette,
     /// The sound commands of the frame.
     pub(super) sound: Vec<SoundCommand>,
     /// The sound controls of the frame.
@@ -36,6 +39,7 @@ impl Captured {
     fn of(output: &FrameOutput<'_>) -> Self {
         Self {
             picture_crc: output.picture.crc32(),
+            palette: output.picture.palette(),
             sound: output.sound.clone(),
             controls: output.controls.clone(),
             frame_time: output.frame_time,
@@ -107,6 +111,17 @@ impl Harness {
     /// Releases the key named `name`.
     pub(super) fn release(&mut self, name: &str) {
         self.input.key_up(key(name));
+    }
+
+    /// Presses and releases the key named `name`, which types `text`,
+    /// within one frame.
+    pub(super) fn type_key(&mut self, name: &str, text: &str) {
+        self.input.key_down(KeyPress {
+            key: Some(key(name)),
+            repeat: false,
+            text: Some(text),
+        });
+        self.release(name);
     }
 
     /// Presses and releases the key named `name` within one frame.

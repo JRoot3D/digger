@@ -229,7 +229,8 @@ impl std::error::Error for SaveError {}
 /// The score tables together with the file they live in.
 #[derive(Debug)]
 pub(crate) struct ScoreStore {
-    path: PathBuf,
+    /// The score file; `None` for tables kept in memory only.
+    path: Option<PathBuf>,
     scores: Scores,
     /// The file on disk was not used and must be kept as
     /// `scores.toml.bad` before it is overwritten.
@@ -243,7 +244,7 @@ impl ScoreStore {
         let keep_bad_file = matches!(status, LoadStatus::Recovered { .. });
         (
             Self {
-                path,
+                path: Some(path),
                 scores,
                 keep_bad_file,
             },
@@ -255,19 +256,29 @@ impl ScoreStore {
     /// file if it could not be used.
     pub(crate) fn open_reporting(path: PathBuf) -> Self {
         let (store, status) = Self::open(path);
-        if let LoadStatus::Recovered { reason } = &status {
+        if let (LoadStatus::Recovered { reason }, Some(path)) = (&status, store.path()) {
             report::notice(format!(
                 "{}: {reason}; using fresh high-score tables (the file is kept as {} at the next save)",
-                store.path.display(),
-                bad_path(&store.path).display()
+                path.display(),
+                bad_path(path).display()
             ));
         }
         store
     }
 
-    /// The score file.
-    pub(crate) fn path(&self) -> &Path {
-        &self.path
+    /// Tables kept in memory only: saving writes nothing (tests, and a
+    /// frontend without files).
+    pub(crate) const fn in_memory(scores: Scores) -> Self {
+        Self {
+            path: None,
+            scores,
+            keep_bad_file: false,
+        }
+    }
+
+    /// The score file, if the tables are kept in one.
+    pub(crate) fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// The tables.
@@ -312,35 +323,35 @@ impl ScoreStore {
     ///
     /// [`SaveError`]; the caller reports it as a notice and carries on.
     pub(crate) fn save(&mut self) -> Result<(), SaveError> {
+        let Some(path) = self.path.clone() else {
+            return Ok(());
+        };
         let fail = |path: &Path| {
             let path = path.to_path_buf();
             move |source| SaveError { path, source }
         };
-        if let Some(dir) = self.path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
             fs::create_dir_all(dir).map_err(fail(dir))?;
         }
         if self.keep_bad_file {
-            match fs::rename(&self.path, bad_path(&self.path)) {
+            match fs::rename(&path, bad_path(&path)) {
                 Ok(()) => {}
                 // Gone since it was read: nothing left to keep.
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(source) => {
                     return Err(SaveError {
-                        path: bad_path(&self.path),
+                        path: bad_path(&path),
                         source,
                     });
                 }
             }
             self.keep_bad_file = false;
         }
-        let tmp = sibling(&self.path, ".tmp");
+        let tmp = sibling(&path, ".tmp");
         fs::write(&tmp, render(&self.scores)).map_err(fail(&tmp))?;
-        if let Err(source) = fs::rename(&tmp, &self.path) {
+        if let Err(source) = fs::rename(&tmp, &path) {
             let _ = fs::remove_file(&tmp);
-            return Err(SaveError {
-                path: self.path.clone(),
-                source,
-            });
+            return Err(SaveError { path, source });
         }
         Ok(())
     }
@@ -700,6 +711,6 @@ mod tests {
             store.scores().table(&key(GameMode::OnePlayer)).entries()[1],
             entry
         );
-        assert_eq!(store.path(), path);
+        assert_eq!(store.path(), Some(path.as_path()));
     }
 }
