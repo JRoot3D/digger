@@ -8,6 +8,7 @@
 mod ci;
 mod deps;
 mod import;
+mod recordings;
 mod render;
 
 use std::process::ExitCode;
@@ -34,6 +35,10 @@ enum Command {
     /// Write the golden scenes and a contact sheet of all 120 images as PPM
     /// files (default target/sheets/), for review by eye.
     RenderSheet(render::RenderArgs),
+    /// Copy upstream's recordings and expected results byte-for-byte into
+    /// tests/recordings/ and write MANIFEST.sha256; refuses a checkout whose
+    /// HEAD is not the pinned commit unless --allow-other-commit is given.
+    ImportRecordings(recordings::ImportRecordingsArgs),
 }
 
 fn main() -> ExitCode {
@@ -42,6 +47,7 @@ fn main() -> ExitCode {
         Command::Ci => ci::run().map_err(Into::into),
         Command::ImportAssets(args) => import::run(&args).map_err(Into::into),
         Command::RenderSheet(args) => render::run(&args).map_err(Into::into),
+        Command::ImportRecordings(args) => recordings::run(&args).map_err(Into::into),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

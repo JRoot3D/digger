@@ -8,7 +8,7 @@
 
 pub(crate) mod ctable;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 pub(crate) mod font;
 pub(crate) mod icon;
 pub(crate) mod index;
