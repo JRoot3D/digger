@@ -7,6 +7,7 @@
 use winit::event_loop::EventLoop;
 
 use super::{RunError, cause};
+use crate::event::AppEvent;
 use crate::shell::Shell;
 
 mod app;
@@ -35,9 +36,11 @@ pub(crate) struct Finished {
 /// [`RunError::NoDisplay`] (status 69) when no display can be reached or
 /// the window cannot be opened.
 pub(crate) fn run(mut app: App) -> Result<Finished, RunError> {
-    let event_loop = EventLoop::new().map_err(|error| {
-        RunError::NoDisplay(format!("cannot open a display: {}", cause(&error)))
-    })?;
+    let event_loop = EventLoop::<AppEvent>::with_user_event()
+        .build()
+        .map_err(|error| {
+            RunError::NoDisplay(format!("cannot open a display: {}", cause(&error)))
+        })?;
     let result = event_loop.run_app(&mut app);
     let (shell, ended) = app.shut_down();
     result.map_err(|error| {

@@ -139,7 +139,10 @@ tested on the host without a browser.
 
 Asynchronous results (a picked file, a visibility change, a storage failure
 found late) enter the application as variants of one `AppEvent` enum sent
-through the `winit` `EventLoopProxy`. `App` handles them in `user_event`
+through the `winit` `EventLoopProxy`. `App` hands them to the shell (`Shell::event`), which
+holds the program logic for them, so a picked recording starting playback
+is a host test; notices the shell raises leave with each frame's output and
+go to `PageUi::set_notice`. `App` handles them in `user_event`
 exactly as it handles the native equivalents, so there are no callbacks
 reaching into game state and no shared mutable globals: `App` stays the
 single owner of everything.

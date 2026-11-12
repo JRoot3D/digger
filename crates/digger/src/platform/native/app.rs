@@ -26,8 +26,10 @@ use super::audio::CpalBackend;
 use super::pads::GamepadPoller;
 use super::window::GameWindow;
 use crate::config::ScaleMode;
+use crate::event::AppEvent;
 use crate::input::{InputState, KeyPress, PadEvent, Pads};
 use crate::pacing::{Clock, Control, Pacer, SystemClock};
+use crate::page::{AudioStatus, NativePageUi, PageUi, Status};
 use crate::platform::audio::{Audio, AudioRequest};
 use crate::platform::keys::key_name;
 use crate::report;
@@ -114,6 +116,10 @@ pub(crate) struct App {
     /// How the program ends, once known.
     ended: Option<Ended>,
     counter: Option<FrameCounter>,
+    /// Where notices, bindings and the status are shown.
+    page: Box<dyn PageUi>,
+    /// Game frames run so far.
+    frames: u64,
 }
 
 impl App {
@@ -136,6 +142,8 @@ impl App {
             close_requested: false,
             ended: None,
             counter: options.frame_counter.then(FrameCounter::default),
+            page: Box::new(NativePageUi),
+            frames: 0,
         }
     }
 
@@ -172,8 +180,8 @@ impl App {
             notices,
             ..
         } = self.shell.frame(input);
-        for notice in notices {
-            report::notice(notice);
+        for notice in &notices {
+            self.page.set_notice(notice);
         }
         let sink: &mut dyn SoundSink = match self.audio.as_mut() {
             Some(audio) => {
@@ -211,9 +219,20 @@ impl App {
                         event_loop.exit();
                     }
                 }
-                Request::BindingsChanged => self.input.set_bindings(self.shell.bindings()),
+                Request::BindingsChanged => {
+                    let bindings = self.shell.bindings();
+                    self.page.set_bindings(&bindings);
+                    self.input.set_bindings(bindings);
+                }
             }
         }
+        self.frames += 1;
+        let status = Status {
+            phase: self.shell.phase(),
+            audio: self.audio.as_ref().map_or(AudioStatus::Off, Audio::status),
+            frames: self.frames,
+        };
+        self.page.set_status(&status);
         self.report_audio_notices();
         if let Some(counter) = self.counter.as_mut()
             && let Some(line) = counter.frame(self.pacer.clock().now())
@@ -299,7 +318,14 @@ impl App {
     }
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AppEvent> for App {
+    fn user_event(&mut self, _: &ActiveEventLoop, event: AppEvent) {
+        self.shell.event(event);
+        for notice in self.shell.take_notices() {
+            self.page.set_notice(&notice);
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() || self.ended.is_some() {
             return;

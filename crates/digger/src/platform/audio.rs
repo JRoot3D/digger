@@ -40,6 +40,8 @@ use digger_sound::{
     sound_link,
 };
 
+use crate::page::AudioStatus;
+
 /// A sample format the callback can write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) enum SampleKind {
@@ -327,19 +329,6 @@ pub(super) enum AudioOutput<S> {
     },
 }
 
-/// The state of the audio output, for the page (`data-audio`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AudioStatus {
-    /// No engine.
-    Off,
-    /// Waiting for a user gesture.
-    Locked,
-    /// Playing.
-    Running,
-    /// No device.
-    Failed,
-}
-
 /// How many samples the silent advance renders at a time.
 const SILENT_CHUNK: usize = 1024;
 
@@ -598,10 +587,6 @@ impl<B: Backend> Audio<B> {
     }
 
     /// The state, for the page.
-    #[cfg_attr(
-        not(any(test, target_arch = "wasm32")),
-        expect(dead_code, reason = "the browser's page status (task 4.2)")
-    )]
     pub(super) const fn status(&self) -> AudioStatus {
         match self.state {
             AudioOutput::Off => AudioStatus::Off,

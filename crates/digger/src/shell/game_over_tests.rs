@@ -24,10 +24,12 @@ use super::initials::CLOSING_FRAMES;
 use super::{Request, Scene, Setup, Shell};
 use crate::config::file::tests::TempDir;
 use crate::config::{GameMode, Settings};
+use crate::event::AppEvent;
 use crate::input::{PadButton, PadInput, PadSignal};
 use crate::scores::store::scores_file;
 use crate::scores::{Entry, LevelSet, ScoreTable, Scores, TableKey, TableKind};
 use crate::store::{MemoryStore, Storage};
+use crate::transfer::{NativeFileTransfer, RecordingTransfer};
 
 /// The frames the core shows `GAME OVER` or `TIME UP` for.
 const NOTICE_FRAMES: usize = 50;
@@ -662,11 +664,9 @@ fn files_in(dir: &Path) -> Vec<String> {
 fn f8_saves_once_with_auto_name() {
     let dir = TempDir::new("shell");
     let recordings = dir.path().join("recordings");
-    let setup = Setup {
-        recordings_dir: Some(recordings.clone()),
-        ..Setup::default()
-    };
-    let mut h = harness(GameMode::OnePlayer, Scores::default(), setup);
+    let mut h = harness(GameMode::OnePlayer, Scores::default(), Setup::default());
+    h.shell
+        .set_transfer(NativeFileTransfer::new(recordings.clone()));
     h.play_until_out(&["ArrowLeft"]);
     h.enter("ABC");
     h.close_entry();
@@ -705,11 +705,9 @@ fn f8_saves_once_with_auto_name() {
 fn f8_without_game_does_nothing() {
     let dir = TempDir::new("shell");
     let recordings = dir.path().join("recordings");
-    let setup = Setup {
-        recordings_dir: Some(recordings.clone()),
-        ..Setup::default()
-    };
-    let mut h = harness(GameMode::OnePlayer, Scores::default(), setup);
+    let mut h = harness(GameMode::OnePlayer, Scores::default(), Setup::default());
+    h.shell
+        .set_transfer(NativeFileTransfer::new(recordings.clone()));
     h.frame();
     h.tap("F8");
     let frame = h.frame().clone();
@@ -853,5 +851,93 @@ fn save_failure_does_not_stop_game() {
             .table(&key(GameMode::OnePlayer))
             .entries()[0],
         Entry::new(*b"MSX", 50)
+    );
+}
+
+#[test]
+fn export_uses_desktop_file_name() {
+    let transfer = RecordingTransfer::default();
+    let mut h = harness(GameMode::OnePlayer, Scores::default(), Setup::default());
+    h.shell.set_transfer(transfer.clone());
+    // Nothing to save yet: no export.
+    h.tap("F8");
+    h.frame();
+    assert!(transfer.exported.borrow().is_empty());
+    h.play_until_out(&["ArrowLeft"]);
+    h.enter("ABC");
+    h.close_entry();
+    h.until_title();
+    let text = h.shell.last_game().unwrap().text.clone();
+    h.tap("F8");
+    h.frame();
+    {
+        let exported = transfer.exported.borrow();
+        // The name the desktop gives the file, and the recording's bytes.
+        assert_eq!(exported.len(), 1);
+        assert_eq!(exported[0].0, "ABC50.drf");
+        assert_eq!(exported[0].1, text.as_bytes());
+    }
+    // Once only.
+    h.tap("F8");
+    h.frame();
+    assert_eq!(transfer.exported.borrow().len(), 1);
+    assert_eq!(h.notices(), Vec::<String>::new());
+    assert_eq!(transfer.imports.get(), 0);
+}
+
+#[test]
+fn picked_recording_starts_playback() {
+    // A game played and kept: its recording is picked back in.
+    let mut h = harness(GameMode::OnePlayer, Scores::default(), Setup::default());
+    h.play_until_out(&["ArrowLeft"]);
+    h.enter("ABC");
+    h.close_entry();
+    h.until_title();
+    let text = h.shell.last_game().unwrap().text.clone();
+    let expected = digger_core::replay::verify(text.as_bytes(), ReplayOptions::default()).unwrap();
+
+    // Not a recording: a notice naming the reason, the title goes on.
+    h.shell.event(AppEvent::RecordingPicked {
+        name: String::from("notes.txt"),
+        bytes: b"just some text\n".to_vec(),
+    });
+    let notices: Vec<String> = h
+        .shell
+        .take_notices()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].starts_with("cannot play back notes.txt: "),
+        "{notices:?}"
+    );
+    h.frame();
+    assert!(h.on_title());
+
+    // The recording plays back with the desktop rules to its recorded
+    // result, then the title returns.
+    h.shell.event(AppEvent::RecordingPicked {
+        name: String::from("ABC50.drf"),
+        bytes: text.into_bytes(),
+    });
+    assert!(h.shell.take_notices().is_empty());
+    assert!(matches!(h.shell.scene(), Scene::Playback(_)));
+    let mut frames = 0_u32;
+    let mut score = None;
+    while !h.on_title() {
+        h.frame();
+        if let Scene::Playback(playback) = h.shell.scene()
+            && let Some(game) = playback.game()
+        {
+            score = Some(game.state().scores().visible(digger_core::ScoreId::ALL[0]));
+        }
+        frames += 1;
+        assert!(frames < 20_000, "the playback does not end");
+    }
+    assert_eq!(score, Some(expected.scores[0]));
+    assert!(
+        h.shell.last_game().is_some(),
+        "the played game is still there to save"
     );
 }

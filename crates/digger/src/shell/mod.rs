@@ -34,12 +34,15 @@ use digger_sound::SoundControl;
 use crate::cli::Redefine;
 use crate::config::file::SaveError;
 use crate::config::{FrameTime, GameMode, Layer, Settings};
+use crate::event::AppEvent;
 use crate::headless::VerifyJob;
 use crate::input::{Action, Bindings, InputFrame};
 use crate::notice::Notice;
+use crate::page::Phase;
 use crate::scores::store::ScoreStore;
 use crate::scores::{self, ScoreTable, Scores, TableKey};
 use crate::store::{Storage, StoreKey};
+use crate::transfer::FileTransfer;
 
 mod game_over;
 mod initials;
@@ -188,10 +191,6 @@ pub(crate) struct Setup {
     /// The `--record` file: every game played by a person is written to
     /// it when it ends (design D11).
     pub(crate) record_path: Option<PathBuf>,
-    /// The `recordings` folder of the data directory, where the
-    /// save-recording action writes the last game; `None` when there is
-    /// nowhere to save.
-    pub(crate) recordings_dir: Option<PathBuf>,
     /// `--redefine-keys[=all]`: the program opens on key redefinition
     /// instead of the title screen.
     pub(crate) redefine_keys: Option<Redefine>,
@@ -215,7 +214,6 @@ impl Default for Setup {
             base_seed: 0,
             score_levels: scores::LevelSet::Builtin,
             record_path: None,
-            recordings_dir: None,
             redefine_keys: None,
             play: Vec::new(),
             loop_playback: false,
@@ -238,6 +236,10 @@ pub(crate) struct Context<'a> {
     scores: &'a mut ScoreStore,
     /// Where the settings and the tables are saved.
     storage: &'a mut Storage,
+    /// Where the save-recording action hands the last game.
+    transfer: &'a mut Option<Box<dyn FileTransfer>>,
+    /// The notices raised in the frame besides the storage's.
+    notices: &'a mut Vec<Notice>,
     /// The set-up of the program.
     setup: &'a Setup,
     /// How many live games were started so far.
@@ -336,16 +338,19 @@ impl Context<'_> {
         Transition::To(next_playback(self.playlist, self.setup).unwrap_or_else(|| self.title()))
     }
 
-    /// The save-recording action: writes the last game into the
-    /// recordings folder under its automatic name, once; nothing happens
-    /// when there is no unsaved game (`desktop-app` spec, other title
+    /// The save-recording action: hands the last game out under its
+    /// automatic name, once, through the platform's file transfer (on the
+    /// desktop, into the recordings folder); nothing happens when there is
+    /// no unsaved game or nowhere to save (`desktop-app` spec, other title
     /// screen actions).
     fn save_last_game(&mut self) {
-        let Some(dir) = &self.setup.recordings_dir else {
+        let Some(transfer) = self.transfer.as_mut() else {
             return;
         };
-        if let Some(recording) = self.last_game.take() {
-            recording::save_to_recordings(&recording, dir);
+        if let Some(recording) = self.last_game.take()
+            && let Err(error) = transfer.export(&recording.auto_name(), recording.text.as_bytes())
+        {
+            self.notices.push(Notice::RecordingNotSaved(error));
         }
     }
 }
@@ -419,6 +424,11 @@ pub(crate) struct Shell {
     scores: ScoreStore,
     /// Where the settings and the tables are saved.
     storage: Storage,
+    /// Where the save-recording action hands the last game; `None` when
+    /// there is nowhere to save.
+    transfer: Option<Box<dyn FileTransfer>>,
+    /// The notices raised besides the storage's, until they are taken.
+    notices: Vec<Notice>,
     /// The current scene.
     scene: Scene,
 }
@@ -484,6 +494,8 @@ impl Shell {
             scene,
             scores,
             storage,
+            transfer: None,
+            notices: Vec::new(),
             settings,
             setup,
         }
@@ -499,6 +511,8 @@ impl Shell {
             runtime: &mut self.runtime,
             scores: &mut self.scores,
             storage: &mut self.storage,
+            transfer: &mut self.transfer,
+            notices: &mut self.notices,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
@@ -520,7 +534,7 @@ impl Shell {
         if let Some(keys) = out.keys.take() {
             self.apply_keys(*keys, &mut out);
         }
-        let notices = self.storage.take_notices();
+        let notices = self.take_notices();
         FrameOutput {
             picture: self.picture(),
             sound: out.sound,
@@ -616,9 +630,72 @@ impl Shell {
         self.save_changes(&changes);
     }
 
-    /// The notices raised outside a frame (by [`Shell::save_settings`]).
+    /// The notices raised since they were last taken: a frame's output
+    /// carries them, and those raised outside a frame (by
+    /// [`Shell::save_settings`] or [`Shell::event`]) are taken here.
     pub(crate) fn take_notices(&mut self) -> Vec<Notice> {
-        self.storage.take_notices()
+        let mut notices = std::mem::take(&mut self.notices);
+        notices.extend(self.storage.take_notices());
+        notices
+    }
+
+    /// Sets where the save-recording action hands the last game.
+    pub(crate) fn set_transfer(&mut self, transfer: impl FileTransfer + 'static) {
+        self.transfer = Some(Box::new(transfer));
+    }
+
+    /// Handles an event from the platform (add-web-build-and-releases,
+    /// design decision 4). A picked recording is played back from the
+    /// title screen with the desktop playback rules, and the title returns
+    /// when it ends; one that cannot be played, or one picked away from the
+    /// title screen, is rejected with a notice and the scene goes on.
+    pub(crate) fn event(&mut self, event: AppEvent) {
+        match event {
+            AppEvent::RecordingPicked { name, bytes } => self.picked(name, &bytes),
+            AppEvent::TransferFailed(error) => {
+                self.notices.push(Notice::RecordingNotSaved(error));
+            }
+            AppEvent::StorageFailed(key, error) => self.storage.failed(key, error),
+            // Pausing for a hidden page is task 3.6 of add-web-build-and-
+            // releases; the desktop sends no visibility events.
+            AppEvent::Visibility(_) => {}
+        }
+    }
+
+    /// A recording picked by the player.
+    fn picked(&mut self, name: String, bytes: &[u8]) {
+        if !matches!(self.scene, Scene::Title(_)) {
+            self.notices.push(Notice::RecordingRejected {
+                name,
+                reason: String::from("recordings are played from the title screen"),
+            });
+            return;
+        }
+        match digger_core::recording::parse(bytes) {
+            Ok(recording) => {
+                let scene = PlaybackScene::watch(
+                    &recording,
+                    std::path::Path::new(&name),
+                    None,
+                    self.setup.record_kind,
+                );
+                self.scene = Scene::Playback(Box::new(scene));
+            }
+            Err(error) => self.notices.push(Notice::RecordingRejected {
+                name,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    /// What the program is doing, for the page.
+    pub(crate) const fn phase(&self) -> Phase {
+        match self.scene {
+            Scene::Title(_) => Phase::Title,
+            Scene::Redefine(_) => Phase::Redefine,
+            Scene::Playing(_) => Phase::Playing,
+            Scene::Playback(_) => Phase::Playback,
+        }
     }
 
     /// The platform switched between the window and fullscreen at the
@@ -677,6 +754,8 @@ impl Shell {
             runtime: &mut self.runtime,
             scores: &mut self.scores,
             storage: &mut self.storage,
+            transfer: &mut self.transfer,
+            notices: &mut self.notices,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,

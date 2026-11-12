@@ -32,6 +32,7 @@ use digger_core::recording::RecordingKind;
 mod cli;
 mod config;
 mod error;
+mod event;
 // The web stub entry point of task 1.2 runs no verification yet (temporary
 // until task 3.8 of add-web-build-and-releases).
 #[cfg_attr(
@@ -47,12 +48,14 @@ mod input;
 mod manual_doc;
 mod notice;
 mod pacing;
+mod page;
 mod platform;
 mod present;
 mod report;
 mod scores;
 mod shell;
 mod store;
+mod transfer;
 
 #[cfg(not(target_arch = "wasm32"))]
 use error::AppError;
@@ -130,7 +133,6 @@ fn run() -> Result<(), AppError> {
             levels.as_ref().map(|file| file.path.as_path()),
         ),
         record_path: options.record.clone(),
-        recordings_dir: Some(paths.recordings_dir()),
         redefine_keys: options.redefine_keys,
         play: options.play.clone(),
         loop_playback: options.loop_playback,
@@ -143,7 +145,8 @@ fn run() -> Result<(), AppError> {
         frame_counter: std::env::var_os(FRAME_COUNTER_VAR)
             .is_some_and(|value| !value.is_empty() && value != "0"),
     };
-    let shell = shell::Shell::with_storage(settings, setup, store::Storage::new(files));
+    let mut shell = shell::Shell::with_storage(settings, setup, store::Storage::new(files));
+    shell.set_transfer(transfer::NativeFileTransfer::new(paths.recordings_dir()));
     let platform::Finished { shell, status } = platform::run(platform::App::new(shell, window))?;
     finish(shell, status, options.verify.as_deref())
 }

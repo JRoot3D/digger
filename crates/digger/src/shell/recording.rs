@@ -9,14 +9,14 @@
 //! With `--record` the recording is written to that file as soon as the
 //! game ends, replacing what the file held, in the format its extension
 //! selects. Otherwise the save-recording action on the title screen writes
-//! the last game, once, to `<initials><score>.drf` in the `recordings`
-//! folder of the data directory, with `-2`, `-3`, … before the extension
-//! when the name is taken (`configuration` spec, record option; design
-//! D11).
+//! the last game, once, as `<initials><score>.drf` through the platform's
+//! file transfer: on the desktop into the `recordings` folder of the data
+//! directory, with `-2`, `-3`, … before the extension when the name is
+//! taken (`configuration` spec, record option; design D11).
 
 use std::fs;
-use std::io::{self, Write as _};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::Path;
 
 use digger_core::GameSummary;
 use digger_core::recording::RecordingKind;
@@ -27,8 +27,6 @@ use crate::scores::Entry;
 
 /// The initials of an automatic name when none were entered.
 const NO_INITIALS: &str = "___";
-/// How many numbered names are tried before giving up.
-const MAX_SUFFIX: u32 = 9999;
 
 /// The recording format a `--record` file name selects: eDRF for a name
 /// ending in `.edrf` in any letter case, DRF for any other.
@@ -74,37 +72,10 @@ impl FinishedRecording {
         fs::write(path, &self.text)
     }
 
-    /// Writes the recording into `dir` under its automatic name, creating
-    /// the directory if needed, and returns the file written. A name that
-    /// is taken gets `-2`, `-3`, … before the extension; an existing file
-    /// is never overwritten.
-    pub(crate) fn save_auto(&self, dir: &Path) -> io::Result<PathBuf> {
-        fs::create_dir_all(dir)?;
-        let stem = self.auto_stem();
-        for n in 1..=MAX_SUFFIX {
-            let name = if n == 1 {
-                format!("{stem}.drf")
-            } else {
-                format!("{stem}-{n}.drf")
-            };
-            let path = dir.join(name);
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(mut file) => {
-                    file.write_all(self.text.as_bytes())?;
-                    return Ok(path);
-                }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!("every name from {stem}.drf to {stem}-{MAX_SUFFIX}.drf is taken"),
-        ))
+    /// The automatic file name: [`FinishedRecording::auto_stem`] and
+    /// `.drf`.
+    pub(crate) fn auto_name(&self) -> String {
+        format!("{}.drf", self.auto_stem())
     }
 }
 
@@ -113,14 +84,6 @@ impl FinishedRecording {
 pub(crate) fn save_record_file(recording: &FinishedRecording, path: &Path) {
     if let Err(error) = recording.write_to(path) {
         report::notice(format!("{}: recording not saved: {error}", path.display()));
-    }
-}
-
-/// Writes `recording` into `dir` under its automatic name, reporting a
-/// failure as a notice.
-pub(crate) fn save_to_recordings(recording: &FinishedRecording, dir: &Path) {
-    if let Err(error) = recording.save_auto(dir) {
-        report::notice(format!("{}: recording not saved: {error}", dir.display()));
     }
 }
 

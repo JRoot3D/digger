@@ -6,6 +6,7 @@
 use std::fmt;
 
 use crate::store::{StoreError, StoreKey};
+use crate::transfer::TransferError;
 
 /// A condition the player is told about while the game carries on.
 #[derive(Debug)]
@@ -21,6 +22,15 @@ pub(crate) enum Notice {
     /// The stored settings have become unusable since the program started;
     /// they are left as they are and the changes are not saved.
     SettingsNotSaved(String),
+    /// The last game's recording could not be handed out.
+    RecordingNotSaved(TransferError),
+    /// A picked recording cannot be played back.
+    RecordingRejected {
+        /// The file's name.
+        name: String,
+        /// Why.
+        reason: String,
+    },
 }
 
 impl fmt::Display for Notice {
@@ -38,6 +48,13 @@ impl fmt::Display for Notice {
                 "high scores not saved: {error}; they are kept until the program ends"
             ),
             Self::SettingsNotSaved(reason) => write!(f, "settings not saved: {reason}"),
+            Self::RecordingNotSaved(TransferError::Io { path, source }) => {
+                write!(f, "{}: recording not saved: {source}", path.display())
+            }
+            Self::RecordingNotSaved(error) => write!(f, "recording not saved: {error}"),
+            Self::RecordingRejected { name, reason } => {
+                write!(f, "cannot play back {name}: {reason}")
+            }
         }
     }
 }
