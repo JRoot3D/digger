@@ -25,7 +25,7 @@ use super::fireball::Fireball;
 use super::fireball::FireballStage;
 use super::geom::{CellPos, Direction, Located, MAX_X, MAX_Y, MIN_X, MIN_Y, locate, reverse_of};
 use super::gfx::Gfx;
-use super::ids::{BagId, DiggerId, MonsterSlot, PlayerId};
+use super::ids::{BagId, DiggerId, MonsterSlot, PlayerId, SlotId};
 use super::input::FrameInput;
 use super::penalty::{Penalty, PenaltySite};
 use super::score::{ScoreEvent, ScoreId};
@@ -834,7 +834,8 @@ impl Ctx<'_> {
     /// counted down first (quirk Q13); then for each unit in order, read
     /// its controls, update its fireball, move it (or pause it after a
     /// push, or run its death), and count down its emerald window; then
-    /// the bonus-mode timers (game-flow spec, "Update order of a
+    /// each control slot no unit plays from is offered to the observer and
+    /// ignored; then the bonus-mode timers (game-flow spec, "Update order of a
     /// main-phase tick", "Gauntlet clock"; research 02 §3.3, research 01
     /// §7.4, `dodigger`).
     pub(crate) fn update_diggers(&mut self, input: &FrameInput) {
@@ -864,6 +865,17 @@ impl Ctx<'_> {
             }
             let digger = record.of_mut(&mut self.sim.diggers);
             digger.emerald_window = digger.emerald_window.saturating_sub(1);
+        }
+        // A slot no digger plays from is still offered to the observer once
+        // per tick, after the slots in play, and what it returns is
+        // dropped: an eDRF recording holds a value for every slot on every
+        // tick, read or not (design D8; game-recording spec, "One-digger
+        // game ignores slot 1").
+        for slot in SlotId::ALL
+            .into_iter()
+            .skip(usize::from(self.sim.cfg.mode.diggers()))
+        {
+            let _unread = self.obs.controls(tick, slot, input.slot(slot));
         }
         self.update_bonus_mode();
     }

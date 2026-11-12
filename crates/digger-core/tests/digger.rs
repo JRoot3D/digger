@@ -204,11 +204,14 @@ fn observer_sees_one_movement_per_movable_tick() {
         .script(Script::parse("R*5 .*5 UF").expect("valid script"));
     assert_eq!(run.run_ticks(11), 11);
     let obs = run.observer();
-    let slot = SlotId::ALL[0];
+    let [slot, unread] = SlotId::ALL;
     assert_eq!(
         obs.controls,
-        (1..=11).map(|t| (t, slot)).collect::<Vec<_>>(),
-        "one controls call per tick for the one slot in play"
+        (1..=11)
+            .flat_map(|t| [(t, slot), (t, unread)])
+            .collect::<Vec<_>>(),
+        "one controls call per tick for each slot, the one in play first \
+         (design D8: the slot no digger reads is offered too)"
     );
     assert_eq!(obs.movements.len(), 11, "one movement sample per tick");
     let right = Movement {
