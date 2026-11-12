@@ -13,6 +13,7 @@ This directory holds the scenario and integration tests of the simulation
 | `game_flow.rs` | game-flow spec: rounds, phases, outcomes, pause, quit, gauntlet, music |
 | `determinism.rs` | one scripted game per mode run twice, undrained and headless (task 15.1) |
 | `observer_roundtrip.rs` | seeds and movement samples recorded and replayed (task 15.2) |
+| `observer_seam.rs` | the observer hook call points recording and playback rely on, and `ReplayObserver` with no components (`add-recording-and-conformance`, task group 1) |
 | `soak.rs` | every mode for 50,000 frames in a debug build (task 15.3) |
 | `quirks_doc.rs` | `docs/compat-quirks.md` names only existing tests (task 15.4) |
 | `golden_frames.rs`, `sprite_model.rs` | renderer and sprite layer (`add-assets-and-renderer`) |
