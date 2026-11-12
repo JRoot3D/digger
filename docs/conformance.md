@@ -153,10 +153,11 @@ cargo xtask conformance --tier quick
 cargo xtask conformance --filter 2test03
 ```
 
-All 50, with the long games, run fastest from an optimised build:
+All 50, with the long games (the `xtask` profile optimises the
+simulation, see "Continuous integration"):
 
 ```sh
-cargo run --release -p xtask -- conformance --tier full
+cargo xtask conformance --tier full
 ```
 
 ### Reading a failure report
@@ -319,7 +320,7 @@ That run was the first with every job green on the change's branch
 One row per corpus recording, generated from the first full-tier report
 (`cargo xtask conformance --tier full`, 48 of 50 passing) and kept current
 by task group 12. After the group, all 50 pass (`cargo xtask conformance
---tier full`, release build, about 17 s): the two failures of the first run
+--tier full`, about 20 s; test `no_pending_recordings`): the two failures of the first run
 had one cause, quirk P17 in `docs/compat-quirks.md`, and the *First failing
 checkpoint* column keeps the checkpoint that exposed it. The failures
 clustered as follows: both at an `E` checkpoint written for a recorded quit

@@ -389,7 +389,11 @@ needs (found while doing task 11.2). A new `conformance` job runs
 `cargo test --release -p digger-core --test conformance -- --include-ignored`
 on Linux, and uploads `target/conformance/report.md` from `cargo xtask
 conformance --tier full`. The quick tier also runs on Windows and macOS
-through the existing matrix.
+through the existing matrix. `cargo xtask` builds in its own `xtask`
+profile (inheriting `dev`, with `digger-core` at `opt-level = 2`), so that
+the full tier runs quickly from the plain alias and the `cargo test` run by
+`cargo xtask ci` never has to replace the running `target/debug/xtask.exe`,
+which Windows refuses (found while doing task 13.2).
 
 *Alternative rejected:* `datatest-stable`/`libtest-mimic` for per-file tests
 — a custom harness for 50 files that a 50-line macro list covers.
