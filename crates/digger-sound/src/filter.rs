@@ -145,7 +145,10 @@ mod tests {
     #[test]
     fn coefficients_at_44100() {
         let rate = SampleRate::DEFAULT;
+        // The published 10-digit values to 1e-9 (task 7.4); the closed form
+        // of the spec to 1e-12 (design D12).
         let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let exact = |a: f64, b: f64| (a - b).abs() < 1e-12;
 
         let w_high = prewarp(HIGH_PASS_HZ, rate);
         let w_low = prewarp(LOW_PASS_HZ, rate);
@@ -155,13 +158,17 @@ mod tests {
         let filter = OutputFilter::new(rate);
         let (b0, b1, a1) = filter.high_pass().coefficients();
         assert!(close(a1, -0.866_788_439_5), "{a1}");
-        assert!(close(b0, 1.0 / (1.0 + w_high)));
-        assert!(close(b1, -b0));
+        let n = 1.0 / (1.0 + w_high);
+        assert!(exact(a1, n * (w_high - 1.0)));
+        assert!(exact(b0, n));
+        assert!(exact(b1, -n));
 
         let (b0, b1, a1) = filter.low_pass().coefficients();
         assert!(close(a1, -0.546_882_321_1), "{a1}");
-        assert!(close(b0, w_low / (1.0 + w_low)));
-        assert!(close(b1, b0));
+        let n = 1.0 / (1.0 + w_low);
+        assert!(exact(a1, n * (w_low - 1.0)));
+        assert!(exact(b0, n * w_low));
+        assert!(exact(b1, n * w_low));
     }
 
     #[test]
