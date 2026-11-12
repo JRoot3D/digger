@@ -49,6 +49,7 @@ pub use playback::{Failure, PlaybackFailure, ReplayObserver, playback_config};
 pub use recorder::{
     DRF_MAX_RUN, DRF_WRAP_COLUMNS, DrfRecorder, EDRF_CHUNK, EdrfRecorder, Recorder, SlotSample,
 };
+pub use trace::{TraceField, TraceLine, TraceOptions, TraceSink};
 pub use verifier::{CHECKPOINT_EVERY, Divergence};
 
 use core::fmt::Write as _;
@@ -187,6 +188,23 @@ impl Replay {
             .take_recorder()
             .map(|mut recorder| recorder.take_pending());
         (self.report(), text)
+    }
+
+    /// Traces the ticks `options` names from now on (replay-verification
+    /// spec, "Per-tick state trace for triage"): one line per tick, drained
+    /// with [`take_trace`](Self::take_trace). Tracing only observes; the
+    /// playback goes exactly as it would without it.
+    pub fn set_trace(&mut self, options: TraceOptions) {
+        self.observer.set_trace(TraceSink::new(options));
+    }
+
+    /// Removes and returns the trace text written since the last call;
+    /// empty without [`set_trace`](Self::set_trace).
+    pub fn take_trace(&mut self) -> String {
+        self.observer
+            .trace_mut()
+            .map(TraceSink::take_pending)
+            .unwrap_or_default()
     }
 
     /// Hands the game over to live controls before the next frame

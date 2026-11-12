@@ -23,6 +23,7 @@ This directory holds the scenario and integration tests of the simulation
 | `conversion_twins.rs` | each corpus DRF converted to eDRF matches its upstream `.edrf` twin record for record and tick for tick; an informational count of byte-identical twins (`add-recording-and-conformance`, task 8.6) |
 | `takeover.rs` | taking a playback over: recorded controls up to the hand-over tick and live ones after it, a game recorded across the hand-over replays to the same end, no high score (`add-recording-and-conformance`, task 9.1) |
 | `isolation.rs` | corpus recordings verified beside a live game under hostile caller settings (unlimited lives, start level 5, other modes, another bonus interval) give identical reports and leave the settings untouched (`add-recording-and-conformance`, task 9.2) |
+| `trace.rs` | the per-tick state trace: a 256-tick window, the decoded dump, tracing is passive (`add-recording-and-conformance`, task 10.1) |
 | `quirks_doc.rs` | `docs/compat-quirks.md` names only existing tests (task 15.4) |
 | `golden_frames.rs`, `sprite_model.rs` | renderer and sprite layer (`add-assets-and-renderer`) |
 

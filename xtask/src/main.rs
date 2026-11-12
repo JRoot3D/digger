@@ -5,13 +5,17 @@
 
 #![forbid(unsafe_code)]
 
+mod bisect;
 mod ci;
 mod conformance;
 mod convert;
+mod cut;
 mod deps;
+mod dump_state;
 mod import;
 mod recordings;
 mod render;
+mod trace_diff;
 mod verify;
 
 use std::process::ExitCode;
@@ -55,6 +59,20 @@ enum Command {
     /// output name selects (.edrf for eDRF, anything else DRF); the exit
     /// status is that of `verify` on the input.
     Convert(convert::ConvertArgs),
+    /// Play a recording and write one trace line per tick from --from to
+    /// --to (full hash, block hashes and lengths, RNG state, scores); with
+    /// --fields also every hashed value. Plays on past a failed checkpoint.
+    DumpState(dump_state::DumpStateArgs),
+    /// Write an eDRF holding the same game up to tick --at, followed by
+    /// `Q 0`; it verifies as truncated after exactly that many ticks.
+    Cut(cut::CutArgs),
+    /// Verify an eDRF and report the failing window, the last matching
+    /// checkpoint, the recorded round ends inside the window and the
+    /// dump-state command to run next.
+    Bisect(bisect::BisectArgs),
+    /// Compare two dump-state traces and report the first tick and block
+    /// that differ; exit status 0 same, 1 different, 2 unreadable.
+    TraceDiff(trace_diff::TraceDiffArgs),
 }
 
 fn main() -> ExitCode {
@@ -67,6 +85,10 @@ fn main() -> ExitCode {
         Command::Conformance(args) => conformance::run(&args).map_err(Into::into),
         Command::Verify(args) => return ExitCode::from(verify::run(&args)),
         Command::Convert(args) => return ExitCode::from(convert::run(&args)),
+        Command::DumpState(args) => return ExitCode::from(dump_state::run(&args)),
+        Command::Cut(args) => return ExitCode::from(cut::run(&args)),
+        Command::Bisect(args) => return ExitCode::from(bisect::run(&args)),
+        Command::TraceDiff(args) => return ExitCode::from(trace_diff::run(&args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

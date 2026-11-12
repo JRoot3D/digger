@@ -15,17 +15,20 @@
 //!   bonus score;
 //! - `drf`: `DrfRecording` and its lazy body cursor `DrfCursor`;
 //! - `edrf`: `EdrfRecording`, its records and run-length control runs;
-//! - `naming`: upstream's default file name for a saved recording.
+//! - `naming`: upstream's default file name for a saved recording;
+//! - `edit`: an eDRF read as a timeline of ticks, and cut short at a tick.
 //!
 //! The format grammars are documented in `docs/recording-formats.md`.
 
 mod drf;
+mod edit;
 mod edrf;
 mod error;
 mod header;
 mod naming;
 
 pub use drf::{DRF_PLANS, DrfCursor, DrfRecord, DrfRecording, DrfStep, OutOfStep};
+pub use edit::{CutError, TimedRecord, cut_edrf, edrf_timeline};
 pub use edrf::{
     ControlRuns, ControlValue, EDRF_SLOTS, EdrfLevel, EdrfRecording, EdrfRecords, EndRecord,
     InputRecord, LevelMap, LevelRecord, Record, Run,

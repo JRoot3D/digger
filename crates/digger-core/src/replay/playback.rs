@@ -535,6 +535,17 @@ impl ReplayObserver {
         self.recorder.take()
     }
 
+    /// Adds `trace`, which from then on is told every hook with the value
+    /// actually used, after the recorder and the verifier.
+    pub(crate) fn set_trace(&mut self, trace: TraceSink) {
+        self.trace = Some(trace);
+    }
+
+    /// The trace sink, if there is one.
+    pub(crate) const fn trace_mut(&mut self) -> Option<&mut TraceSink> {
+        self.trace.as_mut()
+    }
+
     /// The first failure found, by the playback source or the verifier.
     pub(crate) const fn failure(&self) -> Option<&Failure> {
         self.failure.as_ref()
