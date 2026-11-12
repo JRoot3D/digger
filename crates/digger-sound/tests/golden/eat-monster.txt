@@ -1,0 +1,3 @@
+# Eat-monster alone: three chirps, 63 ticks.
+0 eat-monster
+48480 end             # 80 ticks

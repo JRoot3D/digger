@@ -1,0 +1,4 @@
+# Bag wobble alone: two full 64-tick cycles, then the wobble stops.
+0 wobble-start
+77568 wobble-stop     # 128 ticks
+88_200 end

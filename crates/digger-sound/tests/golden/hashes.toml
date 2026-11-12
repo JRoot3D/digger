@@ -1,0 +1,23 @@
+# SHA-256 of the little-endian i16 samples of each tests/golden/*.txt
+# script, rendered at 44100 Hz, filter off, volume 100.
+# Regenerate: UPDATE_GOLDEN=1 cargo test -p digger-sound --test golden
+
+bonus = "6bd300a5dda4f7bed869ea8fc5e5e8d01889f6c78cf37e86a25e157f5770b36c"
+break = "c46e76844c6b34b5e8740d29fa1c9093522283f858ebd793484e0c6e14f713ec"
+death = "9723b3265550a214ad8aace369e25c7c9f3b5a02bc71467497b54e1d7bfa6943"
+dirge-quick = "f895f508e88110f0d49ffc557f9bcf8b8fbbf4b01120e637c59bef4c864e11a1"
+dirge-standard = "0c10ee97f30b763ce659791fd682eeaea3e7950c81a7749b194dc3c3be21b943"
+eat-monster = "7fcade1dcc34940a64a616f31cd7ec49ddeeac6e9b9d71214f97b417000d3f93"
+emerald = "befb5a8d23cbd2300f68e08f40c591949221b7213e455c87e5ec44ebc651b631"
+emerald-click = "174c368aea7cdcc18eaea421c1d9a447c54ad9a8eb238e5b5c4822bb5cdda042"
+explode = "208e6088ae6aae14e925e044eafb877f83c3337c0897f8261d66863890974d92"
+extra-life = "2521e244fadc1027a4409e9773326165d691a36c3629fd8c0ac9ffebf1bda301"
+fall = "48ae8b5b681d083205a8676bb80fe7f6212f4a4c274d137c0080691a00ce5b6e"
+fire = "fb2b6fbb5306590e060b018fd8ce9db38af14b96b390eeb97457c053c4b539c7"
+gold = "c84b97fd44ed34051179b224935434d0d6918f3aee45b7307f5bf90960f0b297"
+level-done = "8352a053cef758cdb528f3edb2d483cb8f4533cfd97008c73e7985ccbef44778"
+mixed = "5215e7ac711ad2e8353058adca07afbcfe10ed4fd45bad5834caae0462ecfbe4"
+music-battle = "4d8ac34bf7a52aab5199590f21e79dcf199975b1118945fb0225421c88e7d65a"
+music-bonus = "dd138c875f9e53940c4f5cbb263ba6e7f63a79de51bbad10716d0cff5e0dd24a"
+music-normal = "d31f888c77c4fa9cbf10552db8ac1f44fcb0fa02d3380001c5ec7b98c0d8d919"
+wobble = "eb6ff7ad4bbe19135a0af38e74489c557b8fc27110d548a57fd6c53e792969c4"

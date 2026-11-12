@@ -1,0 +1,3 @@
+# Fireball 0 flight alone, until it ends by itself (base above 30000).
+0 fire-start 0
+330_750 end           # 7.5 s

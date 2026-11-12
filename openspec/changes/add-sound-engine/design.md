@@ -56,13 +56,15 @@ crates/digger-sound/
       tables.rs   decoding of assets/music.bin into TuneTables
     voice.rs      Voice: what sounds on one tick; TickTrace
     osc.rs        SquareOsc (integer phase accumulator), Gate
+    script.rs     Script: text command scripts (golden tests, xtask render-sound)
     filter.rs     FirstOrder, OutputFilter (HP 1 kHz then LP 4 kHz)
     synth.rs      Synth: apply(), tick(), render(); owns all of the above
     link.rs       sound_link(): SoundHandle (game side) + AudioSource (audio side)
     driver.rs     ManualDriver (tests, xtask), NullDriver (no device)
   tests/
     effects_trace.rs  music_trace.rs  switches.rs  golden.rs  generator_props.rs
-    golden/hashes.toml
+    link_threads.rs   simulation.rs (non-interference and command boundary)
+    golden/*.txt  golden/hashes.toml  golden/REVIEW.md
 ```
 
 `Synth` is the pure core and has no queue in it: `apply(&mut self, input)`, `tick(&mut self) -> TickTrace`, `render(&mut self, out: &mut [i16])`. `link.rs` is the only module that knows about threads.

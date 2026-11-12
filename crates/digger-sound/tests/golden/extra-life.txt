@@ -1,0 +1,3 @@
+# Extra life alone: 97 ticks.
+0 extra-life
+66660 end             # 110 ticks

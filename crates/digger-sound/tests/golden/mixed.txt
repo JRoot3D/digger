@@ -1,0 +1,24 @@
+# Effects over the normal tune for 10 s: each effect displaces the music
+# for its own ticks only; higher-priority effects win where two overlap.
+0 music normal
+44100 emerald-click
+44100 emerald 0
+66150 emerald-click
+66150 emerald 1
+88200 emerald-click
+88200 emerald 2
+110250 wobble-start
+132300 wobble-stop
+132300 fall-start
+154350 gold           # under a falling bag: the fall wins on its ticks
+176400 fall-stop
+176400 break
+198450 fire-start 0
+220500 explode 0      # ends fireball 0's flight
+220500 fire-stop 0    # changes nothing
+242550 bonus-start
+264600 eat-monster    # under the siren: heard on the siren's silent ticks
+308700 bonus-stop
+330750 extra-life     # still running when death starts: it wins on its ticks
+374850 death          # death stops the music
+441_000 end

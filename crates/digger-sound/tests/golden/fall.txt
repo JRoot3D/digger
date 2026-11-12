@@ -1,0 +1,5 @@
+# Bag fall alone: a falling bag for 1 s, then the fall stops.
+# One tick is 606 samples at 44100 Hz.
+0 fall-start
+44100 fall-stop
+52_520 end

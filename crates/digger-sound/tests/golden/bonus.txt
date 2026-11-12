@@ -1,0 +1,4 @@
+# Bonus siren alone for 2 s, then it stops.
+0 bonus-start
+88200 bonus-stop
+97_020 end

@@ -1,0 +1,3 @@
+# The bonus tune at the standard tempo for 10 s.
+0 music bonus
+441_000 end

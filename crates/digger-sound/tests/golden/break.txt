@@ -1,0 +1,3 @@
+# Bag break alone: 15000 for three ticks.
+0 break
+12120 end             # 20 ticks

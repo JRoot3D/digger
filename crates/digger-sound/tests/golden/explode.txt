@@ -1,0 +1,3 @@
+# Fireball 0 explosion alone: the 10-tick chirp.
+0 explode 0
+12120 end             # 20 ticks

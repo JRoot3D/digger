@@ -1,0 +1,4 @@
+# The dirge at the standard tempo (one-digger games), past its finish on
+# tick 513.
+0 music dirge
+339_360 end           # 560 ticks

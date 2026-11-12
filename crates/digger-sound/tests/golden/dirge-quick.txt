@@ -1,0 +1,4 @@
+# The dirge at the quick tempo (two-digger games), past its finish on
+# tick 363.
+0 music dirge quick
+242_400 end           # 400 ticks

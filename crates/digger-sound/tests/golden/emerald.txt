@@ -1,0 +1,11 @@
+# Emerald scale alone: steps 0 to 7, one every 80 ticks (each burst is
+# over on its 57th tick).
+0 emerald 0
+48480 emerald 1
+96960 emerald 2
+145440 emerald 3
+193920 emerald 4
+242400 emerald 5
+290880 emerald 6
+339360 emerald 7
+387_840 end

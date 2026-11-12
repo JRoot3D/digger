@@ -33,6 +33,31 @@ cargo xtask ci
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full set of checks, the code
 conventions, commit messages and the OpenSpec workflow.
 
+## Developer tooling
+
+`cargo xtask <command>` runs the developer tool in [`xtask/`](xtask);
+`cargo xtask --help` lists every command. Assets and recordings are covered
+in [`docs/assets.md`](docs/assets.md) and
+[`docs/conformance.md`](docs/conformance.md).
+
+**Sound.** `cargo xtask render-sound <script> <out.wav>` renders a sound
+command script through the sound engine to a 16-bit mono WAV file, for
+listening. A script has one `<sample offset> <command>` entry per line and
+ends with `<offset> end` (the format is documented in the `digger_sound::script`
+module); the golden scripts in
+[`crates/digger-sound/tests/golden/`](crates/digger-sound/tests/golden) are
+examples. The defaults are those of the golden tests (44100 Hz, filter off,
+volume 100); `--rate`, `--filter on|off` and `--volume` change them.
+
+```bash
+cargo xtask render-sound crates/digger-sound/tests/golden/mixed.txt target/sound/mixed.wav
+```
+
+The golden test `cargo test -p digger-sound --test golden` compares the hash
+of each script's render with `tests/golden/hashes.toml`; after an intended
+change, regenerate it with `UPDATE_GOLDEN=1` and review the new renders with
+`render-sound` (see `tests/golden/REVIEW.md`).
+
 ## Where things are
 
 | Path | Contents |

@@ -1,0 +1,5 @@
+# The level-done jingle: 11 notes of 21 ticks, 231 ticks, played over
+# the normal tune, which is frozen while it sounds and resumes after.
+0 music normal
+0 level-done
+169_680 end           # 280 ticks

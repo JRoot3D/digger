@@ -1,0 +1,3 @@
+# Death effect alone: 51 ticks.
+0 death
+36360 end             # 60 ticks

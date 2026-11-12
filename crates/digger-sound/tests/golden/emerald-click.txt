@@ -1,0 +1,5 @@
+# Emerald click alone: one tick of divisor 1000, three times.
+0 emerald-click
+12120 emerald-click
+24240 emerald-click
+36360 end
