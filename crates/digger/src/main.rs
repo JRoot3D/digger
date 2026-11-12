@@ -1,11 +1,18 @@
-//! The Digger desktop game.
+//! The Digger game, for the desktop and (with task group 3 of
+//! add-web-build-and-releases) the browser.
 //!
 //! The module layout follows design D1 of `add-desktop-app`: everything
 //! that talks to a window, an audio device or a gamepad lives in
-//! [`platform`]; the shell, input mapping, pacing, presentation maths,
-//! configuration and score storage are device-free. The binary parses its
-//! command line and configuration, runs `--verify --headless` without a
-//! window, and otherwise runs the shell in the game window.
+//! [`platform`], which has a native and a web implementation behind the
+//! same names; the shell, input mapping, pacing, presentation maths,
+//! configuration and score storage are device-free. What differs per
+//! target besides the platform sits behind small seams with a native
+//! implementation and a test fake each: [`store`] (settings and scores),
+//! [`transfer`] (recordings in and out), [`page`] (notices and status),
+//! [`event`] (asynchronous results) and [`launch`] (start-up options; the
+//! command line is native only). The desktop binary parses its command line
+//! and configuration, runs `--verify --headless` without a window, and
+//! otherwise runs the shell in the game window.
 
 #![forbid(unsafe_code)]
 // Temporary (add-web-build-and-releases, tasks 2.1 to 3.8): until the web
