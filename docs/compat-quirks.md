@@ -296,6 +296,21 @@ freeze of effects and music ends only with the jingle (research 04 §2).
 Tests: `pause_is_separate_from_the_jingle_freeze`,
 `pause_freezes_gold_at_tick_10_and_resumes_at_11` (`tests/switches.rs`).
 
+## Command line (`add-desktop-app`)
+
+The upstream one-letter options are accepted as aliases of the long
+options (`configuration` spec, upstream option aliases); where upstream's
+parsing is accidental, the port gives a defined result instead. Class:
+usability bug, fixed. All are in `crates/digger/src/cli/`.
+
+| Id | Upstream behaviour | Port | Isolated in | Test |
+|---|---|---|---|---|
+| CL1 | Option values are parsed without validation: `/S:n` and `/I:n` wrap in 16 bits, `/I` accepts `0x` and octal forms, `/G` clamps above 3599 (research 01 §1.1) | A value that is not a decimal number in range ends the program with status 64 and a message quoting the option as typed (`/I`, `-s`) and the value | `Cli` value parsers and `usage_error` (`cli/mod.rs`), the spelling table of `legacy::translate` (`cli/legacy.rs`) | `cli_range_errors_quote_alias` |
+| CL2 | Once a speed has been given, every later bare word is parsed as a (garbage) speed, so `digger /S:40 levels.dlf` loses the level file (research 01 §1.1, `[BUG?]`) | Option order does not matter: a bare word of digits is the speed, any other bare word the level file; a bare speed together with `--speed`, or a bare level file together with `--levels`, is refused with status 64 naming both | `convert` (`cli/mod.rs`) | `cli_bare_number_is_speed`, `cli_bare_word_is_level_file` |
+| CL3 | A Unix absolute path such as `/Users/ann/levels.dlf` is read as the option `/U` with junk after it | A file-valued alias (`/L /R /P /E`) needs its colon and a flag alias must stand alone, so such a path passes through as a level file name; a flag alias with a value (`/Q:x`) is refused with status 64 | `legacy::translate` (`cli/legacy.rs`) | `legacy_absolute_paths_untouched`, `legacy_flag_with_value_refused` |
+| CL4 | An unreadable or short level file is dropped silently and the built-in levels are played (research 01 §1.1) | The program stops with status 66 naming the file; `<name>.dlf` is tried first when the name has no extension | `levels::load` (`cli/levels.rs`) | `level_file_missing`, `level_file_dlf_retry`, `level_file_too_short` |
+| CL5 | Options are executed in order while parsing (`/P` plays at once, `/O` restarts the parse), and `/?`, `/H` and unknown options exit with status 1 (research 01 §1.1) | Options are collected first and their combinations checked (`--verify` with `--play`, `--loop` or `--take-over-at`; `--loop` or `--take-over-at` without `--play`; `--headless` without `--verify`; `--players 2` with `--two-diggers` or `--gauntlet`), each refused with status 64; help and version exit with 0, unknown options with 64 | `convert` (`cli/mod.rs`), `main` | `cli_conflicts`, `cli_help_and_version`, `unknown_option_is_a_usage_error` (`crates/digger/tests/cli_basics.rs`) |
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user

@@ -38,6 +38,7 @@ src/
   cli/
     mod.rs           clap derive struct `Cli`, conversion to `CliLayer`
     legacy.rs        alias pre-pass: upstream forms → long options
+    levels.rs        level-file check and load (`.dlf` retry, 1202-byte minimum)
   config/
     mod.rs           `Settings` (resolved), `Layer` (all-Option), merge, validate
     file.rs          TOML read (table walk with key paths), write, atomic save
@@ -205,7 +206,14 @@ typed text ───────┘
 - Each rewritten token remembers its original spelling in a side table so that range and conflict errors can quote what the user typed (`/I:abc`, not `--start-level`).
 - Tokens after `--` are not translated.
 
-clap then parses a derive struct with long options only (plus `-h`, `-V`), one optional positional (`all digits → speed`, otherwise level file), `conflicts_with` / `requires` for the combinations in the spec, and value parsers with ranges. clap's own exit code 2 is not used: errors are rendered with clap's formatter but returned as `AppError::Usage` (status 64), because status 2 means "diverged" in verification runs.
+clap then parses a derive struct with long options only (plus `-h`, `-V`), one optional positional (`all digits → speed`, otherwise level file) and value parsers with ranges. clap's own exit code 2 is not used: errors are rendered with clap's formatter but returned as `AppError::Usage` (status 64), because status 2 means "diverged" in verification runs.
+
+Details settled in task group 3 (no spec conflict; each is a reading of the `configuration` spec):
+
+- The combinations are checked after clap, in `cli::convert`, not with clap's `conflicts_with` / `requires`: the first one depends on a value (`--players 2`, not `--players 1`), and every message must quote each option as typed, which the side table gives for both sides of a pair. In a clap value error (range, not a number, missing value) the long option is replaced by the alias that carried the bad value.
+- A bare speed together with `--speed`, or a bare level file together with `--levels`, is refused (status 64) rather than one silently winning; a second bare argument is an unexpected argument. A repeated option takes its last value (`/Q /Q` is not an error).
+- An upstream flag with a value (`/Q:x`, `/K:5`) is refused with status 64; `/V`, `/v` and `-v` are dropped; `-H` and `/h` are help like `/H`.
+- A level file that does not exist is retried as `<name>.dlf` only when the name has no extension; the error names the file as given.
 
 ### D9. Settings: layers, validation, saving
 

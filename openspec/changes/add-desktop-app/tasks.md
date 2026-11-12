@@ -21,12 +21,12 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 3. Command line
 
-- [ ] 3.1 Define the clap derive struct with every long option of the `configuration` spec, value ranges, the positional argument, `-h` and `-V`. Verify: unit tests `cli_long_options` and `cli_bare_number_is_speed`, `cli_bare_word_is_level_file`.
-- [ ] 3.2 Implement the legacy alias pre-pass (`cli::legacy::translate`) with the original-spelling side table. Verify: table test `legacy_aliases` covering every letter in both cases, `/S40`, `-s0`, `/G`, `/G:120`, `/KA`, `/V`, tokens after `--`, and `legacy_absolute_paths_untouched` (`/Users/a/x.dlf`, `/Library/x`, `/home/u/l.dlf`). Reject `/C`, `/N`, `/X` with the not-supported message and status 64, verified by `legacy_unsupported_options`; map `/T:n` to `--take-over-at n`, verified by `legacy_take_over_alias`.
-- [ ] 3.3 Implement combination checks (`--players 2` with `--two-diggers`/`--gauntlet`, `--verify` with `--play`/`--loop`, `--headless` without `--verify`, `--loop` without `--play`, `--take-over-at` without `--play` or with `--verify`) and map all usage errors to status 64 quoting the spelling the user typed. Verify: unit tests `cli_conflicts` and `cli_range_errors_quote_alias`.
-- [ ] 3.4 Implement level-file checking (existence, `.dlf` retry, 1202-byte minimum) returning status 66 on failure. Verify: unit tests `level_file_missing`, `level_file_dlf_retry`, `level_file_too_short`.
-- [ ] 3.5 Wire `main`: parse, load file, resolve, print errors, return `ExitCode`; implement `--help` text with aliases and `--version`. Verify: integration test `tests/cli_basics.rs` runs the binary for `--help` (0, lists `/S:N`), `--version` (0), `--turbo` (64), `/C` (64), a bad config file (78).
-- [ ] 3.6 Run the three workspace checks; commit `feat(digger): command line with upstream option aliases`.
+- [x] 3.1 Define the clap derive struct with every long option of the `configuration` spec, value ranges, the positional argument, `-h` and `-V`. Verify: unit tests `cli_long_options` and `cli_bare_number_is_speed`, `cli_bare_word_is_level_file`.
+- [x] 3.2 Implement the legacy alias pre-pass (`cli::legacy::translate`) with the original-spelling side table. Verify: table test `legacy_aliases` covering every letter in both cases, `/S40`, `-s0`, `/G`, `/G:120`, `/KA`, `/V`, tokens after `--`, and `legacy_absolute_paths_untouched` (`/Users/a/x.dlf`, `/Library/x`, `/home/u/l.dlf`). Reject `/C`, `/N`, `/X` with the not-supported message and status 64, verified by `legacy_unsupported_options`; map `/T:n` to `--take-over-at n`, verified by `legacy_take_over_alias`.
+- [x] 3.3 Implement combination checks (`--players 2` with `--two-diggers`/`--gauntlet`, `--verify` with `--play`/`--loop`, `--headless` without `--verify`, `--loop` without `--play`, `--take-over-at` without `--play` or with `--verify`) and map all usage errors to status 64 quoting the spelling the user typed. Verify: unit tests `cli_conflicts` and `cli_range_errors_quote_alias`.
+- [x] 3.4 Implement level-file checking (existence, `.dlf` retry, 1202-byte minimum) returning status 66 on failure. Verify: unit tests `level_file_missing`, `level_file_dlf_retry`, `level_file_too_short`.
+- [x] 3.5 Wire `main`: parse, load file, resolve, print errors, return `ExitCode`; implement `--help` text with aliases and `--version`. Verify: integration test `tests/cli_basics.rs` runs the binary for `--help` (0, lists `/S:N`), `--version` (0), `--turbo` (64), `/C` (64), a bad config file (78).
+- [x] 3.6 Run the three workspace checks; commit `feat(digger): command line with upstream option aliases`.
 
 ## 4. High-score tables and storage
 
