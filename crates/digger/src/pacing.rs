@@ -584,4 +584,116 @@ mod tests {
         assert_eq!(clock.instant(at) - clock.instant(Duration::ZERO), at);
         assert!(clock.now() < Duration::from_secs(60));
     }
+
+    /// The browser's animation-callback driver (add-web-build-and-releases,
+    /// design decision 5) over synthetic callback timestamps: one batch per
+    /// callback at `rate` callbacks a second from `from` while the time is
+    /// below `until`. Returns the frames run per callback.
+    fn callbacks(
+        clock: &FakeClock,
+        pacer: &mut Pacer<FakeClock>,
+        rate: u64,
+        from: Duration,
+        until: Duration,
+    ) -> Vec<u32> {
+        let mut per_callback = Vec::new();
+        for k in 0_u64.. {
+            let at = from + Duration::from_nanos(k * 1_000_000_000 / rate);
+            if at >= until {
+                break;
+            }
+            clock.set(at);
+            per_callback.push(batch(pacer).0);
+        }
+        per_callback
+    }
+
+    fn total(per_callback: &[u32]) -> u32 {
+        per_callback.iter().sum()
+    }
+
+    const MINUTE: Duration = Duration::from_secs(60);
+
+    #[test]
+    fn pacer_60hz_gives_750_frames_per_minute() {
+        let (clock, mut pacer) = pacer(DEFAULT);
+        let frames = callbacks(&clock, &mut pacer, 60, Duration::ZERO, MINUTE);
+        assert_eq!(frames.len(), 3600);
+        let total = total(&frames);
+        assert!((745..=755).contains(&total), "{total} frames");
+        assert!(
+            frames.iter().all(|&n| n <= 1),
+            "one frame per callback at most"
+        );
+    }
+
+    #[test]
+    fn pacer_144hz_gives_750_frames_per_minute() {
+        let (clock, mut pacer) = pacer(DEFAULT);
+        let frames = callbacks(&clock, &mut pacer, 144, Duration::ZERO, MINUTE);
+        assert_eq!(frames.len(), 8640);
+        let total = total(&frames);
+        assert!((745..=755).contains(&total), "{total} frames");
+        // The same count as on a 60 Hz display.
+        let (clock, mut pacer) = self::pacer(DEFAULT);
+        let at_60 = self::total(&callbacks(&clock, &mut pacer, 60, Duration::ZERO, MINUTE));
+        assert!(
+            total.abs_diff(at_60) <= 1,
+            "{total} at 144 Hz, {at_60} at 60 Hz"
+        );
+    }
+
+    #[test]
+    fn pacer_stall_caps_at_three() {
+        let (clock, mut pacer) = pacer(DEFAULT);
+        let ten = Duration::from_secs(10);
+        callbacks(&clock, &mut pacer, 60, Duration::ZERO, ten);
+        // No callback for 2 seconds while visible, then one.
+        let resumed = ten + Duration::from_secs(2);
+        clock.set(resumed);
+        let first = batch(&mut pacer).0;
+        assert!((1..=MAX_DUE).contains(&first), "{first} frames");
+        // Then normal speed, without fast-forwarding: 125 frames in the
+        // next 10 seconds, give or take one.
+        let after = callbacks(
+            &clock,
+            &mut pacer,
+            60,
+            resumed + Duration::from_nanos(1_000_000_000 / 60),
+            resumed + ten,
+        );
+        let total = total(&after);
+        assert!((124..=126).contains(&total), "{total} frames");
+        // A shorter stall, under three frame times, is caught up in one
+        // callback of at most three frames.
+        let at = clock.now() + DEFAULT * 3;
+        clock.set(at);
+        let caught = batch(&mut pacer).0;
+        assert!((2..=MAX_DUE).contains(&caught), "{caught} frames");
+    }
+
+    #[test]
+    fn pacer_reanchor_discards_backlog() {
+        let (clock, mut pacer) = pacer(DEFAULT);
+        let five = Duration::from_secs(5);
+        let before = total(&callbacks(&clock, &mut pacer, 60, Duration::ZERO, five));
+        // Hidden for 30 seconds: no callbacks; the pacer is re-anchored
+        // when the page is visible again.
+        let visible = five + Duration::from_secs(30);
+        clock.set(visible);
+        pacer.reanchor();
+        assert_eq!(pacer.next_deadline(), Some(visible));
+        let after = callbacks(
+            &clock,
+            &mut pacer,
+            60,
+            visible,
+            visible + Duration::from_secs(10),
+        );
+        assert_eq!(after.first(), Some(&1), "the first callback runs one frame");
+        // 5 + 10 seconds of visible time: about 188 frames, none of the
+        // 375 frames of the hidden 30 seconds.
+        let total = before + total(&after);
+        assert!((186..=190).contains(&total), "{total} frames");
+    }
 }
