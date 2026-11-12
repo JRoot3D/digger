@@ -82,10 +82,10 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 10. Key redefinition
 
-- [ ] 10.1 Implement `RedefineScene` prompts and layout (`PRESS NEW KEY FOR`, `PLAYER 2:` for two-Digger modes, colour 2 → colour 1, second column when the list is long). Verify: shell test `redefine_prompts_in_order` and golden CRC `redefine_screen_crc`.
-- [ ] 10.2 Implement duplicate refusal, function-action conflict prompts, the "all" variant, Alt refusal and quit-key abort with full restore. Verify: shell tests `redefine_duplicate_refused`, `redefine_conflict_asks_pause`, `redefine_all_asks_every_action`, `redefine_abort_restores`.
-- [ ] 10.3 Save completed bindings to the configuration file at once and apply them to `Bindings`; support `--redefine-keys[=all]` as the opening scene. Verify: shell test `redefine_persists_and_applies` (file in a temporary directory re-loaded with the new keys).
-- [ ] 10.4 Run the three workspace checks; commit `feat(digger): interactive key redefinition`.
+- [x] 10.1 Implement `RedefineScene` prompts and layout (`PRESS NEW KEY FOR`, `PLAYER 2:` for two-Digger modes, colour 2 → colour 1, second column when the list is long). Verify: shell test `redefine_prompts_in_order` and golden CRC `redefine_screen_crc`.
+- [x] 10.2 Implement duplicate refusal, function-action conflict prompts, the "all" variant, Alt refusal and quit-key abort with full restore. Verify: shell tests `redefine_duplicate_refused`, `redefine_conflict_asks_pause`, `redefine_all_asks_every_action`, `redefine_abort_restores`.
+- [x] 10.3 Save completed bindings to the configuration file at once and apply them to `Bindings`; support `--redefine-keys[=all]` as the opening scene. Verify: shell test `redefine_persists_and_applies` (file in a temporary directory re-loaded with the new keys).
+- [x] 10.4 Run the three workspace checks; commit `feat(digger): interactive key redefinition`.
 
 ## 11. Playback and verification
 

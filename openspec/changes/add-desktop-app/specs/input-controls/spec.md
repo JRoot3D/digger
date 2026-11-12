@@ -137,7 +137,7 @@ The first connected gamepad SHALL act as player 1's controls and the second as p
 - **THEN** its `Start` button starts a game without restarting the program
 
 ### Requirement: Key redefinition flow
-The redefine action on the title screen SHALL open a screen headed `PRESS NEW KEY FOR` that asks for player 1's right, up, left, down and fire keys in that order, then (when the selected mode has two Diggers, under `PLAYER 2:`) the same five for player 2. The action being asked for is shown in colour 2 and turns to colour 1 once a key is accepted. The pressed key becomes the action's only binding. (research 05 §1.3)
+The redefine action on the title screen SHALL open a screen headed `PRESS NEW KEY FOR` that asks for player 1's right, up, left, down and fire keys in that order, then (when the selected mode has two Diggers, under `PLAYER 2:`, with player 1's five under `PLAYER 1:`) the same five for player 2. The action being asked for is shown in colour 2 and turns to colour 1 once a key is accepted. The pressed key becomes the action's only binding. (research 05 §1.3)
 
 #### Scenario: Redefining player 1's keys
 - **WHEN** the player presses K on the title screen in one-player mode and then presses `KeyD`, `KeyE`, `KeyA`, `KeyX`, `ControlLeft`
@@ -153,6 +153,13 @@ A key already given to an earlier action in the same redefinition SHALL be refus
 #### Scenario: Taking a function key
 - **WHEN** the player chooses `Space` as player 1's fire key
 - **THEN** after the player keys the screen asks for a new pause key
+
+### Requirement: Player 2 keys in one-Digger redefinition
+In a mode with one Digger, where player 2's keys are not asked for, a player-2 key chosen for player 1 SHALL be replaced by player 1's old key for the same control, and that player-2 action SHALL be asked for only when that key is taken as well, so that no key ends up bound to two actions. (research 05 §1.3 documents upstream leaving such a key bound twice; the replacement is a port decision)
+
+#### Scenario: Taking a player 2 key in one-player mode
+- **WHEN** the player, in one-player mode, chooses `KeyA` (player 2's left) as player 1's left key
+- **THEN** player 2's left key becomes `ArrowLeft` and the screen does not ask for it
 
 ### Requirement: Aborting redefinition
 Pressing the key currently bound to quit during redefinition, when quit is not the action being asked for, SHALL abandon the redefinition: all bindings return to what they were before it began and nothing is written. (research 05 §1.3 documents upstream keeping half-changed keys in memory; restoring them is a port decision)

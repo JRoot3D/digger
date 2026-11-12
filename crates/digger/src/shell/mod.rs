@@ -31,8 +31,9 @@ use digger_core::video::Framebuffer;
 use digger_core::{GameConfig, GauntletSeconds, LevelSet, SoundCommand, StartLevel};
 use digger_sound::SoundControl;
 
+use crate::cli::Redefine;
 use crate::config::{FrameTime, GameMode, Layer, Settings};
-use crate::input::{Action, InputFrame};
+use crate::input::{Action, Bindings, InputFrame};
 use crate::scores::store::ScoreStore;
 use crate::scores::{self, ScoreTable, Scores, TableKey};
 
@@ -48,10 +49,13 @@ mod game_over_tests;
 #[cfg(test)]
 mod harness;
 #[cfg(test)]
+mod redefine_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use play::{PlayScene, PlaybackScene};
 pub(crate) use recording::FinishedRecording;
+pub(crate) use redefine::{KeyTable, RedefineScene, Variant};
 pub(crate) use title::TitleScene;
 
 /// The speed actions' step: 10000 µs (`desktop-app` spec, runtime speed
@@ -99,6 +103,9 @@ pub(crate) enum Request {
     /// End the program with this exit status, through the single shutdown
     /// path (design D12, D13).
     Exit(u8),
+    /// A key redefinition completed: the input layer takes the bindings of
+    /// [`Shell::bindings`] from the next event on.
+    BindingsChanged,
 }
 
 /// What one frame produced (design D2).
@@ -123,6 +130,8 @@ struct Pending {
     sound: Vec<SoundCommand>,
     controls: Vec<SoundControl>,
     requests: Vec<Request>,
+    /// The key table of a redefinition completed in this frame.
+    keys: Option<Box<KeyTable>>,
 }
 
 /// One screen of the program (design D2). Every scene owns its state; the
@@ -131,6 +140,8 @@ struct Pending {
 pub(crate) enum Scene {
     /// The title screen.
     Title(TitleScene),
+    /// Key redefinition.
+    Redefine(Box<RedefineScene>),
     /// A game played by a person.
     Playing(Box<PlayScene>),
     /// A recording being played back.
@@ -171,6 +182,12 @@ pub(crate) struct Setup {
     /// save-recording action writes the last game; `None` when there is
     /// nowhere to save.
     pub(crate) recordings_dir: Option<PathBuf>,
+    /// The configuration file a completed key redefinition is written to;
+    /// `None` keeps it in memory only.
+    pub(crate) config_file: Option<PathBuf>,
+    /// `--redefine-keys[=all]`: the program opens on key redefinition
+    /// instead of the title screen.
+    pub(crate) redefine_keys: Option<Redefine>,
 }
 
 impl Default for Setup {
@@ -182,6 +199,8 @@ impl Default for Setup {
             score_levels: scores::LevelSet::Builtin,
             record_path: None,
             recordings_dir: None,
+            config_file: None,
+            redefine_keys: None,
         }
     }
 }
@@ -240,6 +259,17 @@ impl Context<'_> {
         Scene::Title(TitleScene::new(*self.mode, self.table()))
     }
 
+    /// Key redefinition over the keys in effect, for the selected mode.
+    fn redefine(&self, variant: Variant) -> Scene {
+        redefine_scene(self.settings, *self.mode, variant)
+    }
+
+    /// Hands the key table of a completed redefinition to the shell,
+    /// which applies and saves it after the frame.
+    fn redefined(&mut self, keys: Box<KeyTable>) {
+        self.out.keys = Some(keys);
+    }
+
     /// A new live game in the selected mode, with its own seed.
     fn new_game(&mut self) -> Scene {
         // Each game gets a different base seed (a Weyl sequence over the
@@ -284,6 +314,15 @@ impl Context<'_> {
             recording::save_to_recordings(&recording, dir);
         }
     }
+}
+
+/// Key redefinition over the keys of `settings`, for `mode`.
+fn redefine_scene(settings: &Settings, mode: GameMode, variant: Variant) -> Scene {
+    Scene::Redefine(Box::new(RedefineScene::new(
+        &settings.keys,
+        mode.two_diggers(),
+        variant,
+    )))
 }
 
 /// The core's configuration of a game in `mode` under `settings`.
@@ -355,6 +394,11 @@ impl Shell {
         let table = scores
             .scores()
             .table(&TableKey::from_mode(mode, setup.score_levels.clone()));
+        let scene = match setup.redefine_keys {
+            Some(Redefine::Usual) => redefine_scene(&settings, mode, Variant::Usual),
+            Some(Redefine::All) => redefine_scene(&settings, mode, Variant::All),
+            None => Scene::Title(TitleScene::new(mode, table)),
+        };
         Self {
             runtime: Layer::default(),
             mode,
@@ -363,7 +407,7 @@ impl Shell {
             music_on: settings.music,
             games_started: 0,
             last_game: None,
-            scene: Scene::Title(TitleScene::new(mode, table)),
+            scene,
             scores,
             settings,
             setup,
@@ -386,6 +430,7 @@ impl Shell {
         };
         let transition = match &mut self.scene {
             Scene::Title(title) => title.frame(input, &mut cx),
+            Scene::Redefine(redefine) => redefine.frame(input, &mut cx),
             Scene::Playing(play) => play.frame(input, &mut cx),
             Scene::Playback(playback) => playback.frame(input, &mut cx),
         };
@@ -393,6 +438,9 @@ impl Shell {
             Transition::Stay => {}
             Transition::To(scene) => self.scene = scene,
             Transition::Exit(code) => out.requests.push(Request::Exit(code)),
+        }
+        if let Some(keys) = out.keys.take() {
+            self.apply_keys(*keys, &mut out);
         }
         FrameOutput {
             picture: self.picture(),
@@ -407,6 +455,16 @@ impl Shell {
     /// music and fullscreen (`desktop-app` spec; `input-controls` spec,
     /// function actions fire once per press).
     fn function_actions(&mut self, input: &ShellInput, out: &mut Pending) {
+        // During key redefinition every key press is a candidate key, so
+        // no function action applies; only the Alt+Enter chord, which is
+        // not a key press, still switches fullscreen (`desktop-app` spec,
+        // fullscreen at any time).
+        if matches!(self.scene, Scene::Redefine(_)) {
+            for _ in 0..input.input.fullscreen_chords {
+                out.requests.push(Request::ToggleFullscreen);
+            }
+            return;
+        }
         // During initials entry every key but quit and the fullscreen
         // chord is ignored (`input-controls` spec, typing initials).
         let entering = self.entering_initials();
@@ -442,6 +500,31 @@ impl Shell {
         }
     }
 
+    /// Applies the key table of a completed redefinition (`input-controls`
+    /// spec, redefinition is saved): the keys take effect at once, enter
+    /// the runtime changes, and are written to the configuration file
+    /// straight away, every action under its name. A failed save is
+    /// reported as a notice; the keys stay in effect for this run.
+    fn apply_keys(&mut self, keys: KeyTable, out: &mut Pending) {
+        let mut changes = Layer::default();
+        for (slot, keys) in changes.keys.iter_mut().zip(&keys) {
+            *slot = Some(keys.clone());
+        }
+        self.runtime.keys.clone_from(&changes.keys);
+        self.settings.keys = keys;
+        if let Some(path) = &self.setup.config_file
+            && let Err(error) = crate::config::file::save(path, &changes)
+        {
+            crate::report::notice(error);
+        }
+        out.requests.push(Request::BindingsChanged);
+    }
+
+    /// The key and pad-button bindings in effect.
+    pub(crate) fn bindings(&self) -> Bindings {
+        Bindings::from_settings(&self.settings)
+    }
+
     /// The speed-up action: 10000 µs shorter, only while the frame time is
     /// above 10000 µs (compat quirk: research 05 §1.1).
     fn speed_up(&mut self) {
@@ -469,6 +552,7 @@ impl Shell {
     pub(crate) fn picture(&self) -> &Framebuffer {
         match &self.scene {
             Scene::Title(title) => title.picture(),
+            Scene::Redefine(redefine) => redefine.picture(),
             Scene::Playing(play) => play.picture(),
             Scene::Playback(playback) => playback.picture(),
         }

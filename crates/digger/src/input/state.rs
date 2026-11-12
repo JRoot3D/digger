@@ -102,6 +102,9 @@ pub(crate) struct InputFrame {
     pub(crate) focus_lost: bool,
     /// Pads connected or removed, in order.
     pub(crate) pad_changes: Vec<PadChange>,
+    /// How many Alt+Enter fullscreen chords were pressed (each also queued
+    /// [`Action::Fullscreen`]); key redefinition honours only these.
+    pub(crate) fullscreen_chords: usize,
 }
 
 /// The live input state between two frames (design D7).
@@ -206,6 +209,7 @@ impl InputState {
             // else sees it.
             self.keys_down.insert(key, None);
             self.frame.actions.push(Action::Fullscreen);
+            self.frame.fullscreen_chords += 1;
             return;
         }
         let action = self.bindings.action_of(key);
@@ -587,6 +591,7 @@ mod tests {
         assert_eq!(frame.actions, [Action::Fullscreen]);
         assert!(!frame.any_key && !frame.start_key);
         assert_eq!(frame.keys, [key("AltLeft")], "Enter is not reported");
+        assert_eq!(frame.fullscreen_chords, 1, "but counted as a chord");
         assert_eq!(frame.letters, "");
         // Releasing Enter, then Alt, gives nothing either.
         up(&mut input, "Enter");

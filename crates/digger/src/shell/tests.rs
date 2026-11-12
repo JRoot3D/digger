@@ -836,6 +836,16 @@ fn title_f7_does_not_start() {
     ] {
         harness.tap(key);
         harness.frame();
+        if key == "KeyK" {
+            // K opens key redefinition instead (task group 10); F10
+            // leaves it again.
+            assert!(
+                matches!(harness.shell.scene(), Scene::Redefine(_)),
+                "{key} does not start"
+            );
+            harness.tap("F10");
+            harness.frame();
+        }
         assert!(harness.on_title(), "{key} does not start");
     }
     // The pad's mode-change button does not start either.

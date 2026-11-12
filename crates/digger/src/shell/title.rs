@@ -12,7 +12,7 @@ use digger_core::geom::Px;
 use digger_core::sprite::SpriteLayer;
 use digger_core::video::{Framebuffer, TextColor};
 
-use super::{Context, ShellInput, Transition};
+use super::{Context, ShellInput, Transition, Variant};
 use crate::config::GameMode;
 use crate::input::Action;
 use crate::scores::ScoreTable;
@@ -144,9 +144,9 @@ impl TitleScene {
         if input.close_requested || input.has(Action::Quit) {
             return Transition::Exit(0);
         }
-        // Saving the last game's recording and key redefinition (task
-        // group 10) are title actions too; neither starts a game, as the
-        // input layer already leaves them out of `start_key`.
+        // Saving the last game's recording and key redefinition are title
+        // actions too; neither starts a game, as the input layer already
+        // leaves them out of `start_key`.
         if input.has(Action::SaveRecording) {
             cx.save_last_game();
         }
@@ -160,6 +160,9 @@ impl TitleScene {
             let mode = *cx.mode;
             let table = *cx.table();
             self.show_mode(mode, &table);
+        }
+        if input.has(Action::RedefineKeys) {
+            return Transition::To(cx.redefine(Variant::Usual));
         }
         if input.input.start_key || input.input.pad_start {
             return Transition::To(cx.new_game());

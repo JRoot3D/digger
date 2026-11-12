@@ -153,6 +153,10 @@ impl Harness {
         };
         let output = self.shell.frame(&input);
         let captured = Captured::of(&output);
+        // The platform hands new bindings to the input layer.
+        if captured.requests.contains(&Request::BindingsChanged) {
+            self.input.set_bindings(self.shell.bindings());
+        }
         self.frames.push(captured);
         self.frames.last().unwrap_or_else(|| unreachable!())
     }
@@ -170,6 +174,15 @@ impl Harness {
             Scene::Playing(play) => play.game(),
             Scene::Playback(playback) => playback.game(),
             Scene::Title(_) => panic!("no game on the title screen"),
+            Scene::Redefine(_) => panic!("no game during key redefinition"),
+        }
+    }
+
+    /// The redefinition screen, if it is shown.
+    pub(super) fn redefining(&self) -> Option<&super::RedefineScene> {
+        match self.shell.scene() {
+            Scene::Redefine(scene) => Some(scene),
+            _ => None,
         }
     }
 
@@ -183,7 +196,7 @@ impl Harness {
         match self.shell.scene() {
             Scene::Playing(play) => play.last_outcome().map(|outcome| outcome.frame),
             Scene::Playback(playback) => playback.last_frame(),
-            Scene::Title(_) => None,
+            Scene::Title(_) | Scene::Redefine(_) => None,
         }
     }
 
