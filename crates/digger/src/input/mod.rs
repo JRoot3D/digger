@@ -15,10 +15,28 @@
     )
 )]
 
+use std::collections::HashMap;
 use std::fmt;
 
-mod gamepad;
-mod state;
+use digger_core::Direction;
+
+use crate::config::Settings;
+
+pub(crate) mod gamepad;
+#[cfg(test)]
+mod resolution_tests;
+pub(crate) mod state;
+
+#[allow(
+    unused_imports,
+    reason = "the input layer's vocabulary for the shell and platform code of later task groups"
+)]
+pub(crate) use gamepad::{PadEvent, PadId, PadInput, PadSignal, Pads, StickAxis};
+#[allow(
+    unused_imports,
+    reason = "the input layer's vocabulary for the shell and platform code of later task groups"
+)]
+pub(crate) use state::{InputFrame, InputState, KeyPress, PadChange, PadPress};
 
 /// One of the 20 bindable keyboard actions (`input-controls` spec, action
 /// table), in the order of the `[keys]` table.
@@ -128,6 +146,44 @@ impl Action {
     /// The action with this configuration-file name.
     pub(crate) fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|action| action.name() == name)
+    }
+
+    /// The player control this action stands for, or `None` for a
+    /// function action.
+    pub(crate) const fn control(self) -> Option<Control> {
+        let (slot, kind) = match self {
+            Self::P1Right => (0, ControlKind::Right),
+            Self::P1Up => (0, ControlKind::Up),
+            Self::P1Left => (0, ControlKind::Left),
+            Self::P1Down => (0, ControlKind::Down),
+            Self::P1Fire => (0, ControlKind::Fire),
+            Self::P2Right => (1, ControlKind::Right),
+            Self::P2Up => (1, ControlKind::Up),
+            Self::P2Left => (1, ControlKind::Left),
+            Self::P2Down => (1, ControlKind::Down),
+            Self::P2Fire => (1, ControlKind::Fire),
+            _ => return None,
+        };
+        Some(Control { slot, kind })
+    }
+
+    /// Whether a key bound to this action is left out of "any key" on the
+    /// title screen: mode change, key redefinition, quit, save recording,
+    /// the sound and music toggles, the speed keys and fullscreen
+    /// (`desktop-app` spec, starting a game).
+    pub(crate) const fn excluded_from_start(self) -> bool {
+        matches!(
+            self,
+            Self::ChangeMode
+                | Self::RedefineKeys
+                | Self::Quit
+                | Self::SaveRecording
+                | Self::ToggleSound
+                | Self::ToggleMusic
+                | Self::SpeedUp
+                | Self::SpeedDown
+                | Self::Fullscreen
+        )
     }
 
     /// The default keys of this action (`input-controls` spec, default
@@ -536,6 +592,108 @@ impl fmt::Display for PadAction {
     }
 }
 
+impl PadAction {
+    /// The keyboard action a press of a button bound to this pad action
+    /// triggers, or `None` for fire, which is a player control.
+    pub(crate) const fn action(self) -> Option<Action> {
+        match self {
+            Self::Fire => None,
+            Self::Pause => Some(Action::Pause),
+            Self::ChangeMode => Some(Action::ChangeMode),
+            Self::Quit => Some(Action::Quit),
+        }
+    }
+}
+
+/// Which of a player's five controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum ControlKind {
+    /// Move right.
+    Right,
+    /// Move up.
+    Up,
+    /// Move left.
+    Left,
+    /// Move down.
+    Down,
+    /// Fire.
+    Fire,
+}
+
+impl ControlKind {
+    /// The control that moves in `direction`.
+    pub(crate) const fn of_direction(direction: Direction) -> Self {
+        match direction {
+            Direction::Right => Self::Right,
+            Direction::Up => Self::Up,
+            Direction::Left => Self::Left,
+            Direction::Down => Self::Down,
+        }
+    }
+}
+
+/// One of the ten player controls: a control slot (0 drives the first
+/// Digger and both alternating players, 1 the second Digger) and which of
+/// its five controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct Control {
+    /// The control slot, 0 or 1.
+    pub(crate) slot: u8,
+    /// Which control of the slot.
+    pub(crate) kind: ControlKind,
+}
+
+impl Control {
+    /// Number of player controls.
+    pub(crate) const COUNT: usize = 10;
+
+    /// The position of this control among the ten (slot-major).
+    pub(crate) const fn index(self) -> usize {
+        self.slot as usize * 5 + self.kind as usize
+    }
+}
+
+/// The key and pad-button bindings in effect, built from the resolved
+/// settings (design D7). A key or button belongs to at most one action;
+/// the configuration layer has already refused duplicates, and should one
+/// slip through, the first action in table order keeps the key.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct Bindings {
+    /// Key → action.
+    keys: HashMap<KeyName, Action>,
+    /// Pad button → pad action.
+    buttons: HashMap<PadButton, PadAction>,
+}
+
+impl Bindings {
+    /// The bindings of `settings`' `[keys]` and `[gamepad]` tables.
+    pub(crate) fn from_settings(settings: &Settings) -> Self {
+        let mut keys = HashMap::new();
+        for action in Action::ALL {
+            for &key in settings.keys_of(action) {
+                keys.entry(key).or_insert(action);
+            }
+        }
+        let mut buttons = HashMap::new();
+        for action in PadAction::ALL {
+            for &button in settings.buttons_of(action) {
+                buttons.entry(button).or_insert(action);
+            }
+        }
+        Self { keys, buttons }
+    }
+
+    /// The action `key` is bound to.
+    pub(crate) fn action_of(&self, key: KeyName) -> Option<Action> {
+        self.keys.get(&key).copied()
+    }
+
+    /// The pad action `button` is bound to.
+    pub(crate) fn pad_action_of(&self, button: PadButton) -> Option<PadAction> {
+        self.buttons.get(&button).copied()
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::panic,
@@ -545,7 +703,8 @@ impl fmt::Display for PadAction {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{Action, KEY_NAMES, KeyName, PadAction, PadButton};
+    use super::{Action, Bindings, Control, ControlKind, KEY_NAMES, KeyName, PadAction, PadButton};
+    use crate::config::Settings;
 
     #[test]
     fn key_names_round_trip() {
@@ -673,5 +832,77 @@ mod tests {
         assert_eq!(key("AltRight"), Some((true, true)));
         assert_eq!(key("MetaLeft"), Some((true, false)));
         assert_eq!(key("Space"), Some((false, false)));
+    }
+
+    #[test]
+    fn bindings_lookup() {
+        let key = |name| KeyName::parse(name).unwrap_or_else(|| panic!("{name} is a key"));
+        let bindings = Bindings::from_settings(&Settings::default());
+        // Every default key finds its action.
+        for action in Action::ALL {
+            for key in action.default_keys() {
+                assert_eq!(bindings.action_of(key), Some(action), "{key}");
+            }
+        }
+        assert_eq!(bindings.action_of(key("ArrowLeft")), Some(Action::P1Left));
+        assert_eq!(bindings.action_of(key("Equal")), Some(Action::SpeedUp));
+        assert_eq!(bindings.action_of(key("Tab")), Some(Action::P2Fire));
+        assert_eq!(bindings.action_of(key("KeyQ")), None);
+        assert_eq!(bindings.action_of(key("Enter")), None);
+        // Pad buttons.
+        assert_eq!(
+            bindings.pad_action_of(PadButton::South),
+            Some(PadAction::Fire)
+        );
+        assert_eq!(
+            bindings.pad_action_of(PadButton::West),
+            Some(PadAction::Fire)
+        );
+        assert_eq!(
+            bindings.pad_action_of(PadButton::Start),
+            Some(PadAction::Pause)
+        );
+        assert_eq!(
+            bindings.pad_action_of(PadButton::Select),
+            Some(PadAction::ChangeMode)
+        );
+        assert_eq!(bindings.pad_action_of(PadButton::East), None);
+        // Bindings follow the settings: a redefined key moves, the old one
+        // is free.
+        let mut settings = Settings::default();
+        settings.keys[Action::P1Fire.index()] = vec![key("ControlLeft")];
+        settings.pad_buttons[PadAction::Quit.index()] = vec![PadButton::Mode];
+        let bindings = Bindings::from_settings(&settings);
+        assert_eq!(bindings.action_of(key("ControlLeft")), Some(Action::P1Fire));
+        assert_eq!(bindings.action_of(key("F1")), None);
+        assert_eq!(
+            bindings.pad_action_of(PadButton::Mode),
+            Some(PadAction::Quit)
+        );
+        assert_eq!(PadAction::Quit.action(), Some(Action::Quit));
+        assert_eq!(PadAction::Fire.action(), None);
+        // Player controls and their indices.
+        let mut seen = [false; Control::COUNT];
+        for action in &Action::ALL[..10] {
+            let control = action.control().unwrap_or_else(|| panic!("{action}"));
+            assert!(!seen[control.index()]);
+            seen[control.index()] = true;
+        }
+        assert!(Action::ALL[10..].iter().all(|a| a.control().is_none()));
+        assert_eq!(
+            Action::P2Down.control(),
+            Some(Control {
+                slot: 1,
+                kind: ControlKind::Down
+            })
+        );
+        // The start exclusions of the desktop-app spec.
+        let excluded: Vec<Action> = Action::ALL
+            .into_iter()
+            .filter(|a| a.excluded_from_start())
+            .collect();
+        assert_eq!(excluded.len(), 9);
+        assert!(!Action::Pause.excluded_from_start());
+        assert!(!Action::P1Fire.excluded_from_start());
     }
 }

@@ -38,13 +38,13 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 5. Input layer
 
-- [ ] 5.1 Implement `Action` and `Bindings` (key → action, pad button → action) built from `Settings`. Verify: unit test `bindings_lookup`.
-- [ ] 5.2 Implement `InputState` for the ten player controls with held and pressed-since-frame flags and `take_frame()`. Verify: unit tests `input_tap_is_seen_once`, `input_held_persists`, `input_release_clears`.
-- [ ] 5.3 Implement once-per-press function actions with repeat suppression, the any-key flag with modifier and excluded-action handling, and the Alt+Enter chord filter. Verify: unit tests `action_once_per_press`, `two_actions_same_frame`, `alt_enter_not_any_key`.
-- [ ] 5.4 Implement focus-loss handling (release everything, emit the focus event) and the typed-letter queue. Verify: unit tests `focus_loss_releases_all` and `text_queue_letters_only_passthrough`.
-- [ ] 5.5 Add end-to-end resolution tests that feed `InputState` output into the core for scripted press/release timelines. Verify: `input_resolution_last_pressed`, `input_resolution_same_frame`, `input_resolution_release_fallback`, `input_tap_one_tick`, `fire_takes_effect_next_tick`, `alternating_uses_p1_controls` pass (the resolver and fire latch are the core's; these tests prove the frontend feeds them correctly). Add the quirk entries for direction resolution, tap pulse, fire delay and once-per-press actions to `docs/compat-quirks.md`, each naming its test.
-- [ ] 5.6 Implement pad slot assignment, d-pad mapping and the stick-to-virtual-button conversion with dead zone and hysteresis, as pure functions over an abstract pad event type. Verify: unit tests `stick_dead_zone`, `stick_hysteresis`, `stick_roll_up_then_right`, `pad_slots_assign_and_free`, `pad_removed_releases_controls`.
-- [ ] 5.7 Run the three workspace checks; commit `feat(digger): input mapping layer for keyboard and gamepads`.
+- [x] 5.1 Implement `Action` and `Bindings` (key → action, pad button → action) built from `Settings`. Verify: unit test `bindings_lookup`.
+- [x] 5.2 Implement `InputState` for the ten player controls with held and pressed-since-frame flags and `take_frame()`. Verify: unit tests `input_tap_is_seen_once`, `input_held_persists`, `input_release_clears`.
+- [x] 5.3 Implement once-per-press function actions with repeat suppression, the any-key flag with modifier and excluded-action handling, and the Alt+Enter chord filter. Verify: unit tests `action_once_per_press`, `two_actions_same_frame`, `alt_enter_not_any_key`.
+- [x] 5.4 Implement focus-loss handling (release everything, emit the focus event) and the typed-letter queue. Verify: unit tests `focus_loss_releases_all` and `text_queue_letters_only_passthrough`.
+- [x] 5.5 Add end-to-end resolution tests that feed `InputState` output into the core for scripted press/release timelines. Verify: `input_resolution_last_pressed`, `input_resolution_same_frame`, `input_resolution_release_fallback`, `input_tap_one_tick`, `fire_takes_effect_next_tick`, `alternating_uses_p1_controls` pass (the resolver and fire latch are the core's; these tests prove the frontend feeds them correctly). Add the quirk entries for direction resolution, tap pulse, fire delay and once-per-press actions to `docs/compat-quirks.md`, each naming its test.
+- [x] 5.6 Implement pad slot assignment, d-pad mapping and the stick-to-virtual-button conversion with dead zone and hysteresis, as pure functions over an abstract pad event type. Verify: unit tests `stick_dead_zone`, `stick_hysteresis`, `stick_roll_up_then_right`, `pad_slots_assign_and_free`, `pad_removed_releases_controls`.
+- [x] 5.7 Run the three workspace checks; commit `feat(digger): input mapping layer for keyboard and gamepads`.
 
 ## 6. Pacing and presentation maths
 

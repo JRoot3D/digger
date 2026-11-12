@@ -25,5 +25,9 @@ softbuffer.workspace = true
 toml.workspace = true
 winit.workspace = true
 
+[dev-dependencies]
+# The end-to-end input tests drive scenario games (task 5.5).
+digger-core = { path = "../digger-core", features = ["testkit"] }
+
 [lints]
 workspace = true

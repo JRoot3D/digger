@@ -311,6 +311,25 @@ usability bug, fixed. All are in `crates/digger/src/cli/`.
 | CL4 | An unreadable or short level file is dropped silently and the built-in levels are played (research 01 §1.1) | The program stops with status 66 naming the file; `<name>.dlf` is tried first when the name has no extension | `levels::load` (`cli/levels.rs`) | `level_file_missing`, `level_file_dlf_retry`, `level_file_too_short` |
 | CL5 | Options are executed in order while parsing (`/P` plays at once, `/O` restarts the parse), and `/?`, `/H` and unknown options exit with status 1 (research 01 §1.1) | Options are collected first and their combinations checked (`--verify` with `--play`, `--loop` or `--take-over-at`; `--loop` or `--take-over-at` without `--play`; `--headless` without `--verify`; `--players 2` with `--two-diggers` or `--gauntlet`), each refused with status 64; help and version exit with 0, unknown options with 64 | `convert` (`cli/mod.rs`), `main` | `cli_conflicts`, `cli_help_and_version`, `unknown_option_is_a_usage_error` (`crates/digger/tests/cli_basics.rs`) |
 
+## Input (`add-desktop-app`)
+
+The frontend hands the core, once per frame, each control's "held now or
+pressed since the previous frame" state; the core's resolver and fire
+latch (quirk Q15, P4) do the rest, as upstream's `readdirect` and
+`getdirect` do over its sticky key flags. The tests feed scripted press and
+release timelines through the input layer into a real game and read the
+direction and fire of every movement sample back through the observer.
+Ids `IN`. The input layer is `crates/digger/src/input/`; tests are run with
+`cargo test -p digger <name>`.
+
+| Id | Behaviour | Class | Isolated in | Test |
+|---|---|---|---|---|
+| IN1 | Direction resolution: the most recently pressed held direction wins; presses within one frame rank right, then left, then down, then up; releasing the active key falls back to a held key in that order, releasing another changes nothing (research 05 §1.6) | Affects the simulation | the core's `SlotInput::read` (`crates/digger-core/src/sim/input.rs`), fed raw states by `InputState::take_frame` (`input/state.rs`) | `input_resolution_last_pressed`, `input_resolution_same_frame`, `input_resolution_release_fallback` (`input/resolution_tests.rs`) |
+| IN2 | A tap shorter than a frame gives its direction for exactly one tick, also while another direction stays held (research 05 §1.6) | Affects the simulation | the pressed-since-frame flags of `InputState` and the core's one-tick pulse | `input_tap_one_tick`, `input_tap_is_seen_once` |
+| IN3 | Fire is read as held or pressed since the previous frame, so a short tap fires once, and fire sampled on one tick acts on the next (research 05 §1.7) | Affects the simulation | `InputState::take_frame`; the core's fire latch (Q15) | `fire_takes_effect_next_tick` |
+| IN4 | Alternating two-player games drive the digger from the player-1 controls on both players' turns; the player-2 keys do nothing there (research 05 §1.5) | Affects the simulation | the core's slot mapping; the input layer maps `p1_*` to slot 1 and `p2_*` to slot 2 in every mode | `alternating_uses_p1_controls` |
+| IN5 | Upstream repeats a function action for every further key drained in the same poll, and keyboard auto-repeat repeats it while held (research 05 §1.4, §1.5); the port triggers each function action once per press, ignores auto-repeat, and lets several function keys pressed in one frame each act once | Usability bug, fixed | `InputState::key_down` and `InputState::pad_signal` (`input/state.rs`) | `action_once_per_press`, `two_actions_same_frame` |
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user
