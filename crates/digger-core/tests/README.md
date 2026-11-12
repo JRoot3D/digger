@@ -20,6 +20,7 @@ This directory holds the scenario and integration tests of the simulation
 | `edrf_corpus.rs` | every upstream `.edrf` parses with the eDRF reader, its `Z` tick total equals its `.out` result, and `docs/recording-formats.md` carries both spec grammars (`add-recording-and-conformance`, task 4.4) |
 | `recording_writers.rs` | the DRF and eDRF recorders: header and mode lines, run cap and wrap, `EOG`, no size limit, `I` chunk forms, map reuse, `C`/`E` order, level records, a playable prefix, DRF-to-eDRF control bits (`add-recording-and-conformance`, tasks 8.1–8.3) |
 | `codec_roundtrip.rs` | live games in five modes recorded as DRF and eDRF, replayed and re-recorded byte for byte, and eDRF to DRF to eDRF conversion (`add-recording-and-conformance`, task 8.4) |
+| `conversion_twins.rs` | each corpus DRF converted to eDRF matches its upstream `.edrf` twin record for record and tick for tick; an informational count of byte-identical twins (`add-recording-and-conformance`, task 8.6) |
 | `quirks_doc.rs` | `docs/compat-quirks.md` names only existing tests (task 15.4) |
 | `golden_frames.rs`, `sprite_model.rs` | renderer and sprite layer (`add-assets-and-renderer`) |
 

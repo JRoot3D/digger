@@ -7,6 +7,7 @@
 
 mod ci;
 mod conformance;
+mod convert;
 mod deps;
 mod import;
 mod recordings;
@@ -50,6 +51,10 @@ enum Command {
     /// one line per recording, and write target/conformance/report.md;
     /// fails if any recording does not pass.
     Conformance(conformance::ConformanceArgs),
+    /// Play a DRF or eDRF recording and record it again in the format the
+    /// output name selects (.edrf for eDRF, anything else DRF); the exit
+    /// status is that of `verify` on the input.
+    Convert(convert::ConvertArgs),
 }
 
 fn main() -> ExitCode {
@@ -61,6 +66,7 @@ fn main() -> ExitCode {
         Command::ImportRecordings(args) => recordings::run(&args).map_err(Into::into),
         Command::Conformance(args) => conformance::run(&args).map_err(Into::into),
         Command::Verify(args) => return ExitCode::from(verify::run(&args)),
+        Command::Convert(args) => return ExitCode::from(convert::run(&args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

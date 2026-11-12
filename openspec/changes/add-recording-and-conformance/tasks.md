@@ -77,8 +77,8 @@ at a time and group 13 forbids any that remain.
 - [x] 8.3 Implement the DRF-playback mode of `EdrfRecorder` (bits from the supplied direction and fire at control reads, 0 otherwise); verify with test `conversion_bits_from_drf_records` on a scripted DRF
 - [x] 8.4 Add `codec_roundtrip.rs`: scripted live games in each mode (one player, alternating, two diggers, gauntlet, start level 5) recorded as DRF and as eDRF, replayed, and re-recorded; verify equal reports and byte-identical second recordings (`roundtrip_drf_*`, `roundtrip_edrf_*`), and `edrf_to_drf_same_result`
 - [x] 8.5 Implement the default file name and the `.edrf`-suffix format selection (`recording/naming.rs`); add quirk entries P12, P14–P16 and the "Writing" sections of `docs/recording-formats.md` (version line, wrap rule, chunk forms, deviations: no size limit, LF only); verify with test `default_names` covering `mmm27700.drf`, `ac1859075.drf`, `ab250000.drf`, `bc250000.drf`, `___3100.drf`, `DIGGER.DRF`, and that each quirk entry names an existing test
-- [ ] 8.6 Implement `cargo xtask convert <in> <out>` and add `conversion_twins.rs` comparing each converted corpus DRF with its upstream twin semantically (marked `pending` like its conformance test until the DRF passes) plus the informational byte-identity count; verify `cargo xtask convert` on a hand-written short DRF produces an eDRF that `cargo xtask verify` accepts with status 0
-- [ ] 8.7 Run the gate and commit (`feat(core): record games as DRF and eDRF`)
+- [x] 8.6 Implement `cargo xtask convert <in> <out>` and add `conversion_twins.rs` comparing each converted corpus DRF with its upstream twin semantically (marked `pending` like its conformance test until the DRF passes) plus the informational byte-identity count; verify `cargo xtask convert` on a hand-written short DRF produces an eDRF that `cargo xtask verify` accepts with status 0
+- [x] 8.7 Run the gate and commit (`feat(core): record games as DRF and eDRF`)
 
 ## 9. Take-over and configuration isolation
 

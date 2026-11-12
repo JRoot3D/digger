@@ -515,6 +515,7 @@ the new modules have no dependents until `add-desktop-app`.
 
 - Are the port's converted eDRFs byte-identical to upstream's twins once the
   version line is normalised? Measured by an informational test; the answer
-  changes nothing above.
+  changes nothing above. *Answered in task 8.6:* yes, 23 of 23
+  (`twin_byte_identity_full` in `conversion_twins.rs`, release build).
 - How long does the full tier take on CI hardware? If well under a minute, a
   later change may drop the tiering; the 10-minute bound stands either way.

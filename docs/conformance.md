@@ -113,3 +113,16 @@ corrected to treat everything after the last round as an ignored trailer.
 | `sobodig.drf` | `POK SDL 20110912` | `1` | 4 | 1050 | `*mmm` |
 | `thevoid.drf` | `AJ DOS 19990506` | `1` | 4 | 3545 | `*gkl` |
 | `thevoids.drf` | `AJ DOS 19990506` | `1` | 15 | 40841 | (none) |
+
+## Conversion to eDRF
+
+`cargo xtask convert <in> <out>` plays a recording and records it again,
+as eDRF when `<out>` ends in `.edrf` and as DRF otherwise; its exit status
+is that of `cargo xtask verify <in>`. Converting each of the 23 DRFs above
+to eDRF gives exactly the record content of its upstream `.edrf` twin:
+the same level records and maps, seeds, `C`, `E`, `Q` and `Z` records and
+the same control value for every slot on every tick
+(`crates/digger-core/tests/conversion_twins.rs`, one test per twin, quick
+twins in the ordinary run and the rest with `-- --ignored`). The
+converted files are also byte-identical to the twins once the version
+line is replaced: 23 of 23 (`twin_byte_identity_full`, informational).
