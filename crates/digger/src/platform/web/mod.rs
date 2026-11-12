@@ -17,6 +17,7 @@ use crate::transfer::WebFileTransfer;
 mod app;
 mod canvas;
 mod dom;
+mod page;
 
 pub(crate) use app::{App, WindowOptions};
 
@@ -34,6 +35,7 @@ pub(crate) fn run(mut app: App) -> Result<(), RunError> {
     let proxy = event_loop.create_proxy();
     dom::forward_visibility(proxy.clone());
     dom::wire_fullscreen_button();
+    dom::wire_save_button(proxy.clone());
     if dom::file_input(proxy).is_none() {
         crate::report::notice("the page cannot offer a file picker for recordings");
     }

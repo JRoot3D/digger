@@ -702,6 +702,37 @@ impl Bindings {
     pub(crate) fn pad_action_of(&self, button: PadButton) -> Option<PadAction> {
         self.buttons.get(&button).copied()
     }
+
+    /// The keys that trigger `action`, in key-table order (the browser's
+    /// controls panel).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser's controls panel")
+    )]
+    pub(crate) fn keys_of(&self, action: Action) -> Vec<KeyName> {
+        let mut keys: Vec<KeyName> = self
+            .keys
+            .iter()
+            .filter_map(|(&key, &bound)| (bound == action).then_some(key))
+            .collect();
+        keys.sort_unstable();
+        keys
+    }
+
+    /// The pad buttons that trigger `action`, in button-table order.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser's controls panel")
+    )]
+    pub(crate) fn buttons_of(&self, action: PadAction) -> Vec<PadButton> {
+        let mut buttons: Vec<PadButton> = self
+            .buttons
+            .iter()
+            .filter_map(|(&button, &bound)| (bound == action).then_some(button))
+            .collect();
+        buttons.sort_unstable();
+        buttons
+    }
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ publish = false
 clap.workspace = true
 digger-core = { path = "../crates/digger-core" }
 digger-sound = { path = "../crates/digger-sound" }
+flate2.workspace = true
 miniz_oxide.workspace = true
 sha2.workspace = true
 

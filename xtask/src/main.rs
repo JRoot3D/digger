@@ -18,6 +18,7 @@ mod render;
 mod render_sound;
 mod trace_diff;
 mod verify;
+mod web;
 
 use std::process::ExitCode;
 
@@ -78,6 +79,10 @@ enum Command {
     /// Compare two dump-state traces and report the first tick and block
     /// that differ; exit status 0 same, 1 different, 2 unreadable.
     TraceDiff(trace_diff::TraceDiffArgs),
+    /// Build the browser version into dist/web/ (wasm32 build with the
+    /// web-release profile, wasm-bindgen, the page in web/) and check the
+    /// download size budget; with --serve, serve it on 127.0.0.1.
+    Web(web::WebArgs),
 }
 
 fn main() -> ExitCode {
@@ -95,6 +100,7 @@ fn main() -> ExitCode {
         Command::Cut(args) => return ExitCode::from(cut::run(&args)),
         Command::Bisect(args) => return ExitCode::from(bisect::run(&args)),
         Command::TraceDiff(args) => return ExitCode::from(trace_diff::run(&args)),
+        Command::Web(args) => web::run(&args).map_err(Into::into),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

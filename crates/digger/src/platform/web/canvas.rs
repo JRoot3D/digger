@@ -122,6 +122,12 @@ impl GameCanvas {
         &self.canvas
     }
 
+    /// The picture's whole-number scale, 0 when it is reduced or
+    /// stretched.
+    pub(super) const fn scale(&self) -> u32 {
+        self.size.scale
+    }
+
     /// Works the canvas size out again if the browser viewport changed;
     /// returns whether it did.
     pub(super) fn update_layout(&mut self) -> bool {

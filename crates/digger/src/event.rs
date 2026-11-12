@@ -38,6 +38,13 @@ pub(crate) enum AppEvent {
         allow(dead_code, reason = "the desktop reports a failed save at once")
     )]
     TransferFailed(TransferError),
+    /// The page's save-recording button was used: the same as the
+    /// save-recording key on the title screen.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        allow(dead_code, reason = "the browser's save-recording button")
+    )]
+    SaveRecording,
     /// A save that the platform finished later failed. Both stores save
     /// at once and report through their result, so none sends it yet.
     #[allow(dead_code, reason = "for a store that finishes its saves later")]

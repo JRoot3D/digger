@@ -324,7 +324,26 @@ root carries `data-` attributes maintained through `PageUi::set_status`
 (`data-phase`, `data-audio`, `data-scale`, `data-frames`, `data-result`);
 they double as the observation points for the browser tests. Version and
 revision are compiled in from `CARGO_PKG_VERSION` and an `option_env!` value
-that `xtask dist` sets; no build script runs `git`.
+that `xtask dist` sets
+(`DIGGER_REVISION`; without it the source link names the tag
+`v<version>`); no build script runs `git`.
+
+Found in task group 4: `data-phase` is `loading` until the game's first
+status, then `title`, `redefine`, `playing`, `paused` (a live game in its
+pause phase) or `playback`, and `failed` once a failure message replaced
+the game area; `data-scale` is the whole-number scale or `fit`;
+`data-result` is the result line of the last picked recording that played
+to its end (`score=S level=L ticks=T`, as `--verify` prints it) or, when it
+did not match, the first line of its divergence report, which also appears
+as a notice. The canvas stays invisible while `data-phase` is `loading`,
+and `boot.js` removes the loading indicator two animation callbacks after
+the module has started, by which time the first picture is drawn. The
+loader fetches the program file itself, so a missing file is reported
+with its HTTP status. The save-recording button sends
+`AppEvent::SaveRecording`, the title screen's save action, and is enabled
+only on the title screen while an unsaved recording exists and there is
+somewhere to save it. Start-up warnings, audio and gamepad notices appear
+in the notice area as well as on the console; the newest four stay.
 
 ### 11. Size budget
 

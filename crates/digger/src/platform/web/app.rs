@@ -29,16 +29,17 @@ use winit::window::WindowId;
 
 use super::canvas::GameCanvas;
 use super::dom;
+use super::page::WebPageUi;
 use crate::config::ScaleMode;
 use crate::event::AppEvent;
 use crate::input::{Bindings, InputState, KeyPress, PadEvent, Pads};
 use crate::pacing::{Clock, Pacer, SystemClock};
-use crate::page::{AudioStatus, NativePageUi, PageUi, Status};
+use crate::page::{AudioStatus, PageUi, Phase, Status};
 use crate::platform::audio::{Audio, AudioRequest};
 use crate::platform::cpal_output::CpalBackend;
 use crate::platform::keys::key_name;
 use crate::platform::pads::GamepadPoller;
-use crate::report;
+use crate::report::Level;
 use crate::shell::{FrameOutput, Request, Shell, ShellInput};
 
 /// How the page's game starts.
@@ -69,7 +70,7 @@ pub(crate) struct App {
     /// The bindings whose keys lose their browser action, shared with the
     /// canvas's key listener.
     guarded: Rc<RefCell<Bindings>>,
-    page: Box<dyn PageUi>,
+    page: WebPageUi,
     /// When the previous animation callback ran, for the silent advance of
     /// locked audio.
     last_callback: Option<Duration>,
@@ -108,7 +109,7 @@ impl App {
             canvas: None,
             options,
             guarded,
-            page: Box::new(NativePageUi),
+            page: WebPageUi::new(),
             last_callback: None,
             frames: 0,
         }
@@ -117,6 +118,11 @@ impl App {
     /// Sets where the save-recording action hands the last game.
     pub(super) fn set_transfer(&mut self, transfer: impl crate::transfer::FileTransfer + 'static) {
         self.shell.set_transfer(transfer);
+    }
+
+    /// Shows a warning about the start-up options on the page.
+    pub(crate) fn warn(&mut self, text: &str) {
+        self.page.message(Level::Warning, text);
     }
 
     /// Runs one shell frame and applies its output.
@@ -176,10 +182,12 @@ impl App {
             phase: self.shell.phase(),
             audio: self.audio.status(),
             frames: self.frames,
+            result: self.shell.playback_result().map(str::to_owned),
+            can_save: self.shell.can_save(),
         };
         self.page.set_status(&status);
         for notice in self.audio.take_notices() {
-            report::notice(notice);
+            self.page.message(Level::Notice, &notice);
         }
     }
 
@@ -200,7 +208,7 @@ impl App {
     /// One animation callback.
     fn animation_frame(&mut self) {
         let now = self.pacer.clock().now();
-        let resized = self.canvas.as_mut().is_some_and(GameCanvas::update_layout);
+        let resized = self.update_layout();
         self.poll_pads();
         if let Some(last) = self.last_callback.replace(now) {
             self.audio.advance(now.saturating_sub(last));
@@ -217,6 +225,19 @@ impl App {
             }
             canvas.request_redraw();
         }
+    }
+
+    /// Works the canvas size out again; returns whether it changed, and
+    /// shows the new scale on the page.
+    fn update_layout(&mut self) -> bool {
+        let Some(canvas) = self.canvas.as_mut() else {
+            return false;
+        };
+        let changed = canvas.update_layout();
+        if changed {
+            self.page.set_scale(canvas.scale());
+        }
+        changed
     }
 
     /// Feeds the pad events since the last callback into the input state.
@@ -271,7 +292,7 @@ impl App {
             self.shell.event(AppEvent::Visibility(false));
             // During live play the game enters its pause at once, at the
             // frame where the page was hidden.
-            if self.shell.phase() == crate::page::Phase::Playing {
+            if matches!(self.shell.phase(), Phase::Playing | Phase::Paused) {
                 let input = ShellInput::from(self.input.take_frame());
                 self.frame(&input);
             }
@@ -318,13 +339,17 @@ impl ApplicationHandler<AppEvent> for App {
             Ok(canvas) => {
                 dom::guard_bound_keys(canvas.element(), Rc::clone(&self.guarded));
                 canvas.request_redraw();
+                self.page.set_scale(canvas.scale());
                 self.canvas = Some(canvas);
                 self.page.set_bindings(&self.shell.bindings());
                 if self.shell.settings().pad_enabled {
                     match GamepadPoller::new() {
                         Ok(poller) => self.poller = Some(poller),
                         Err(reason) => {
-                            report::notice(format!("gamepads cannot be read: {reason}"));
+                            self.page.message(
+                                Level::Notice,
+                                &format!("gamepads cannot be read: {reason}"),
+                            );
                         }
                     }
                 }
@@ -334,7 +359,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.pacer.reanchor();
                 self.report_status();
             }
-            Err(reason) => report::error(reason),
+            Err(reason) => self.page.fail(&reason),
         }
     }
 
@@ -350,8 +375,8 @@ impl ApplicationHandler<AppEvent> for App {
                 self.input.set_alt(modifiers.state().alt_key());
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                if let Some(canvas) = self.canvas.as_mut()
-                    && canvas.update_layout()
+                if self.update_layout()
+                    && let Some(canvas) = self.canvas.as_mut()
                 {
                     canvas.present(self.shell.picture());
                 }

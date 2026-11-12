@@ -31,6 +31,14 @@ pub(crate) enum Notice {
         /// Why.
         reason: Rejection,
     },
+    /// A recording played back to its end did not match it: the first
+    /// line of its divergence report.
+    PlaybackFailed {
+        /// The file's name.
+        name: String,
+        /// What did not match, and at which tick.
+        reason: String,
+    },
 }
 
 /// Why a picked recording is not played back (`web-build` spec, loading a
@@ -107,6 +115,12 @@ impl fmt::Display for Notice {
             Self::RecordingNotSaved(error) => write!(f, "recording not saved: {error}"),
             Self::RecordingRejected { name, reason } => {
                 write!(f, "cannot play back {name}: {reason}")
+            }
+            Self::PlaybackFailed { name, reason } => {
+                write!(
+                    f,
+                    "playback of {name} did not match its recording: {reason}"
+                )
             }
         }
     }

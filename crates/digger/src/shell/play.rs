@@ -30,7 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use digger_core::recording::{Recording, RecordingError, RecordingKind};
-use digger_core::replay::{Recorder, Replay, ReplayOptions, ReplayStep};
+use digger_core::replay::{Recorder, Replay, ReplayOptions, ReplayReport, ReplayStep};
 use digger_core::video::Framebuffer;
 use digger_core::{
     Controls, FrameInput, FrameKind, Game, GameConfig, GameSummary, SoundCommand, StepOutcome,
@@ -42,6 +42,7 @@ use super::recording::{FinishedRecording, LiveRecording};
 use super::{Context, ShellInput, Transition};
 use crate::config::GameMode;
 use crate::input::{Action, PadChange};
+use crate::notice::Notice;
 use crate::scores::TableKey;
 
 /// A frame that only asks the core to quit the game.
@@ -571,10 +572,42 @@ impl PlaybackScene {
                         cx.playlist.stop();
                         to_title(cx)
                     }
-                    Leave::End => cx.after_playback(),
+                    Leave::End => {
+                        if !taken_over {
+                            self.report_end(&report, cx);
+                        }
+                        cx.after_playback()
+                    }
                 }
             }
         }
+    }
+
+    /// Keeps the result of a watched playback that ran to its end for the
+    /// page, and tells the player when it did not match its recording
+    /// (`web-build` spec, loading a recording through a file picker): the
+    /// first line of the divergence report names the tick.
+    fn report_end(&self, report: &ReplayReport, cx: &mut Context<'_>) {
+        let name = self
+            .source
+            .as_deref()
+            .map_or_else(String::new, |path| path.display().to_string());
+        let result = if report.exit_status() == 0 {
+            report.result_line().trim_end().to_owned()
+        } else {
+            let diagnostics = report.diagnostics(&name);
+            let first = diagnostics
+                .lines()
+                .next()
+                .unwrap_or("playback failed")
+                .to_owned();
+            cx.notices.push(Notice::PlaybackFailed {
+                name,
+                reason: first.clone(),
+            });
+            first
+        };
+        *cx.played = Some(result);
     }
 
     /// The picture to present: the game's own.

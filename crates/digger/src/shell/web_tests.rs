@@ -16,8 +16,9 @@ use super::harness::Harness;
 use super::{ExitPolicy, Request, Scene, Setup};
 use crate::config::{GameMode, Settings};
 use crate::event::AppEvent;
+use crate::page::Phase;
 use crate::store::{MemoryStore, Storage, StoreKey};
-use crate::transfer::{MAX_IMPORT_BYTES, TransferError};
+use crate::transfer::{MAX_IMPORT_BYTES, RecordingTransfer, TransferError};
 
 /// A recording of a live game quit after `frames` frames.
 fn recorded(frames: usize) -> Vec<u8> {
@@ -351,4 +352,132 @@ fn import_malformed_shows_reason() {
         ["cannot play back ABC0.drf: recordings are played from the title screen"]
     );
     assert!(matches!(h.shell.scene(), Scene::Playing(_)));
+}
+
+/// An upstream recording of the conformance suite and its expected
+/// result line.
+fn upstream(name: &str) -> (Vec<u8>, String) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/recordings");
+    let bytes = std::fs::read(root.join("data").join(name)).unwrap();
+    let stem = name.rsplit_once('.').unwrap().0;
+    let expected = std::fs::read_to_string(root.join("results").join(format!("{stem}.out")))
+        .unwrap()
+        .trim_end()
+        .to_owned();
+    (bytes, expected)
+}
+
+/// Runs frames until the title screen returns (at most `limit`).
+fn until_title(h: &mut Harness, limit: usize) {
+    for _ in 0..limit {
+        if h.on_title() {
+            return;
+        }
+        h.frame();
+    }
+    assert!(h.on_title(), "the title screen did not return");
+}
+
+#[test]
+fn page_status_follows_a_game() {
+    let mut h = Harness::new();
+    assert_eq!(h.shell.phase(), Phase::Title);
+    assert!(!h.shell.can_save(), "nothing to save on a fresh page");
+    assert_eq!(h.shell.playback_result(), None);
+    h.play();
+    assert_eq!(h.shell.phase(), Phase::Playing);
+    h.until_first_tick();
+    h.tap("Space");
+    h.run(3);
+    assert_eq!(h.shell.phase(), Phase::Paused);
+    h.tap("Space");
+    h.run(3);
+    assert_eq!(h.shell.phase(), Phase::Playing);
+}
+
+#[test]
+fn save_button_saves_like_the_key() {
+    let mut h = Harness::new();
+    h.shell.set_exit_policy(ExitPolicy::StayOnTitle);
+    h.play();
+    h.run(30);
+    h.tap("F10");
+    h.frame();
+    assert!(h.on_title());
+    assert!(h.shell.last_game().is_some());
+    // Nowhere to save: the button stays disabled and does nothing.
+    assert!(!h.shell.can_save());
+    h.shell.event(AppEvent::SaveRecording);
+    assert!(h.shell.last_game().is_some());
+    let transfer = RecordingTransfer::default();
+    h.shell.set_transfer(transfer.clone());
+    assert!(h.shell.can_save());
+    let text = h.shell.last_game().unwrap().text.clone();
+    let name = h.shell.last_game().unwrap().auto_name();
+    h.shell.event(AppEvent::SaveRecording);
+    assert_eq!(
+        *transfer.exported.borrow(),
+        [(name, text.into_bytes())],
+        "the name and bytes of the save-recording key"
+    );
+    // Once only: the button is disabled again.
+    assert!(!h.shell.can_save());
+    h.shell.event(AppEvent::SaveRecording);
+    assert_eq!(transfer.exported.borrow().len(), 1);
+    assert_eq!(taken(&mut h), Vec::<String>::new());
+}
+
+#[test]
+fn save_button_is_disabled_away_from_the_title() {
+    let mut h = Harness::new();
+    let transfer = RecordingTransfer::default();
+    h.shell.set_transfer(transfer.clone());
+    h.play();
+    h.run(30);
+    h.tap("F10");
+    h.frame();
+    assert!(h.shell.can_save());
+    h.play();
+    assert!(!h.shell.can_save());
+    h.shell.event(AppEvent::SaveRecording);
+    assert!(transfer.exported.borrow().is_empty());
+}
+
+#[test]
+fn picked_recording_shows_its_result() {
+    let (bytes, expected) = upstream("2riptest01.edrf");
+    let mut h = Harness::new();
+    h.shell.event(AppEvent::RecordingPicked {
+        name: String::from("2riptest01.edrf"),
+        bytes,
+    });
+    assert_eq!(h.shell.phase(), Phase::Playback);
+    until_title(&mut h, 5000);
+    assert_eq!(h.shell.playback_result(), Some(expected.as_str()));
+    assert_eq!(taken(&mut h), Vec::<String>::new());
+    assert_eq!(h.notices(), Vec::<String>::new());
+}
+
+#[test]
+fn picked_recording_that_diverges_is_reported() {
+    let (bytes, _) = upstream("2riptest01.edrf");
+    let text = String::from_utf8(bytes).unwrap();
+    // The first state checkpoint no longer matches.
+    let broken = text.replacen("C 966B1F36", "C 00000000", 1);
+    assert_ne!(broken, text);
+    let mut h = Harness::new();
+    h.shell.event(AppEvent::RecordingPicked {
+        name: String::from("broken.edrf"),
+        bytes: broken.into_bytes(),
+    });
+    until_title(&mut h, 5000);
+    let result = h.shell.playback_result().unwrap().to_owned();
+    assert!(result.contains("tick"), "{result}");
+    let notices = h.notices();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].starts_with("playback of broken.edrf did not match its recording: ")
+            && notices[0].ends_with(&result),
+        "{notices:?}"
+    );
 }

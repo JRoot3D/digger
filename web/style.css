@@ -1,0 +1,212 @@
+/* The page around the game (add-web-build-and-releases, design decision 10).
+   The stage fills the viewport and centres the canvas on black; the game
+   sets the canvas's size itself, so the letterbox is the page background.
+   Everything else sits in the letterbox or below the stage. */
+
+:root {
+  color-scheme: dark;
+  --text: #c8c8c8;
+  --dim: #8a8a8a;
+  --accent: #e0b040;
+  --panel: #141414;
+  --line: #333;
+}
+
+html,
+body {
+  margin: 0;
+  background: #000;
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+#stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+
+#game {
+  display: block;
+  flex: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  outline: none;
+}
+
+/* Until the game has drawn its first picture the canvas stays out of view. */
+:root[data-phase="loading"] #game {
+  visibility: hidden;
+}
+
+#loading {
+  position: absolute;
+  margin: 0;
+  color: var(--dim);
+  font-size: 1.25rem;
+}
+
+#loading::after {
+  content: "";
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.6em;
+  vertical-align: -0.1em;
+  border: 0.15em solid var(--dim);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #loading::after {
+    animation: none;
+  }
+}
+
+.message {
+  max-width: 36rem;
+  margin: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 1.1rem;
+}
+
+#failure[hidden] {
+  display: none;
+}
+
+/* The sound prompt and the notices: page elements in the top letterbox,
+   never pixels of the game picture. */
+#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  pointer-events: none;
+}
+
+#sound-prompt,
+#notices p {
+  margin: 0;
+  padding: 0.3rem 0.8rem;
+  border-radius: 0.3rem;
+  background: rgb(20 20 20 / 85%);
+  font-size: 0.95rem;
+}
+
+#sound-prompt {
+  color: var(--accent);
+}
+
+#sound-prompt[hidden] {
+  display: none;
+}
+
+#notices p.warning {
+  color: #f0c060;
+}
+
+#buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:enabled,
+button:focus-visible {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  color: #555;
+  cursor: default;
+}
+
+#controls {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 0 1rem 1rem;
+}
+
+#controls h2 {
+  font-size: 1.1rem;
+}
+
+#controls p {
+  color: var(--dim);
+}
+
+#controls table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#controls th,
+#controls td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+#controls td + td {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+}
+
+footer {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1rem;
+  color: var(--dim);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* In fullscreen only the stage is seen. */
+:root:fullscreen #buttons,
+:root:fullscreen #controls,
+:root:fullscreen footer {
+  display: none;
+}

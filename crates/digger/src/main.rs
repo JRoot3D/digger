@@ -195,9 +195,6 @@ fn clock_seed() -> u64 {
 fn main() {
     platform::install_panic_hook();
     let (launch, warnings) = platform::launch_options();
-    for warning in &warnings {
-        report::warning(warning);
-    }
     let files = store::WebStore::open();
     let unavailable = files.unavailable();
     let (stored, damaged) = match config::file::load(&files) {
@@ -229,7 +226,13 @@ fn main() {
     if damaged {
         shell.replace_damaged_settings();
     }
-    if let Err(error) = platform::run(platform::App::new(shell, options)) {
+    let mut app = platform::App::new(shell, options);
+    // A start-up option that was ignored is a visible warning on the page
+    // (`web-build` spec, start-up options from URL query parameters).
+    for warning in &warnings {
+        app.warn(&format!("start-up option {warning}"));
+    }
+    if let Err(error) = platform::run(app) {
         report::error(error);
     }
 }

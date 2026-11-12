@@ -268,6 +268,8 @@ pub(crate) struct Context<'a> {
     playlist: &'a mut PlayList,
     /// The report of a finished `--verify` run.
     verified: &'a mut Option<ReplayReport>,
+    /// The result of the last watched playback that ran to its end.
+    played: &'a mut Option<String>,
     /// The frame's output.
     out: &'a mut Pending,
 }
@@ -443,6 +445,9 @@ pub(crate) struct Shell {
     playlist: PlayList,
     /// The report of the `--verify` run, once it has ended.
     verified: Option<ReplayReport>,
+    /// The result of the last watched playback that ran to its end, for
+    /// the page (`data-result`).
+    played: Option<String>,
     /// The high-score tables.
     scores: ScoreStore,
     /// Where the settings and the tables are saved.
@@ -525,6 +530,7 @@ impl Shell {
             last_game: None,
             playlist,
             verified: None,
+            played: None,
             scene,
             scores,
             storage,
@@ -570,6 +576,7 @@ impl Shell {
             last_game: &mut self.last_game,
             playlist: &mut self.playlist,
             verified: &mut self.verified,
+            played: &mut self.played,
             out: &mut out,
         };
         let transition = match &mut self.scene {
@@ -780,6 +787,7 @@ impl Shell {
                 self.notices.push(Notice::RecordingNotSaved(error));
             }
             AppEvent::StorageFailed(key, error) => self.storage.failed(key, error),
+            AppEvent::SaveRecording => self.save_recording(),
             // A page hidden during live play pauses the game from the next
             // frame on, through the game's own pause phase; the title and a
             // playback simply go on when the platform steps them again
@@ -827,10 +835,11 @@ impl Shell {
     }
 
     /// What the program is doing, for the page.
-    pub(crate) const fn phase(&self) -> Phase {
-        match self.scene {
+    pub(crate) fn phase(&self) -> Phase {
+        match &self.scene {
             Scene::Title(_) => Phase::Title,
             Scene::Redefine(_) => Phase::Redefine,
+            Scene::Playing(play) if play.game().is_paused() => Phase::Paused,
             Scene::Playing(_) => Phase::Playing,
             Scene::Playback(_) => Phase::Playback,
         }
@@ -899,6 +908,7 @@ impl Shell {
             last_game: &mut self.last_game,
             playlist: &mut self.playlist,
             verified: &mut self.verified,
+            played: &mut self.played,
             out: &mut out,
         };
         self.scene = cx.new_game();
@@ -981,5 +991,54 @@ impl Shell {
     /// The recording of the last finished game, if it was not saved yet.
     pub(crate) const fn last_game(&self) -> Option<&FinishedRecording> {
         self.last_game.as_ref()
+    }
+
+    /// Whether the save-recording action would hand a recording out now:
+    /// a finished game's recording is kept, there is somewhere to save it,
+    /// and the title screen is shown (`web-build` spec, saving a
+    /// recording as a download).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "shown on the browser's page")
+    )]
+    pub(crate) fn can_save(&self) -> bool {
+        self.last_game.is_some() && self.transfer.is_some() && matches!(self.scene, Scene::Title(_))
+    }
+
+    /// The result of the last watched playback that ran to its end: its
+    /// result line (`score=S level=L ticks=T`) when it matched its
+    /// recording, else the first line of its divergence report.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "shown on the browser's page")
+    )]
+    pub(crate) fn playback_result(&self) -> Option<&str> {
+        self.played.as_deref()
+    }
+
+    /// The page's save-recording button: the title screen's save action.
+    /// Away from the title screen nothing is saved.
+    fn save_recording(&mut self) {
+        if !matches!(self.scene, Scene::Title(_)) {
+            return;
+        }
+        let mut out = Pending::default();
+        let mut cx = Context {
+            settings: &self.settings,
+            mode: &mut self.mode,
+            runtime: &mut self.runtime,
+            scores: &mut self.scores,
+            storage: &mut self.storage,
+            transfer: &mut self.transfer,
+            notices: &mut self.notices,
+            setup: &self.setup,
+            games_started: &mut self.games_started,
+            last_game: &mut self.last_game,
+            playlist: &mut self.playlist,
+            verified: &mut self.verified,
+            played: &mut self.played,
+            out: &mut out,
+        };
+        cx.save_last_game();
     }
 }

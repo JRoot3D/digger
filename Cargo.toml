@@ -19,6 +19,9 @@ authors = ["The Digger Rust contributors"]
 clap = { version = "4.6", features = ["derive"] }
 cpal = "0.18.2"
 directories = "6.0.0"
+# Gzip for the web build's size budget (add-web-build-and-releases, design
+# decision 11), with its pure-Rust backend only.
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 gilrs = "0.11.2"
 js-sys = "0.3.107"
 md-5 = "0.11.0"

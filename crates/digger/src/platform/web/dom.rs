@@ -25,6 +25,8 @@ use crate::transfer::{TransferError, check_import_size};
 pub(super) const CANVAS_ID: &str = "game";
 /// The page's fullscreen button.
 const FULLSCREEN_BUTTON_ID: &str = "fullscreen";
+/// The page's save-recording button.
+const SAVE_BUTTON_ID: &str = "save-recording";
 /// The page's play-recording button.
 const PLAY_BUTTON_ID: &str = "play-recording";
 /// The hidden file input the play-recording button opens.
@@ -152,6 +154,17 @@ pub(super) fn wire_fullscreen_button() {
         return;
     };
     listen(&button, "click", |_: Event| toggle_fullscreen());
+}
+
+/// Wires the page's save-recording button, if it has one: a click is the
+/// title screen's save action, sent as [`AppEvent::SaveRecording`].
+pub(super) fn wire_save_button(proxy: EventLoopProxy<AppEvent>) {
+    let Some(button) = document().and_then(|document| element(&document, SAVE_BUTTON_ID)) else {
+        return;
+    };
+    listen(&button, "click", move |_: Event| {
+        let _ = proxy.send_event(AppEvent::SaveRecording);
+    });
 }
 
 /// The hidden file input for picking recordings, made when the page has

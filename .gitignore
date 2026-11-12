@@ -1,5 +1,7 @@
 # Cargo build output
 /target/
+# Output of `cargo xtask web` and `cargo xtask dist`
+/dist/
 
 # Editor and OS files
 .idea/

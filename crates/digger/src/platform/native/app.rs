@@ -231,6 +231,8 @@ impl App {
             phase: self.shell.phase(),
             audio: self.audio.as_ref().map_or(AudioStatus::Off, Audio::status),
             frames: self.frames,
+            result: None,
+            can_save: false,
         };
         self.page.set_status(&status);
         self.report_audio_notices();

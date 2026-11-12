@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en" data-phase="loading" data-audio="off" data-frames="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digger</title>
+<meta name="description" content="Digger Remastered, re-created in Rust, playable in the browser.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<link rel="modulepreload" href="digger.js">
+<script type="module" src="boot.js"></script>
+</head>
+<body>
+<main>
+<h1 class="visually-hidden">Digger</h1>
+<div id="stage">
+<p id="loading" role="status">Loading Digger&hellip;</p>
+<noscript><p class="message">Digger needs JavaScript to run. Turn scripting on for this page and reload it.</p></noscript>
+<div id="failure" class="message" role="alert" hidden></div>
+<canvas id="game" tabindex="0" width="640" height="400" aria-label="The game"></canvas>
+<div id="overlay">
+<p id="sound-prompt" hidden>Press a key or click to turn sound on.</p>
+<div id="notices" aria-live="polite"></div>
+</div>
+</div>
+<nav id="buttons" aria-label="Game controls">
+<button type="button" id="fullscreen">Fullscreen</button>
+<button type="button" id="play-recording">Play recording&hellip;</button>
+<button type="button" id="save-recording" disabled>Save recording</button>
+<input type="file" id="recording-file" accept=".drf,.edrf" hidden>
+</nav>
+<section id="controls" aria-labelledby="controls-title">
+<h2 id="controls-title">Controls</h2>
+<p>Click the game or press a key to give it the keyboard. A gamepad works from its first button press.</p>
+<table>
+<thead><tr><th scope="col">Function</th><th scope="col">Keys</th></tr></thead>
+<tbody id="controls-list"><tr><td colspan="2">Shown when the game has loaded.</td></tr></tbody>
+</table>
+</section>
+</main>
+<footer>
+<p><span id="version">Digger</span> &middot; Free software under the <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html">GNU General Public License, version 2 or later</a> &middot; <a id="source" href="https://github.com/JRoot3D/digger">Source code</a> &middot; <a id="credits" href="https://github.com/JRoot3D/digger/blob/main/NOTICE">Credits</a></p>
+<p>Digger &copy; 1983 Windmill Software; Digger Remastered by Andrew Jenner and Maksym Sobolyev (<a href="https://digger.org/">digger.org</a>).</p>
+</footer>
+</body>
+</html>
