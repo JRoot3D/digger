@@ -168,8 +168,12 @@ impl App {
             controls,
             frame_time,
             requests,
+            notices,
             ..
         } = self.shell.frame(input);
+        for notice in notices {
+            report::notice(notice);
+        }
         let sink: &mut dyn SoundSink = match self.audio.as_mut() {
             Some(audio) => {
                 audio.check();

@@ -123,7 +123,15 @@ state and the sound handle. The seams:
 | time | `Instant` | `std::time` | `web_time` |
 
 `StoreKey` is an enum (`Settings`, `Scores`), not a string, so a caller cannot
-invent a storage key. The stored values are the same text the desktop build
+invent a storage key. The shell owns the store through a small `Storage` wrapper that
+applies the failure rule on every target: the first failed save of either
+key raises one `Notice::StorageUnavailable` (on the desktop its text still
+names the file and the cause, as phase 6 printed it), later failures raise
+none, and the values stay in memory. A store may keep a damaged value
+aside before replacing it (`set_aside`: the desktop's `scores.toml.bad`;
+local storage simply replaces it). On the desktop the settings are still
+saved at exit, as phase 6 does; the browser saves them as they change
+(task group 3). The stored values are the same text the desktop build
 writes to its files, so the serialisation code and its tests are shared. Each
 seam has a small trait in shared code and an in-memory fake, so `app` logic
 (for example "a failed save shows one notice and play continues") is unit

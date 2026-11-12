@@ -20,6 +20,7 @@ use crate::cli::Redefine;
 use crate::config::file::tests::TempDir;
 use crate::config::{GameMode, Layer, Settings};
 use crate::input::{Action, Bindings, KeyPress};
+use crate::store::{NativeStore, Storage};
 
 /// The golden CRC of the redefinition screen as it opens in one-player
 /// mode: the heading and player 1's right key asked for.
@@ -283,12 +284,10 @@ fn redefine_all_asks_every_action() {
 fn redefine_abort_restores() {
     let dir = TempDir::new("redefine-abort");
     let path = dir.path().join("config.toml");
-    let mut h = Harness::with(
+    let mut h = Harness::with_storage(
         Settings::default(),
-        Setup {
-            config_file: Some(path.clone()),
-            ..Setup::default()
-        },
+        Setup { ..Setup::default() },
+        config_storage(&path),
     );
     let before = h.input.bindings().clone();
     open(&mut h);
@@ -327,13 +326,13 @@ fn redefine_persists_and_applies() {
     let dir = TempDir::new("redefine-save");
     let path = dir.path().join("config.toml");
     // `--redefine-keys` opens the program on key redefinition.
-    let mut h = Harness::with(
+    let mut h = Harness::with_storage(
         Settings::default(),
         Setup {
-            config_file: Some(path.clone()),
             redefine_keys: Some(Redefine::Usual),
             ..Setup::default()
         },
+        config_storage(&path),
     );
     h.frame();
     assert_eq!(asking(&h), Some(Action::P1Right));
@@ -405,4 +404,12 @@ fn redefine_player1_keys_scenario() {
     ] {
         assert_eq!(bindings.action_of(key(name)), Some(action), "{name}");
     }
+}
+
+/// Storage whose settings are the configuration file `path`.
+fn config_storage(path: &std::path::Path) -> Storage {
+    Storage::new(NativeStore::new(
+        path.to_path_buf(),
+        path.with_file_name("scores.toml"),
+    ))
 }

@@ -32,11 +32,14 @@ use digger_core::{GameConfig, GauntletSeconds, LevelSet, SoundCommand, StartLeve
 use digger_sound::SoundControl;
 
 use crate::cli::Redefine;
+use crate::config::file::SaveError;
 use crate::config::{FrameTime, GameMode, Layer, Settings};
 use crate::headless::VerifyJob;
 use crate::input::{Action, Bindings, InputFrame};
+use crate::notice::Notice;
 use crate::scores::store::ScoreStore;
 use crate::scores::{self, ScoreTable, Scores, TableKey};
+use crate::store::{Storage, StoreKey};
 
 mod game_over;
 mod initials;
@@ -127,6 +130,8 @@ pub(crate) struct FrameOutput<'a> {
     pub(crate) frame_time: FrameTime,
     /// Requests to the platform, in order.
     pub(crate) requests: Vec<Request>,
+    /// The notices raised in this frame (a failed save, for example).
+    pub(crate) notices: Vec<Notice>,
 }
 
 /// The output of a frame being collected.
@@ -187,9 +192,6 @@ pub(crate) struct Setup {
     /// save-recording action writes the last game; `None` when there is
     /// nowhere to save.
     pub(crate) recordings_dir: Option<PathBuf>,
-    /// The configuration file a completed key redefinition is written to;
-    /// `None` keeps it in memory only.
-    pub(crate) config_file: Option<PathBuf>,
     /// `--redefine-keys[=all]`: the program opens on key redefinition
     /// instead of the title screen.
     pub(crate) redefine_keys: Option<Redefine>,
@@ -214,7 +216,6 @@ impl Default for Setup {
             score_levels: scores::LevelSet::Builtin,
             record_path: None,
             recordings_dir: None,
-            config_file: None,
             redefine_keys: None,
             play: Vec::new(),
             loop_playback: false,
@@ -233,8 +234,10 @@ pub(crate) struct Context<'a> {
     mode: &'a mut GameMode,
     /// The settings the player changed at run time.
     runtime: &'a mut Layer,
-    /// The high-score tables and their file.
+    /// The high-score tables.
     scores: &'a mut ScoreStore,
+    /// Where the settings and the tables are saved.
+    storage: &'a mut Storage,
     /// The set-up of the program.
     setup: &'a Setup,
     /// How many live games were started so far.
@@ -412,14 +415,17 @@ pub(crate) struct Shell {
     playlist: PlayList,
     /// The report of the `--verify` run, once it has ended.
     verified: Option<ReplayReport>,
-    /// The high-score tables and their file.
+    /// The high-score tables.
     scores: ScoreStore,
+    /// Where the settings and the tables are saved.
+    storage: Storage,
     /// The current scene.
     scene: Scene,
 }
 
 impl Shell {
-    /// A shell on the title screen, with fresh score tables.
+    /// A shell on the title screen, with fresh score tables kept in
+    /// memory only.
     pub(crate) fn new(settings: Settings, setup: Setup) -> Self {
         Self::with_scores(settings, setup, Scores::default())
     }
@@ -427,12 +433,23 @@ impl Shell {
     /// A shell on the title screen, showing the tables of `scores`, which
     /// are kept in memory only.
     pub(crate) fn with_scores(settings: Settings, setup: Setup, scores: Scores) -> Self {
-        Self::with_store(settings, setup, ScoreStore::in_memory(scores))
+        Self::build(
+            settings,
+            setup,
+            Storage::memory(),
+            ScoreStore::in_memory(scores),
+        )
     }
 
-    /// A shell on the title screen, showing and saving the tables of
-    /// `scores`.
-    pub(crate) fn with_store(settings: Settings, setup: Setup, scores: ScoreStore) -> Self {
+    /// A shell on the title screen, showing the tables kept in `storage`
+    /// and saving the tables and the settings the player changes there.
+    pub(crate) fn with_storage(settings: Settings, setup: Setup, storage: Storage) -> Self {
+        let scores = ScoreStore::open_reporting(storage.store());
+        Self::build(settings, setup, storage, scores)
+    }
+
+    /// A shell on the title screen over `storage` and the tables `scores`.
+    fn build(settings: Settings, setup: Setup, storage: Storage, scores: ScoreStore) -> Self {
         let mode = settings.mode;
         let table = scores
             .scores()
@@ -466,6 +483,7 @@ impl Shell {
             verified: None,
             scene,
             scores,
+            storage,
             settings,
             setup,
         }
@@ -480,6 +498,7 @@ impl Shell {
             mode: &mut self.mode,
             runtime: &mut self.runtime,
             scores: &mut self.scores,
+            storage: &mut self.storage,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
@@ -501,12 +520,14 @@ impl Shell {
         if let Some(keys) = out.keys.take() {
             self.apply_keys(*keys, &mut out);
         }
+        let notices = self.storage.take_notices();
         FrameOutput {
             picture: self.picture(),
             sound: out.sound,
             controls: out.controls,
             frame_time: self.frame_time,
             requests: out.requests,
+            notices,
         }
     }
 
@@ -571,12 +592,33 @@ impl Shell {
         }
         self.runtime.keys.clone_from(&changes.keys);
         self.settings.keys = keys;
-        if let Some(path) = &self.setup.config_file
-            && let Err(error) = crate::config::file::save(path, &changes)
-        {
-            crate::report::notice(error);
-        }
+        self.save_changes(&changes);
         out.requests.push(Request::BindingsChanged);
+    }
+
+    /// Saves `changes` over the stored settings; a failure raises a
+    /// notice and the changes stay in effect for this run.
+    fn save_changes(&mut self, changes: &Layer) {
+        match crate::config::file::save(self.storage.store_mut(), changes) {
+            Ok(_) => {}
+            Err(SaveError::Store(error)) => self.storage.failed(StoreKey::Settings, error),
+            Err(SaveError::Invalid(error)) => self
+                .storage
+                .notice(Notice::SettingsNotSaved(error.to_string())),
+        }
+    }
+
+    /// Saves the settings the player changed during the run (at exit, on
+    /// the desktop: `configuration` spec, saving settings). A failure is a
+    /// notice, taken with [`Shell::take_notices`].
+    pub(crate) fn save_settings(&mut self) {
+        let changes = self.runtime.clone();
+        self.save_changes(&changes);
+    }
+
+    /// The notices raised outside a frame (by [`Shell::save_settings`]).
+    pub(crate) fn take_notices(&mut self) -> Vec<Notice> {
+        self.storage.take_notices()
     }
 
     /// The platform switched between the window and fullscreen at the
@@ -634,6 +676,7 @@ impl Shell {
             mode: &mut self.mode,
             runtime: &mut self.runtime,
             scores: &mut self.scores,
+            storage: &mut self.storage,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,

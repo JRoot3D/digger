@@ -18,26 +18,14 @@
 //! parsed or understood gives fresh tables and one notice, and is renamed
 //! to `scores.toml.bad` before the next save so that it is not lost.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the store is opened by main and written by the initials scene of later task groups"
-    )
-)]
-
 use std::collections::BTreeSet;
-use std::ffi::OsString;
-use std::fmt;
 use std::fmt::Write as _;
-use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
 use super::{Entry, LevelSet, ScoreTable, Scores, TABLE_LEN, TableKey, TableKind};
 use crate::report;
+use crate::store::{Storage, Store, StoreError, StoreKey};
 
 /// The format version this program reads and writes.
 pub(crate) const FORMAT: i64 = 1;
@@ -63,24 +51,38 @@ pub(crate) enum LoadStatus {
     },
 }
 
-/// Reads the score file at `path`. Never fails: a missing file is
-/// [`LoadStatus::Fresh`], an unusable one [`LoadStatus::Recovered`], and
-/// both give fresh tables.
-pub(crate) fn load(path: &Path) -> (Scores, LoadStatus) {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return (Scores::default(), LoadStatus::Fresh);
+/// Reads the stored score tables (the score file on the desktop). Never
+/// fails: nothing stored is [`LoadStatus::Fresh`], an unusable value
+/// [`LoadStatus::Recovered`], and both give fresh tables.
+pub(crate) fn load(store: &dyn Store) -> (Scores, LoadStatus) {
+    let text = match store.load(StoreKey::Scores) {
+        Ok(Some(text)) => text,
+        Ok(None) => return (Scores::default(), LoadStatus::Fresh),
+        Err(StoreError::NotText) => return recovered("is not UTF-8 text".to_owned()),
+        Err(StoreError::Io { source, .. }) => {
+            return recovered(format!("cannot be read: {source}"));
         }
         Err(error) => return recovered(format!("cannot be read: {error}")),
-    };
-    let Ok(text) = String::from_utf8(bytes) else {
-        return recovered("is not UTF-8 text".to_owned());
     };
     match parse(&text) {
         Ok(scores) => (scores, LoadStatus::Loaded),
         Err(reason) => recovered(reason),
     }
+}
+
+/// Reads the score file at `path` (tests).
+#[cfg(test)]
+pub(crate) fn load_file(path: &std::path::Path) -> (Scores, LoadStatus) {
+    load(&scores_file(path))
+}
+
+/// A desktop store over the score file `path` alone (tests).
+#[cfg(test)]
+pub(crate) fn scores_file(path: &std::path::Path) -> crate::store::NativeStore {
+    crate::store::NativeStore::new(
+        path.with_file_name("unused-config.toml"),
+        path.to_path_buf(),
+    )
 }
 
 fn recovered(reason: String) -> (Scores, LoadStatus) {
@@ -204,81 +206,48 @@ pub(crate) fn render(scores: &Scores) -> String {
     text
 }
 
-/// A score file that could not be written.
-#[derive(Debug)]
-pub(crate) struct SaveError {
-    /// The path that could not be written or renamed.
-    pub(crate) path: PathBuf,
-    /// What went wrong.
-    pub(crate) source: io::Error,
-}
-
-impl fmt::Display for SaveError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "high scores not saved: {}: {}; they are kept until the program ends",
-            self.path.display(),
-            self.source
-        )
-    }
-}
-
-impl std::error::Error for SaveError {}
-
-/// The score tables together with the file they live in.
-#[derive(Debug)]
+/// The score tables, kept in a [`Store`] under [`StoreKey::Scores`].
+#[derive(Debug, Default)]
 pub(crate) struct ScoreStore {
-    /// The score file; `None` for tables kept in memory only.
-    path: Option<PathBuf>,
     scores: Scores,
-    /// The file on disk was not used and must be kept as
-    /// `scores.toml.bad` before it is overwritten.
-    keep_bad_file: bool,
+    /// The stored value was not used and must be kept aside (as
+    /// `scores.toml.bad` on the desktop) before it is overwritten.
+    keep_bad: bool,
 }
 
 impl ScoreStore {
-    /// Loads the score file at `path` (see [`load`]).
-    pub(crate) fn open(path: PathBuf) -> (Self, LoadStatus) {
-        let (scores, status) = load(&path);
-        let keep_bad_file = matches!(status, LoadStatus::Recovered { .. });
-        (
-            Self {
-                path: Some(path),
-                scores,
-                keep_bad_file,
-            },
-            status,
-        )
+    /// Loads the tables from `store` (see [`load`]).
+    pub(crate) fn open(store: &dyn Store) -> (Self, LoadStatus) {
+        let (scores, status) = load(store);
+        let keep_bad = matches!(status, LoadStatus::Recovered { .. });
+        (Self { scores, keep_bad }, status)
     }
 
-    /// Loads the score file at `path`, printing one notice naming the
-    /// file if it could not be used.
-    pub(crate) fn open_reporting(path: PathBuf) -> Self {
-        let (store, status) = Self::open(path);
-        if let (LoadStatus::Recovered { reason }, Some(path)) = (&status, store.path()) {
-            report::notice(format!(
-                "{}: {reason}; using fresh high-score tables (the file is kept as {} at the next save)",
-                path.display(),
-                bad_path(path).display()
-            ));
+    /// Loads the tables from `store`, printing one notice naming where
+    /// they are kept if they could not be used.
+    pub(crate) fn open_reporting(store: &dyn Store) -> Self {
+        let (scores, status) = Self::open(store);
+        if let LoadStatus::Recovered { reason } = &status {
+            let location = store.location(StoreKey::Scores);
+            match store.aside_location(StoreKey::Scores) {
+                Some(aside) => report::notice(format!(
+                    "{location}: {reason}; using fresh high-score tables (the file is kept as \
+                     {aside} at the next save)"
+                )),
+                None => report::notice(format!(
+                    "{location}: {reason}; using fresh high-score tables"
+                )),
+            }
         }
-        store
+        scores
     }
 
-    /// Tables kept in memory only: saving writes nothing (tests, and a
-    /// frontend without files).
+    /// Tables kept in memory only, with nothing to keep aside.
     pub(crate) const fn in_memory(scores: Scores) -> Self {
         Self {
-            path: None,
             scores,
-            keep_bad_file: false,
+            keep_bad: false,
         }
-    }
-
-    /// The score file, if the tables are kept in one.
-    pub(crate) fn path(&self) -> Option<&Path> {
-        self.path.as_deref()
     }
 
     /// The tables.
@@ -286,90 +255,55 @@ impl ScoreStore {
         &self.scores
     }
 
-    /// Inserts `entry` into the table named by `key` and saves the file.
-    /// The entry stays in memory whether or not the save succeeds.
+    /// Inserts `entry` into the table named by `key` and saves the tables
+    /// into `store`. The entry stays in memory whether or not the save
+    /// succeeds.
     ///
     /// Returns the place taken (`None` when the score does not qualify,
     /// in which case nothing is written) and the outcome of the save.
     pub(crate) fn record(
         &mut self,
+        store: &mut dyn Store,
         key: &TableKey,
         entry: Entry,
-    ) -> (Option<usize>, Result<(), SaveError>) {
+    ) -> (Option<usize>, Result<(), StoreError>) {
         let place = self.scores.insert(key, entry);
         if place.is_none() {
             return (None, Ok(()));
         }
-        (place, self.save())
+        (place, self.save(store))
     }
 
-    /// [`ScoreStore::record`], printing a notice naming the file and the
-    /// cause if the save fails.
-    pub(crate) fn record_reporting(&mut self, key: &TableKey, entry: Entry) -> Option<usize> {
-        let (place, saved) = self.record(key, entry);
+    /// [`ScoreStore::record`] into `storage`, which raises the notice if
+    /// the save fails; play carries on with the tables in memory.
+    pub(crate) fn record_reporting(
+        &mut self,
+        storage: &mut Storage,
+        key: &TableKey,
+        entry: Entry,
+    ) -> Option<usize> {
+        let (place, saved) = self.record(storage.store_mut(), key, entry);
         if let Err(error) = saved {
-            report::notice(error);
+            storage.failed(StoreKey::Scores, error);
         }
         place
     }
 
-    /// Writes every table to the file: first, if the file on disk was not
-    /// usable, it is renamed to `scores.toml.bad`; then the new text is
-    /// written to `scores.toml.tmp` and renamed over `scores.toml`, so an
-    /// interrupted write leaves the old or the new complete file. The
-    /// directory is created if needed.
+    /// Saves every table into `store`: first, if the stored value was not
+    /// usable, it is kept aside; then the new text replaces it (on the
+    /// desktop through `scores.toml.tmp`, so an interrupted write leaves the
+    /// old or the new complete file).
     ///
     /// # Errors
     ///
-    /// [`SaveError`]; the caller reports it as a notice and carries on.
-    pub(crate) fn save(&mut self) -> Result<(), SaveError> {
-        let Some(path) = self.path.clone() else {
-            return Ok(());
-        };
-        let fail = |path: &Path| {
-            let path = path.to_path_buf();
-            move |source| SaveError { path, source }
-        };
-        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-            fs::create_dir_all(dir).map_err(fail(dir))?;
+    /// [`StoreError`]; the caller reports it as a notice and carries on.
+    pub(crate) fn save(&mut self, store: &mut dyn Store) -> Result<(), StoreError> {
+        if self.keep_bad {
+            store.set_aside(StoreKey::Scores)?;
+            self.keep_bad = false;
         }
-        if self.keep_bad_file {
-            match fs::rename(&path, bad_path(&path)) {
-                Ok(()) => {}
-                // Gone since it was read: nothing left to keep.
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(source) => {
-                    return Err(SaveError {
-                        path: bad_path(&path),
-                        source,
-                    });
-                }
-            }
-            self.keep_bad_file = false;
-        }
-        let tmp = sibling(&path, ".tmp");
-        fs::write(&tmp, render(&self.scores)).map_err(fail(&tmp))?;
-        if let Err(source) = fs::rename(&tmp, &path) {
-            let _ = fs::remove_file(&tmp);
-            return Err(SaveError { path, source });
-        }
-        Ok(())
+        store.save(StoreKey::Scores, &render(&self.scores))
     }
-}
-
-/// `scores.toml` → `scores.toml.bad`, in the same directory.
-pub(crate) fn bad_path(path: &Path) -> PathBuf {
-    sibling(path, ".bad")
-}
-
-/// `path` with `suffix` added to its file name.
-fn sibling(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.file_name().map_or_else(
-        || OsString::from(crate::config::paths::SCORES_FILE),
-        OsString::from,
-    );
-    name.push(suffix);
-    path.with_file_name(name)
 }
 
 #[cfg(test)]
@@ -382,10 +316,72 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::{LoadStatus, ScoreStore, bad_path, load, parse, render, sibling};
+    use super::{LoadStatus, ScoreStore, load_file as load, parse, render};
     use crate::config::GameMode;
     use crate::config::file::tests::TempDir;
     use crate::scores::{Entry, LevelSet, ScoreTable, Scores, TableKey, TableKind};
+    use crate::store::native::{bad_path, temporary_path};
+    use crate::store::{Storage, StoreError};
+
+    /// Score tables kept in the score file `path`, with the store calls
+    /// of the shell.
+    #[derive(Debug)]
+    struct FileScores {
+        path: PathBuf,
+        store: ScoreStore,
+        storage: Storage,
+    }
+
+    impl FileScores {
+        fn record(
+            &mut self,
+            key: &TableKey,
+            entry: Entry,
+        ) -> (Option<usize>, Result<(), StoreError>) {
+            self.store.record(self.storage.store_mut(), key, entry)
+        }
+
+        fn record_reporting(&mut self, key: &TableKey, entry: Entry) -> Option<usize> {
+            let place = self.store.record_reporting(&mut self.storage, key, entry);
+            for notice in self.storage.take_notices() {
+                crate::report::notice(notice);
+            }
+            place
+        }
+
+        fn scores(&self) -> &Scores {
+            self.store.scores()
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    fn open(path: PathBuf) -> (FileScores, LoadStatus) {
+        let files = super::scores_file(&path);
+        let (store, status) = ScoreStore::open(&files);
+        let storage = Storage::new(files);
+        (
+            FileScores {
+                path,
+                store,
+                storage,
+            },
+            status,
+        )
+    }
+
+    fn open_reporting(path: PathBuf) -> FileScores {
+        let files = super::scores_file(&path);
+        let store = ScoreStore::open_reporting(&files);
+        let storage = Storage::new(files);
+        FileScores {
+            path,
+            store,
+            storage,
+        }
+    }
 
     fn key(mode: GameMode) -> TableKey {
         TableKey::from_mode(mode, LevelSet::Builtin)
@@ -437,7 +433,7 @@ mod tests {
         assert_eq!(empty, Scores::default());
         // Through a file.
         let dir = TempDir::new("scores-round-trip");
-        let (mut store, status) = ScoreStore::open(scores_file(&dir));
+        let (mut store, status) = open(scores_file(&dir));
         assert_eq!(status, LoadStatus::Fresh);
         assert_eq!(
             store
@@ -454,7 +450,7 @@ mod tests {
     fn scores_custom_level_set_separate() {
         let dir = TempDir::new("scores-custom");
         let path = scores_file(&dir);
-        let (mut store, _) = ScoreStore::open(path.clone());
+        let (mut store, _) = open(path.clone());
         let hard = LevelSet::for_level_file(Some(Path::new("levels/hard.dlf")));
         let custom = TableKey::from_mode(GameMode::OnePlayer, hard.clone());
         let builtin = key(GameMode::OnePlayer);
@@ -492,7 +488,7 @@ mod tests {
             assert_eq!(*scores.table(&key(mode)), ScoreTable::EMPTY);
         }
         // Opening does not create the file.
-        let _ = ScoreStore::open_reporting(scores_file(&dir));
+        let _ = open_reporting(scores_file(&dir));
         assert!(!scores_file(&dir).exists());
     }
 
@@ -566,7 +562,7 @@ mod tests {
         // The notice path prints without panicking and keeps fresh tables.
         let dir = TempDir::new("garbage-notice");
         fs::write(scores_file(&dir), &garbage).unwrap_or_else(|e| panic!("{e}"));
-        let store = ScoreStore::open_reporting(scores_file(&dir));
+        let store = open_reporting(scores_file(&dir));
         assert_eq!(*store.scores(), Scores::default());
     }
 
@@ -576,14 +572,14 @@ mod tests {
         let path = scores_file(&dir);
         let newer = "format = 2\nsomething = \"new\"\n";
         fs::write(&path, newer).unwrap_or_else(|e| panic!("{e}"));
-        let (mut store, status) = ScoreStore::open(path.clone());
+        let (mut store, status) = open(path.clone());
         let LoadStatus::Recovered { reason } = status else {
             panic!("{status:?}");
         };
         assert!(reason.contains("format 2"), "{reason}");
         assert_eq!(*store.scores(), Scores::default());
         // Not overwritten without a new score.
-        drop(ScoreStore::open(path.clone()));
+        drop(open(path.clone()));
         assert_eq!(fs::read_to_string(&path).ok().as_deref(), Some(newer));
         assert!(!bad_path(&path).exists());
         // A score that does not qualify writes nothing either.
@@ -610,8 +606,8 @@ mod tests {
     fn scores_save_atomic() {
         let dir = TempDir::new("scores-atomic");
         let path = dir.path().join("nested").join("scores.toml");
-        let tmp = sibling(&path, ".tmp");
-        let (mut store, _) = ScoreStore::open(path.clone());
+        let tmp = temporary_path(&path);
+        let (mut store, _) = open(path.clone());
         store
             .record(&key(GameMode::OnePlayer), Entry::new(*b"ONE", 1))
             .1
@@ -656,7 +652,7 @@ mod tests {
         let path = scores_file(&dir);
         let garbage = b"\x00\xffnot a score file\x13";
         fs::write(&path, garbage).unwrap_or_else(|e| panic!("{e}"));
-        let mut store = ScoreStore::open_reporting(path.clone());
+        let mut store = open_reporting(path.clone());
         assert!(!bad_path(&path).exists(), "kept in place until a save");
         let place = store.record_reporting(&key(GameMode::OnePlayer), Entry::new(*b"NEW", 4200));
         assert_eq!(place, Some(0));
@@ -689,7 +685,7 @@ mod tests {
         let not_a_dir = dir.path().join("data");
         fs::write(&not_a_dir, b"").unwrap_or_else(|e| panic!("{e}"));
         let path = not_a_dir.join("scores.toml");
-        let mut store = ScoreStore::open_reporting(path.clone());
+        let mut store = open_reporting(path.clone());
         let entry = Entry::new(*b"MEM", 777);
         let (place, saved) = store.record(&key(GameMode::OnePlayer), entry);
         assert_eq!(place, Some(0));
@@ -711,6 +707,6 @@ mod tests {
             store.scores().table(&key(GameMode::OnePlayer)).entries()[1],
             entry
         );
-        assert_eq!(store.path(), Some(path.as_path()));
+        assert_eq!(store.path(), path.as_path());
     }
 }

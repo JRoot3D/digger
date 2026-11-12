@@ -25,8 +25,9 @@ use super::{Request, Scene, Setup, Shell};
 use crate::config::file::tests::TempDir;
 use crate::config::{GameMode, Settings};
 use crate::input::{PadButton, PadInput, PadSignal};
-use crate::scores::store::ScoreStore;
+use crate::scores::store::scores_file;
 use crate::scores::{Entry, LevelSet, ScoreTable, Scores, TableKey, TableKind};
+use crate::store::{MemoryStore, Storage};
 
 /// The frames the core shows `GAME OVER` or `TIME UP` for.
 const NOTICE_FRAMES: usize = 50;
@@ -582,10 +583,8 @@ fn unlimited_lives_is_eligible() {
 fn entry_saved_before_title() {
     let dir = TempDir::new("shell");
     let path = dir.path().join("scores.toml");
-    let (store, _) = ScoreStore::open(path.clone());
     let settings = Settings::default();
-    let mut h = Harness::with_settings(settings.clone());
-    h.shell = Shell::with_store(settings, Setup::default(), store);
+    let mut h = Harness::with_storage(settings, Setup::default(), Storage::new(scores_file(&path)));
     h.play_until_out(&["ArrowLeft"]);
     h.enter("MSX");
     h.run(usize::from(CLOSING_FRAMES));
@@ -595,7 +594,7 @@ fn entry_saved_before_title() {
     );
     h.frame();
     assert!(!h.on_title(), "the notice is still to come");
-    let (scores, _) = crate::scores::store::load(&path);
+    let (scores, _) = crate::scores::store::load_file(&path);
     assert_eq!(
         scores.table(&key(GameMode::OnePlayer)).entries()[0],
         Entry::new(*b"MSX", 50),
@@ -764,14 +763,95 @@ fn quit_or_close_during_initials_adds_no_entry() {
     // unchanged.
     let dir = TempDir::new("shell");
     let path = dir.path().join("scores.toml");
-    let (store, _) = ScoreStore::open(path.clone());
     let settings = Settings::default();
-    let mut h = Harness::with_settings(settings.clone());
-    h.shell = Shell::with_store(settings, Setup::default(), store);
+    let mut h = Harness::with_storage(settings, Setup::default(), Storage::new(scores_file(&path)));
     h.play_until_out(&["ArrowLeft"]);
     h.enter("A");
     h.close();
     assert_eq!(h.frame().requests, [Request::Exit(0)]);
     assert_eq!(*h.shell.scores(), Scores::default());
     assert!(!path.exists(), "the score file is not written");
+}
+
+/// A harness whose storage refuses every save.
+fn refusing() -> Harness {
+    Harness::with_storage(
+        Settings::default(),
+        Setup::default(),
+        Storage::new(MemoryStore::refusing()),
+    )
+}
+
+#[test]
+fn save_failure_shows_notice_once() {
+    let mut h = refusing();
+    h.play_until_out(&["ArrowLeft"]);
+    h.enter("ONE");
+    h.close_entry();
+    assert_eq!(
+        h.notices(),
+        [
+            "high scores not saved: the test store refuses saves; they are kept until the program ends"
+        ],
+        "the first failed save raises the notice"
+    );
+    h.until_title();
+    // A second entry and the settings saved at the end fail too, without
+    // a second notice.
+    h.play_until_out(&["ArrowLeft"]);
+    h.enter("TWO");
+    h.close_entry();
+    h.until_title();
+    h.tap("F7");
+    h.frame();
+    assert!(!h.shell.runtime_changes().is_empty());
+    h.shell.save_settings();
+    assert_eq!(h.notices().len(), 1);
+    assert!(h.shell.take_notices().is_empty());
+    // Both entries are kept in memory.
+    let table = h.shell.scores().table(&key(GameMode::OnePlayer));
+    let initials: Vec<[u8; 3]> = table.entries()[..2].iter().map(|e| e.initials).collect();
+    assert!(
+        initials.contains(b"ONE") && initials.contains(b"TWO"),
+        "{initials:?}"
+    );
+}
+
+#[test]
+fn save_failure_does_not_stop_game() {
+    // The same game, once with a store that works and once with one that
+    // refuses every save, produces the same frames apart from the notice.
+    let run = |mut h: Harness| {
+        h.play_until_out(&["ArrowLeft"]);
+        h.enter("MSX");
+        h.close_entry();
+        h.until_title();
+        h.play();
+        h.dig(&["ArrowRight"]);
+        h
+    };
+    let working = run(Harness::with_storage(
+        Settings::default(),
+        Setup::default(),
+        Storage::memory(),
+    ));
+    let failing = run(refusing());
+    assert_eq!(working.notices(), Vec::<String>::new());
+    assert_eq!(failing.notices().len(), 1);
+    assert_eq!(working.frames.len(), failing.frames.len());
+    for (a, b) in working.frames.iter().zip(&failing.frames) {
+        assert_eq!(
+            (a.picture_crc, &a.sound, &a.requests),
+            (b.picture_crc, &b.sound, &b.requests)
+        );
+    }
+    assert!(!failing.on_title(), "the next game is being played");
+    assert_eq!(
+        failing
+            .shell
+            .scores()
+            .table(&key(GameMode::OnePlayer))
+            .entries()[0],
+        Entry::new(*b"MSX", 50)
+    );
 }

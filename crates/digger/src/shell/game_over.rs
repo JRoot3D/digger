@@ -145,7 +145,7 @@ impl GameOver {
             EntryStep::Entering => GameOverStep::Entering,
             EntryStep::Complete(initials) => {
                 let entry = Entry::new(initials, candidate.score);
-                cx.scores.record_reporting(&self.key, entry);
+                cx.scores.record_reporting(cx.storage, &self.key, entry);
                 self.next(cx);
                 GameOverStep::Entered(entry)
             }

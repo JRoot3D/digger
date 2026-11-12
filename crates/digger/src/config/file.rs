@@ -5,24 +5,14 @@
 //! schema, so that every error names the file, the full key path and the
 //! offending value, and unknown settings are only warned about.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "reading and saving are wired into main and the shell by later task groups"
-    )
-)]
-
-use std::ffi::OsString;
 use std::fmt;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use super::schema::{self, SECTIONS};
 use super::{Layer, Settings};
 use crate::error::AppError;
 use crate::input::{Action, PadAction};
+use crate::store::{Store, StoreError, StoreKey};
 
 /// The first line of every file the program writes.
 pub(crate) const HEADER: &str =
@@ -38,24 +28,63 @@ pub(crate) struct FileLayer {
     pub(crate) warnings: Vec<String>,
 }
 
-/// Reads the configuration file at `path`. A file that does not exist is
-/// not an error: the result is `None` and the defaults apply.
+/// Reads the stored settings (the configuration file on the desktop).
+/// Nothing stored is not an error: the result is `None` and the defaults
+/// apply.
 ///
 /// # Errors
 ///
-/// [`AppError::Config`] (status 78) for a file that cannot be read, is not
-/// valid TOML or holds a bad value.
-pub(crate) fn read(path: &Path) -> Result<Option<FileLayer>, AppError> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+/// [`AppError::Config`] (status 78) for settings that cannot be read, are
+/// not valid TOML or hold a bad value.
+pub(crate) fn load(store: &dyn Store) -> Result<Option<FileLayer>, AppError> {
+    load_text(store).map(|(layer, _)| layer)
+}
+
+/// [`load`], also returning the stored text.
+fn load_text(store: &dyn Store) -> Result<(Option<FileLayer>, Option<String>), AppError> {
+    let path = PathBuf::from(store.location(StoreKey::Settings));
+    let text = match store.load(StoreKey::Settings) {
+        Ok(None) => return Ok((None, None)),
+        Ok(Some(text)) => text,
+        Err(StoreError::NotText) => {
+            return Err(config_error(&path, None, "is not UTF-8 text".to_owned()));
+        }
+        Err(StoreError::Io { source, .. }) => {
+            return Err(config_error(
+                &path,
+                None,
+                format!("cannot be read: {source}"),
+            ));
+        }
         Err(error) => {
-            return Err(config_error(path, None, format!("cannot be read: {error}")));
+            return Err(config_error(
+                &path,
+                None,
+                format!("cannot be read: {error}"),
+            ));
         }
     };
-    let text = String::from_utf8(bytes)
-        .map_err(|_| config_error(path, None, "is not UTF-8 text".to_owned()))?;
-    parse(&text, path).map(Some)
+    let layer = parse(&text, &path)?;
+    Ok((Some(layer), Some(text)))
+}
+
+/// Reads the configuration file at `path` (a store over that file).
+///
+/// # Errors
+///
+/// As [`load`].
+#[cfg(test)]
+pub(crate) fn read(path: &Path) -> Result<Option<FileLayer>, AppError> {
+    load(&settings_file(path))
+}
+
+/// A desktop store over the configuration file `path` alone.
+#[cfg(test)]
+fn settings_file(path: &Path) -> crate::store::NativeStore {
+    crate::store::NativeStore::new(
+        path.to_path_buf(),
+        path.with_file_name("unused-scores.toml"),
+    )
 }
 
 /// Parses the text of a configuration file; `path` is used in messages.
@@ -173,25 +202,18 @@ pub(crate) fn render(settings: &Settings) -> String {
 /// Why a save did not happen.
 #[derive(Debug)]
 pub(crate) enum SaveError {
-    /// The file on disk has become unusable since the program started;
-    /// it is left as it is.
+    /// The stored settings have become unusable since the program
+    /// started; they are left as they are.
     Invalid(AppError),
-    /// The directory or the file cannot be written.
-    Io {
-        /// The path that could not be written.
-        path: PathBuf,
-        /// What went wrong.
-        source: io::Error,
-    },
+    /// The store refused the save.
+    Store(StoreError),
 }
 
 impl fmt::Display for SaveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Invalid(error) => write!(f, "settings not saved: {error}"),
-            Self::Io { path, source } => {
-                write!(f, "settings not saved: {}: {source}", path.display())
-            }
+            Self::Store(error) => write!(f, "settings not saved: {error}"),
         }
     }
 }
@@ -199,65 +221,46 @@ impl fmt::Display for SaveError {
 impl std::error::Error for SaveError {}
 
 /// Saves the settings the player changed at run time (`changes`) into the
-/// file at `path` (`configuration` spec, saving settings): the file is read
-/// again (or the defaults taken if there is none), the changes are applied
-/// on top and the complete file is written to `<name>.tmp` beside it and
-/// renamed over it. The directory is created if needed. Command-line values
-/// never reach this function, so they are never written.
+/// store (`configuration` spec, saving settings): the stored settings are
+/// read again (or the defaults taken if there are none), the changes are
+/// applied on top and the complete text is saved; the desktop store writes
+/// it to `<name>.tmp` beside the file and renames it over it. Command-line
+/// values never reach this function, so they are never written.
 ///
-/// Returns whether the file was written: with no changes, or when the new
-/// text equals the file's, nothing is touched.
+/// Returns whether anything was written: with no changes, or when the new
+/// text equals the stored one, nothing is touched.
 ///
 /// # Errors
 ///
 /// [`SaveError`]; the caller reports it as a notice.
-pub(crate) fn save(path: &Path, changes: &Layer) -> Result<bool, SaveError> {
+pub(crate) fn save(store: &mut dyn Store, changes: &Layer) -> Result<bool, SaveError> {
     if changes.is_empty() {
         return Ok(false);
     }
-    let on_disk = read(path).map_err(SaveError::Invalid)?;
+    let (stored, old_text) = load_text(store).map_err(SaveError::Invalid)?;
     let mut settings = Settings::default();
-    if let Some(file) = &on_disk {
+    if let Some(file) = &stored {
         settings.apply(&file.layer);
     }
     settings.apply(changes);
     let text = render(&settings);
-    if on_disk.is_some() && fs::read(path).is_ok_and(|old| old == text.as_bytes()) {
+    if old_text.as_deref() == Some(text.as_str()) {
         return Ok(false);
     }
-    write_atomic(path, text.as_bytes())?;
+    store
+        .save(StoreKey::Settings, &text)
+        .map_err(SaveError::Store)?;
     Ok(true)
 }
 
-/// Writes `bytes` to `<path>.tmp` and renames it over `path`, creating the
-/// directory first.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), SaveError> {
-    let io_error = |path: &Path| {
-        let path = path.to_path_buf();
-        move |source| SaveError::Io { path, source }
-    };
-    if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-        fs::create_dir_all(dir).map_err(io_error(dir))?;
-    }
-    let tmp = temporary_path(path);
-    fs::write(&tmp, bytes).map_err(io_error(&tmp))?;
-    if let Err(source) = fs::rename(&tmp, path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(SaveError::Io {
-            path: path.to_path_buf(),
-            source,
-        });
-    }
-    Ok(())
-}
-
-/// `config.toml` → `config.toml.tmp`, in the same directory.
-pub(crate) fn temporary_path(path: &Path) -> PathBuf {
-    let mut name = path
-        .file_name()
-        .map_or_else(|| OsString::from("config.toml"), OsString::from);
-    name.push(".tmp");
-    path.with_file_name(name)
+/// [`save`] into the configuration file at `path`.
+///
+/// # Errors
+///
+/// As [`save`].
+#[cfg(test)]
+pub(crate) fn save_file(path: &Path, changes: &Layer) -> Result<bool, SaveError> {
+    save(&mut settings_file(path), changes)
 }
 
 #[cfg(test)]
@@ -271,11 +274,12 @@ pub(crate) mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use super::{HEADER, parse, read, render, save, temporary_path};
+    use super::{HEADER, parse, read, render, save_file as save};
     use crate::config::schema::schema;
     use crate::config::{GameMode, Layer, ScaleMode, Settings, Speed};
     use crate::error::AppError;
     use crate::input::{Action, KeyName};
+    use crate::store::native::temporary_path;
 
     /// A fresh, empty directory under the system temporary directory,
     /// removed when dropped.

@@ -45,12 +45,14 @@ mod headless;
 mod input;
 #[cfg(test)]
 mod manual_doc;
+mod notice;
 mod pacing;
 mod platform;
 mod present;
 mod report;
 mod scores;
 mod shell;
+mod store;
 
 #[cfg(not(target_arch = "wasm32"))]
 use error::AppError;
@@ -97,7 +99,8 @@ fn run() -> Result<(), AppError> {
         return Ok(());
     }
     let paths = config::paths::Paths::resolve(options.config.clone(), options.data_dir.clone())?;
-    let file = config::file::read(paths.config_file())?.unwrap_or_default();
+    let files = store::NativeStore::new(paths.config_file().to_path_buf(), paths.scores_file());
+    let file = config::file::load(&files)?.unwrap_or_default();
     for warning in &file.warnings {
         report::warning(warning);
     }
@@ -128,7 +131,6 @@ fn run() -> Result<(), AppError> {
         ),
         record_path: options.record.clone(),
         recordings_dir: Some(paths.recordings_dir()),
-        config_file: Some(paths.config_file().to_path_buf()),
         redefine_keys: options.redefine_keys,
         play: options.play.clone(),
         loop_playback: options.loop_playback,
@@ -141,15 +143,9 @@ fn run() -> Result<(), AppError> {
         frame_counter: std::env::var_os(FRAME_COUNTER_VAR)
             .is_some_and(|value| !value.is_empty() && value != "0"),
     };
-    let store = scores::store::ScoreStore::open_reporting(paths.scores_file());
-    let shell = shell::Shell::with_store(settings, setup, store);
+    let shell = shell::Shell::with_storage(settings, setup, store::Storage::new(files));
     let platform::Finished { shell, status } = platform::run(platform::App::new(shell, window))?;
-    finish(
-        &shell,
-        paths.config_file(),
-        status,
-        options.verify.as_deref(),
-    )
+    finish(shell, status, options.verify.as_deref())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -158,14 +154,10 @@ fn run() -> Result<(), AppError> {
 /// clean shutdown): the settings the player changed are saved (a failure
 /// is a notice), and a verification run prints its result line or ends
 /// with its status.
-fn finish(
-    shell: &shell::Shell,
-    config_file: &Path,
-    status: u8,
-    verify: Option<&Path>,
-) -> Result<(), AppError> {
-    if let Err(error) = config::file::save(config_file, shell.runtime_changes()) {
-        report::notice(error);
+fn finish(mut shell: shell::Shell, status: u8, verify: Option<&Path>) -> Result<(), AppError> {
+    shell.save_settings();
+    for notice in shell.take_notices() {
+        report::notice(notice);
     }
     if let (Some(report), Some(file)) = (shell.verify_report(), verify) {
         let line = headless::conclude(report, file)?;

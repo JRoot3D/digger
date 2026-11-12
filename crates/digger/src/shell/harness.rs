@@ -33,6 +33,8 @@ pub(super) struct Captured {
     pub(super) frame_time: FrameTime,
     /// The requests to the platform.
     pub(super) requests: Vec<Request>,
+    /// The notices raised, as their text.
+    pub(super) notices: Vec<String>,
 }
 
 impl Captured {
@@ -44,6 +46,7 @@ impl Captured {
             controls: output.controls.clone(),
             frame_time: output.frame_time,
             requests: output.requests.clone(),
+            notices: output.notices.iter().map(ToString::to_string).collect(),
         }
     }
 }
@@ -82,6 +85,22 @@ impl Harness {
         let input = InputState::new(Bindings::from_settings(&settings));
         Self {
             shell: Shell::new(settings, setup),
+            input,
+            close: false,
+            frames: Vec::new(),
+        }
+    }
+
+    /// A harness over a shell with `settings` and `setup` that keeps its
+    /// settings and tables in `storage`.
+    pub(super) fn with_storage(
+        settings: Settings,
+        setup: Setup,
+        storage: crate::store::Storage,
+    ) -> Self {
+        let input = InputState::new(Bindings::from_settings(&settings));
+        Self {
+            shell: Shell::with_storage(settings, setup, storage),
             input,
             close: false,
             frames: Vec::new(),
@@ -228,6 +247,14 @@ impl Harness {
             .iter()
             .skip(from)
             .flat_map(|frame| frame.sound.iter().copied())
+            .collect()
+    }
+
+    /// Every notice of the frames run so far, in order.
+    pub(super) fn notices(&self) -> Vec<String> {
+        self.frames
+            .iter()
+            .flat_map(|frame| frame.notices.iter().cloned())
             .collect()
     }
 
