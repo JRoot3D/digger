@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "digger"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "clap",
  "cpal",
@@ -601,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "digger-core"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "digger-core",
  "md-5",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "digger-sound"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "digger-core",
  "proptest",
@@ -2885,7 +2885,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xtask"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "clap",
  "digger-core",
