@@ -11,3 +11,16 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+# The sound command enum and its supporting types (design D2).
+digger-core = { path = "../digger-core" }
+# Wait-free single-producer single-consumer rings between the game and the
+# audio thread (design D8).
+rtrb.workspace = true
+
+[dev-dependencies]
+# Generator property tests (design D12).
+proptest.workspace = true
+# Golden sample hashes (design D12).
+sha2.workspace = true

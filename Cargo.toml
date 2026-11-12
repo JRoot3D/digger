@@ -19,6 +19,8 @@ authors = ["The Digger Rust contributors"]
 clap = { version = "4.6", features = ["derive"] }
 md-5 = "0.11.0"
 miniz_oxide = "0.9.1"
+proptest = "1.12.0"
+rtrb = "0.4.1"
 sha2 = "0.11.1"
 
 [workspace.lints.rust]
