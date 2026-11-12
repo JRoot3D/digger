@@ -23,12 +23,12 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
 use super::audio::{Audio, AudioRequest, CpalBackend};
-use super::keys::key_name;
 use super::pads::GamepadPoller;
 use super::window::GameWindow;
 use crate::config::ScaleMode;
 use crate::input::{InputState, KeyPress, PadEvent, Pads};
 use crate::pacing::{Clock, Control, Pacer, SystemClock};
+use crate::platform::keys::key_name;
 use crate::report;
 use crate::shell::{FrameOutput, Request, Shell, ShellInput};
 
@@ -92,7 +92,7 @@ pub(super) enum Ended {
 /// The application: owns the shell, the input state, the pacer, the window,
 /// the audio device and the gamepads (design D13).
 #[derive(Debug)]
-pub(super) struct App {
+pub(crate) struct App {
     shell: Shell,
     input: InputState,
     pacer: Pacer<SystemClock>,
@@ -117,7 +117,7 @@ pub(super) struct App {
 
 impl App {
     /// The application around `shell`, before the window exists.
-    pub(super) fn new(shell: Shell, options: WindowOptions) -> Self {
+    pub(crate) fn new(shell: Shell, options: WindowOptions) -> Self {
         let input = InputState::new(shell.bindings());
         let pacer = Pacer::new(SystemClock::new(), shell.frame_time());
         let pads = Pads::new(shell.settings().dead_zone);

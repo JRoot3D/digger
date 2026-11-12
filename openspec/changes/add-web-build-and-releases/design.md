@@ -107,14 +107,15 @@ logic and are free of `cfg`, and only `platform/` (`app`, `window`, `audio`,
 `pads`) and `config/paths.rs` touch devices and files. This change keeps
 that split and adds a second implementation behind the same names:
 `platform/mod.rs` selects `native` (phase 6's modules, moved) or `web` by
-`cfg(target_arch = "wasm32")`. `App` below is phase 6's `platform::app::App`,
+`cfg(target_arch = "wasm32")`. Shared platform code (the key-name table, `RunError`) stays
+in `platform/mod.rs` and its siblings. `App` below is phase 6's `platform::app::App`,
 which owns the `Shell` (and through it the `Game`), the presenter, the input
 state and the sound handle. The seams:
 
 | Seam | Shared contract | Native | Web |
 |---|---|---|---|
 | `launch` | `fn launch_layer() -> (Layer, Vec<LaunchWarning>)` (phase 6's command-line settings layer) | phase 6's `cli` (`clap` over `argv`) | pure `parse_query(&str)` over `location.search` |
-| `run` | `fn run(app: App) -> Result<(), RunError>` | `EventLoop::run_app`, returns at exit | `EventLoop::spawn_app`, returns at once |
+| `run` | `fn run(app: App) -> Result<_, RunError>` | `EventLoop::run_app`; returns `Finished` (the shell and its exit status, for the settings save and the `--verify` result) at exit | `EventLoop::spawn_app`; returns `()` at once |
 | `Store` | `load(StoreKey) -> Result<Option<String>, StoreError>`, `save(StoreKey, &str) -> Result<(), StoreError>` | files in the config and data directories | local storage keys `digger:settings`, `digger:scores` |
 | `AudioOutput` | state machine below (replaces phase 6's `Audio { Closed, Open }`) | starts in `Running` | starts in `Locked` |
 | `FileTransfer` | `export(name, bytes)`, `request_import()`; results arrive as `AppEvent`s | write to the recordings directory; import path from the command line | download; file picker |

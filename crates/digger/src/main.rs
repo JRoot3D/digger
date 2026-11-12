@@ -8,6 +8,16 @@
 //! window, and otherwise runs the shell in the game window.
 
 #![forbid(unsafe_code)]
+// Temporary (add-web-build-and-releases, tasks 2.1 to 3.8): until the web
+// platform of task group 3 drives the shell, most of the program is not
+// reached from the web stub entry point.
+#![cfg_attr(
+    target_arch = "wasm32",
+    allow(
+        dead_code,
+        reason = "temporary: the web platform is filled in by task group 3"
+    )
+)]
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
@@ -133,7 +143,7 @@ fn run() -> Result<(), AppError> {
     };
     let store = scores::store::ScoreStore::open_reporting(paths.scores_file());
     let shell = shell::Shell::with_store(settings, setup, store);
-    let (shell, status) = platform::run(shell, window)?;
+    let platform::Finished { shell, status } = platform::run(platform::App::new(shell, window))?;
     finish(
         &shell,
         paths.config_file(),
@@ -184,19 +194,11 @@ fn clock_seed() -> u64 {
 }
 
 /// A stub entry point for the web build (add-web-build-and-releases, task
-/// 1.2): the shell with default settings, an in-memory score table and no
-/// files, run in the window, so the size baseline links the whole game.
-/// There is no command line, configuration file or data directory in a
-/// browser; task 3.8 replaces this with the web platform's launch.
+/// 1.2): the web platform is still empty (task 2.1), so this only builds
+/// the shell with default settings and in-memory tables. Task 3.1 runs it
+/// in the page's canvas; task 3.8 removes the temporary gates.
 #[cfg(target_arch = "wasm32")]
 fn main() {
     let shell = shell::Shell::new(config::Settings::default(), shell::Setup::default());
-    let window = platform::WindowOptions {
-        fullscreen: false,
-        scale: config::ScaleMode::default(),
-        frame_counter: false,
-    };
-    if let Err(error) = platform::run(shell, window) {
-        report::error(&error);
-    }
+    drop(shell);
 }

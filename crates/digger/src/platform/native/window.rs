@@ -32,7 +32,7 @@ pub(super) const DEFAULT_SIZE: PhysicalSize<u32> = PhysicalSize::new(1280, 800);
 pub(super) const MIN_SIZE: PhysicalSize<u32> = PhysicalSize::new(PICTURE_WIDTH, PICTURE_HEIGHT);
 
 /// The 64×64 RGBA window icon imported from upstream (`assets/icon.rgba`).
-const ICON_RGBA: &[u8] = include_bytes!("../../../../assets/icon.rgba");
+const ICON_RGBA: &[u8] = include_bytes!("../../../../../assets/icon.rgba");
 /// The icon's width and height.
 const ICON_SIDE: u32 = 64;
 
