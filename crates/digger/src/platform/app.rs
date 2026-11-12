@@ -3,7 +3,8 @@
 //!
 //! The event loop never blocks inside a callback. Window events are turned
 //! into input as they arrive; `about_to_wait` asks the pacer how many frames
-//! are due, runs each through [`Shell::frame`], forwards its sound and
+//! are due (after draining the gamepads' events), runs each through
+//! [`Shell::frame`], forwards its sound to the audio device and
 //! applies its requests, then asks for a redraw and tells the event loop
 //! when to wake up next: at the next frame's deadline, or at once when the
 //! game runs unpaced. `RedrawRequested` presents the shell's picture.
@@ -15,16 +16,18 @@
 
 use std::time::Duration;
 
-use digger_sound::{NullDriver, SoundSink};
+use digger_sound::{NullDriver, SoundConfig, SoundSink, Volume};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
+use super::audio::{Audio, AudioRequest, CpalBackend};
 use super::keys::key_name;
+use super::pads::GamepadPoller;
 use super::window::GameWindow;
 use crate::config::ScaleMode;
-use crate::input::{InputState, KeyPress};
+use crate::input::{InputState, KeyPress, PadEvent, Pads};
 use crate::pacing::{Clock, Control, Pacer, SystemClock};
 use crate::report;
 use crate::shell::{FrameOutput, Request, Shell, ShellInput};
@@ -86,16 +89,23 @@ pub(super) enum Ended {
     NoWindow(String),
 }
 
-/// The application: owns the shell, the input state, the pacer, the window
-/// and the sound sink (design D13).
+/// The application: owns the shell, the input state, the pacer, the window,
+/// the audio device and the gamepads (design D13).
 #[derive(Debug)]
 pub(super) struct App {
     shell: Shell,
     input: InputState,
     pacer: Pacer<SystemClock>,
-    /// Where the frames' sound goes. The audio device is opened by a later
-    /// task group; until then the sound is dropped.
-    sound: NullDriver,
+    /// The audio device, once the window exists (design D6).
+    audio: Option<Audio<CpalBackend>>,
+    /// Where the frames' sound goes before the device is opened.
+    null_sound: NullDriver,
+    /// Pad slots and stick state (design D7).
+    pads: Pads,
+    /// The gamepads, when `gamepad.enabled` and the system can read them.
+    poller: Option<GamepadPoller>,
+    /// Pad events of the current wake-up (kept to reuse its allocation).
+    pad_events: Vec<PadEvent>,
     window: Option<GameWindow>,
     options: WindowOptions,
     /// The window's close button was used since the last frame.
@@ -110,11 +120,16 @@ impl App {
     pub(super) fn new(shell: Shell, options: WindowOptions) -> Self {
         let input = InputState::new(shell.bindings());
         let pacer = Pacer::new(SystemClock::new(), shell.frame_time());
+        let pads = Pads::new(shell.settings().dead_zone);
         Self {
             shell,
             input,
             pacer,
-            sound: NullDriver,
+            audio: None,
+            null_sound: NullDriver,
+            pads,
+            poller: None,
+            pad_events: Vec::new(),
             window: None,
             options,
             close_requested: false,
@@ -138,8 +153,10 @@ impl App {
             self.frame(&input, None);
         }
         let ended = self.ended.take().unwrap_or(Ended::Exit(0));
-        // The sound stops before the window closes; with no device open
-        // yet there is nothing to stop, and the sink goes with the app.
+        // The sound stops before the window closes.
+        if let Some(audio) = self.audio.as_mut() {
+            audio.close();
+        }
         drop(self.window);
         (self.shell, ended)
     }
@@ -153,11 +170,18 @@ impl App {
             requests,
             ..
         } = self.shell.frame(input);
+        let sink: &mut dyn SoundSink = match self.audio.as_mut() {
+            Some(audio) => {
+                audio.check();
+                audio.sink()
+            }
+            None => &mut self.null_sound,
+        };
         for command in sound {
-            self.sound.send(command);
+            sink.send(command);
         }
         for control in controls {
-            self.sound.control(control);
+            sink.control(control);
         }
         if frame_time != self.pacer.frame_time() {
             self.pacer.set_frame_time(frame_time);
@@ -170,9 +194,12 @@ impl App {
                         self.shell.fullscreen_changed(fullscreen);
                     }
                 }
-                // The audio device is opened by a later task group; with
-                // no device there is nothing to retry yet.
-                Request::RetryAudio => {}
+                Request::RetryAudio => {
+                    let config = self.sound_config();
+                    if let Some(audio) = self.audio.as_mut() {
+                        audio.retry(config);
+                    }
+                }
                 Request::Exit(status) => {
                     self.ended.get_or_insert(Ended::Exit(status));
                     if let Some(event_loop) = event_loop {
@@ -182,10 +209,62 @@ impl App {
                 Request::BindingsChanged => self.input.set_bindings(self.shell.bindings()),
             }
         }
+        self.report_audio_notices();
         if let Some(counter) = self.counter.as_mut()
             && let Some(line) = counter.frame(self.pacer.clock().now())
         {
             report::notice(line);
+        }
+    }
+
+    /// The engine set-up for opening the audio device now: the sound and
+    /// music switches as the shell has them (so a quiet start still opens
+    /// the device and the toggle works at once), the master volume, the
+    /// output filter on; the rate is the device's.
+    fn sound_config(&self) -> SoundConfig {
+        SoundConfig {
+            sound_on: self.shell.sound_on(),
+            music_on: self.shell.music_on(),
+            volume: Volume::new(self.shell.settings().volume),
+            ..SoundConfig::DEFAULT
+        }
+    }
+
+    /// Opens the audio device and starts reading gamepads (`desktop-app`
+    /// spec, audio device; `input-controls` spec, gamepad assignment).
+    fn open_devices(&mut self) {
+        let settings = self.shell.settings();
+        let request = AudioRequest {
+            rate: settings.sample_rate,
+            buffer: settings.buffer_size,
+        };
+        let pads_enabled = settings.pad_enabled;
+        self.audio = Some(Audio::open(CpalBackend, request, self.sound_config()));
+        self.report_audio_notices();
+        if pads_enabled {
+            match GamepadPoller::new() {
+                Ok(poller) => self.poller = Some(poller),
+                Err(reason) => report::notice(format!("gamepads cannot be read: {reason}")),
+            }
+        }
+    }
+
+    /// Prints the audio device's notices.
+    fn report_audio_notices(&mut self) {
+        if let Some(audio) = self.audio.as_mut() {
+            for notice in audio.take_notices() {
+                report::notice(notice);
+            }
+        }
+    }
+
+    /// Feeds the pad events since the last wake-up into the input state.
+    fn poll_pads(&mut self) {
+        if let Some(poller) = self.poller.as_mut() {
+            poller.poll(&mut self.pad_events);
+            for event in self.pad_events.drain(..) {
+                self.input.pad_event(&mut self.pads, event);
+            }
         }
     }
 
@@ -224,6 +303,7 @@ impl ApplicationHandler for App {
             Ok(window) => {
                 window.request_redraw();
                 self.window = Some(window);
+                self.open_devices();
                 // The first frame is due now that there is a window.
                 self.pacer.reanchor();
             }
@@ -279,6 +359,7 @@ impl ApplicationHandler for App {
             event_loop.exit();
             return;
         }
+        self.poll_pads();
         self.pacer.begin();
         while self.pacer.next_frame() {
             let input = ShellInput::from(self.input.take_frame());

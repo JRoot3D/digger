@@ -680,6 +680,12 @@ impl Shell {
         self.mode
     }
 
+    /// The resolved settings the program started with (with redefined
+    /// keys applied).
+    pub(crate) const fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
     /// The settings the player changed with in-game actions.
     pub(crate) const fn runtime_changes(&self) -> &Layer {
         &self.runtime

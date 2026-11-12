@@ -110,7 +110,7 @@ Conventions for every group: work from the specs in this change and `docs/resear
 - [ ] 13.1 Implement audio opening (configured rate and buffer, mono preferred, fallbacks with notices) and the callback that owns the `AudioSource` from `sound_link`, converts sample format and fills all channels. Verify: unit tests `audio_config_selection` (over fake capability lists) and `audio_fill_duplicates_channels`; manual check that the main tune plays. Forward the shell's sound commands to the `SoundHandle` (the core's commands including its pause and resume, stop on scene changes) and the toggles and volume as `SoundControl`s; manual check: `digger --quiet`, start a game, F9 makes sound audible and F7 stops only the tune.
 - [ ] 13.2 Implement the `Closed` state: no device at start, stream error at runtime, retry on the sound toggle. Verify: unit test `audio_state_transitions`; manual check with the sound device disabled, then enabled and F9 pressed.
 - [ ] 13.3 Implement gilrs polling into the abstract pad events of task 5.6, with connect and disconnect. Verify: manual check with one pad (d-pad, stick, fire, Start, Select) and with two pads in two-player simultaneous mode; unplugging pauses the game.
-- [ ] 13.4 Run the three workspace checks; commit `feat(digger): audio device lifecycle and gamepad polling`.
+- [x] 13.4 Run the three workspace checks; commit `feat(digger): audio device lifecycle and gamepad polling`.
 
 ## 14. Documentation and platform verification
 
