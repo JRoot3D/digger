@@ -96,6 +96,8 @@
 //!   [`Gate`].
 //! - [`filter`]: the optional [`OutputFilter`] (high-pass 1 kHz, then
 //!   low-pass 4 kHz).
+//! - [`script`]: the text [`Script`]s that list commands at sample
+//!   offsets, rendered by the golden tests and `cargo xtask render-sound`.
 //! - [`synth`]: the pure core, [`Synth`], which applies inputs, ticks and
 //!   renders samples.
 //! - [`driver`]: [`ManualDriver`], [`NullDriver`] and the [`SoundSink`]
@@ -115,6 +117,7 @@ pub mod link;
 pub mod music;
 pub mod noise;
 pub mod osc;
+pub mod script;
 pub mod synth;
 pub mod units;
 pub mod voice;
@@ -130,6 +133,7 @@ pub use link::{AudioSource, EVENT_CAPACITY, INPUT_CAPACITY, SoundHandle, SoundSt
 pub use music::{MusicPlayer, Note, TableError, TuneParams, TuneTables};
 pub use noise::NoiseRng;
 pub use osc::{Gate, SquareOsc};
+pub use script::{Script, ScriptEntry, ScriptError};
 pub use synth::Synth;
 pub use units::{Divisor, Hertz, Level, SampleRate, SoundTicks, Volume};
 pub use voice::{TickTrace, Tone, Voice};

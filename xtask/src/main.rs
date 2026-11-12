@@ -15,6 +15,7 @@ mod dump_state;
 mod import;
 mod recordings;
 mod render;
+mod render_sound;
 mod trace_diff;
 mod verify;
 
@@ -42,6 +43,10 @@ enum Command {
     /// Write the golden scenes and a contact sheet of all 120 images as PPM
     /// files (default target/sheets/), for review by eye.
     RenderSheet(render::RenderArgs),
+    /// Render a sound command script (`<sample offset> <command>` per line)
+    /// through the sound engine to a 16-bit mono WAV file, for review by
+    /// ear.
+    RenderSound(render_sound::RenderSoundArgs),
     /// Copy upstream's recordings and expected results byte-for-byte into
     /// tests/recordings/ and write MANIFEST.sha256; refuses a checkout whose
     /// HEAD is not the pinned commit unless --allow-other-commit is given.
@@ -81,6 +86,7 @@ fn main() -> ExitCode {
         Command::Ci => ci::run().map_err(Into::into),
         Command::ImportAssets(args) => import::run(&args).map_err(Into::into),
         Command::RenderSheet(args) => render::run(&args).map_err(Into::into),
+        Command::RenderSound(args) => render_sound::run(&args),
         Command::ImportRecordings(args) => recordings::run(&args).map_err(Into::into),
         Command::Conformance(args) => conformance::run(&args).map_err(Into::into),
         Command::Verify(args) => return ExitCode::from(verify::run(&args)),
