@@ -49,12 +49,12 @@ Work from `specs/sound/spec.md`, `design.md` and `docs/research/04-sound.md`. Do
 
 ## 6. Switches, pause and volume
 
-- [ ] 6.1 Implement the music switch (`ToggleMusic`, initial state from the configuration; non-dirge tunes frozen and silent while off; requests accepted while off); verify in `tests/switches.rs` with `music_off_freezes_position`, `music_off_keeps_effects_and_jingle`, `tune_requested_while_music_off_plays_when_enabled`
-- [ ] 6.2 Implement the sound switch as a mute (`ToggleSound`; state advances while off; switching on forces music on; works when created with sound off); verify with `mute_does_not_freeze_state` (trace shows the siren position advancing while the output voice is silent), `sound_on_forces_music_on` and `started_quiet_can_be_enabled`
-- [ ] 6.3 Implement pause (the simulation's `Pause` and `Resume` commands; idempotent; nothing advances; commands still applied at ticks; separate from the jingle's freeze); verify with `pause_freezes_gold_at_tick_10_and_resumes_at_11` (divisor 2100 on the first tick after resuming), `stop_all_during_pause` and `pause_is_idempotent`
-- [ ] 6.4 Implement master volume (`SetVolume`; sample x volume / 100 truncated toward zero; values above 100 clamp) at the output stage of `Synth`; verify with unit tests on the scaling function: `half_volume_peak` (16383 -> 8191), `zero_volume_is_silent`, `volume_above_100_clamps`
-- [ ] 6.5 Add entries SQ10, SQ11 and SF2-SF4 to `docs/compat-quirks.md`; verify every named test exists with `cargo test -p digger-sound -- --list`
-- [ ] 6.6 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; all pass; commit `feat(sound): add sound and music switches, pause and master volume`
+- [x] 6.1 Implement the music switch (`ToggleMusic`, initial state from the configuration; non-dirge tunes frozen and silent while off; requests accepted while off); verify in `tests/switches.rs` with `music_off_freezes_position`, `music_off_keeps_effects_and_jingle`, `tune_requested_while_music_off_plays_when_enabled`
+- [x] 6.2 Implement the sound switch as a mute (`ToggleSound`; state advances while off; switching on forces music on; works when created with sound off); verify with `mute_does_not_freeze_state` (trace shows the siren position advancing while the output voice is silent), `sound_on_forces_music_on` and `started_quiet_can_be_enabled`
+- [x] 6.3 Implement pause (the simulation's `Pause` and `Resume` commands; idempotent; nothing advances; commands still applied at ticks; separate from the jingle's freeze); verify with `pause_freezes_gold_at_tick_10_and_resumes_at_11` (divisor 2100 on the first tick after resuming), `stop_all_during_pause` and `pause_is_idempotent`
+- [x] 6.4 Implement master volume (`SetVolume`; sample x volume / 100 truncated toward zero; values above 100 clamp) at the output stage of `Synth`; verify with unit tests on the scaling function: `half_volume_peak` (16383 -> 8191), `zero_volume_is_silent`, `volume_above_100_clamps`
+- [x] 6.5 Add entries SQ10, SQ11 and SF2-SF4 to `docs/compat-quirks.md`; verify every named test exists with `cargo test -p digger-sound -- --list`
+- [x] 6.6 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; all pass; commit `feat(sound): add sound and music switches, pause and master volume`
 
 ## 7. Sample synthesis and filtering
 

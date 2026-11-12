@@ -111,8 +111,13 @@ impl Voice {
 /// and tools that check timing without looking at samples (design D5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TickTrace {
-    /// The voice chosen for this tick.
+    /// The voice chosen for this tick by the effects, the music and the
+    /// jingle, whether or not it is heard.
     pub voice: Voice,
+    /// The voice actually sent to the output: [`TickTrace::voice`], or
+    /// [`Voice::Silent`] while sound is switched off (a mute that lets the
+    /// state advance) or paused.
+    pub output: Voice,
     /// The divisor the highest-priority effect offered, if any effect
     /// offered one (even a silent one).
     pub effect_offer: Option<Divisor>,

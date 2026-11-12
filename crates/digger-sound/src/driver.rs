@@ -147,12 +147,14 @@ mod tests {
         sink.send(SoundCommand::FallStart);
         let traces = driver.advance_ticks(1);
         assert_eq!(traces.len(), 1);
+        assert!(!driver.synth().music_on());
         assert_eq!(driver.events(), []);
     }
 
     fn silent() -> TickTrace {
         TickTrace {
             voice: Voice::Silent,
+            output: Voice::Silent,
             effect_offer: None,
             music_level: crate::synth::INITIAL_MUSIC_LEVEL,
         }

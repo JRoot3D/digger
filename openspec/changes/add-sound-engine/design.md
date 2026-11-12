@@ -149,8 +149,10 @@ pub enum Voice {
     Music { divisor: Divisor, level: Level },
     Jingle { carrier: Divisor, beat: Hertz },
 }
-pub struct TickTrace { pub voice: Voice, pub effect_offer: Option<Divisor>, pub music_level: Level }
+pub struct TickTrace { pub voice: Voice, pub output: Voice, pub effect_offer: Option<Divisor>, pub music_level: Level }
 ```
+
+`voice` is what the effects, music and jingle chose; `output` is what is sent to the oscillator: `voice`, or `Silent` while sound is off or paused (D7 step 5).
 
 `tick()` returns the `TickTrace`. This is the seam for tests: every spec scenario about divisors, levels and tick counts is asserted on traces, with no samples involved. The divisor gate (41..=16383), the music clamp (>= 1000) and "level 1 is silent" are applied in one function, `Voice::tone(rate) -> Option<Tone { hz, peak }>` (the sample rate is needed for the Nyquist guard of D6), so the death effect's shape (kept quirk SQ1) is isolated there.
 
