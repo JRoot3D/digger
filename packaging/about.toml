@@ -1,0 +1,49 @@
+# `cargo about` configuration for THIRD-PARTY-LICENSES.html, the list of the
+# licences of every crate linked into a release binary
+# (add-web-build-and-releases, design decision 14). `cargo xtask dist`
+# runs `cargo about generate --config packaging/about.toml --target <triple>
+# packaging/about.hbs` for the one target each archive is built for.
+
+# The licences a linked crate may be under. Keep in step with the
+# `[licenses] allow` list of deny.toml, which is the licence gate; this list
+# only decides which licence of a multi-licence crate is printed (the first
+# accepted, in this order: MIT before Apache-2.0, as design decision 15
+# takes dual-licensed crates under MIT).
+accepted = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "BSL-1.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CC0-1.0",
+  "Unlicense",
+  "MPL-2.0",
+  "GPL-2.0-or-later",
+  "GPL-2.0",
+]
+
+# The release targets; `cargo xtask dist` narrows this to one with
+# `--target`.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "wasm32-unknown-unknown",
+]
+
+# Only what is linked into the program: build scripts, procedural macros
+# and test-only crates are not shipped.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# The workspace's own crates (`publish = false`) are the program itself,
+# under the GPL in LICENSE, not third-party code.
+private = { ignore = true }

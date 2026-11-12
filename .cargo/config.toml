@@ -1,3 +1,9 @@
 [alias]
 # The `xtask` profile is defined in the workspace manifest.
 xtask = "run --profile xtask --package xtask --"
+
+# Windows release builds link the C runtime statically, so the archive
+# needs no Visual C++ redistributable (add-web-build-and-releases, design
+# decision 13). `cargo xtask dist` adds its path remapping to this list.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

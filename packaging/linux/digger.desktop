@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Digger
+GenericName=Arcade game
+Comment=Dig for emeralds and gold, and fight the monsters
+Exec=digger
+Icon=digger
+Terminal=false
+Categories=Game;ArcadeGame;
+Keywords=arcade;retro;emerald;

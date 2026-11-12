@@ -59,16 +59,29 @@ fn workspace_root() -> PathBuf {
 /// Runs `cargo xtask web`.
 pub(crate) fn run(args: &WebArgs) -> Result<(), String> {
     let root = workspace_root();
-    let dist = build(&root)?;
+    let dist = build(&root, &BuildOptions::default())?;
     if args.serve {
         serve(&dist, args.port, &Prefix::new(&args.prefix)?)?;
     }
     Ok(())
 }
 
+/// How `cargo xtask dist` changes the web build: the defaults are those of
+/// `cargo xtask web`.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct BuildOptions {
+    /// The target directory; `None` is `CARGO_TARGET_DIR` or `target/`.
+    pub(crate) target_dir: Option<PathBuf>,
+    /// Extra `--config` values for cargo (the path remapping of a release).
+    pub(crate) cargo_config: Vec<String>,
+    /// Extra environment variables of the cargo build (the revision the
+    /// footer links to, `SOURCE_DATE_EPOCH`).
+    pub(crate) env: Vec<(String, String)>,
+}
+
 /// Builds the site into `dist/web/` under `root` and checks its size;
 /// returns the directory.
-pub(crate) fn build(root: &Path) -> Result<PathBuf, String> {
+pub(crate) fn build(root: &Path, options: &BuildOptions) -> Result<PathBuf, String> {
     let lock = fs::read_to_string(root.join("Cargo.lock"))
         .map_err(|error| format!("cannot read Cargo.lock: {error}"))?;
     let wanted = locked_version(&lock, "wasm-bindgen")
@@ -86,7 +99,11 @@ pub(crate) fn build(root: &Path) -> Result<PathBuf, String> {
 
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     println!("xtask web: cargo build -p digger --target {TARGET} --profile {PROFILE} --locked");
-    let status = Command::new(cargo)
+    let target_dir = options.target_dir.clone().unwrap_or_else(|| {
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from)
+    });
+    let mut command = Command::new(cargo);
+    command
         .current_dir(root)
         .args([
             "build",
@@ -98,13 +115,26 @@ pub(crate) fn build(root: &Path) -> Result<PathBuf, String> {
             PROFILE,
             "--locked",
         ])
+        .arg("--target-dir")
+        .arg(&target_dir)
+        .envs(options.env.iter().map(|(name, value)| (name, value)));
+    if !options.cargo_config.is_empty() {
+        // Flags from the environment would replace those of the
+        // configuration (cargo's precedence), and a release build must not
+        // depend on the shell it was started from.
+        command
+            .env_remove("RUSTFLAGS")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS");
+    }
+    for value in &options.cargo_config {
+        command.arg("--config").arg(value);
+    }
+    let status = command
         .status()
         .map_err(|error| format!("cannot run cargo: {error}"))?;
     if !status.success() {
         return Err(String::from("the web build failed"));
     }
-    let target_dir =
-        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from);
     let wasm = target_dir.join(TARGET).join(PROFILE).join("digger.wasm");
 
     let dist = root.join("dist").join("web");

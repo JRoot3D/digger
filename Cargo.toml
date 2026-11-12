@@ -31,6 +31,10 @@ rtrb = "0.4.1"
 serde = { version = "1.0.228", features = ["derive"] }
 sha2 = "0.11.1"
 softbuffer = "0.4.8"
+# The release archives of `cargo xtask dist` (add-web-build-and-releases,
+# design decision 14): pure Rust only, no `xattr` (tar) and no compression
+# method but deflate through flate2's Rust backend (zip).
+tar = { version = "0.4.46", default-features = false }
 toml = "1.2.1"
 # The browser binding layer of the web build. `wasm-bindgen-cli` must be the
 # exact version of `wasm-bindgen` in Cargo.lock (add-web-build-and-releases,
@@ -40,6 +44,7 @@ wasm-bindgen-futures = "0.4.80"
 web-sys = "0.3.107"
 web-time = "1.1.0"
 winit = "0.30.12"
+zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

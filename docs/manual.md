@@ -3,7 +3,8 @@
 This is the manual of `digger`, a re-creation in Rust of Digger Remastered,
 the 1983 Windmill Software game as reverse-engineered by Andrew Jenner and
 extended by Maksym Sobolyev. It runs on Linux (X11 and Wayland), Windows and
-macOS.
+macOS, and in a web browser (see [Playing in a web
+browser](#playing-in-a-web-browser)).
 
 Two tables in this file are checked against the program by its tests: the
 option list (`manual_option_list_matches_cli`) and the settings table
@@ -11,20 +12,62 @@ option list (`manual_option_list_matches_cli`) and the settings table
 
 ## Contents
 
-1. [Starting the game](#starting-the-game)
-2. [Playing](#playing)
-3. [Game modes](#game-modes)
-4. [Keys](#keys)
-5. [Gamepads](#gamepads)
-6. [Redefining the keys](#redefining-the-keys)
-7. [High scores](#high-scores)
-8. [Command line](#command-line)
-9. [Exit statuses](#exit-statuses)
-10. [Settings file](#settings-file)
-11. [Where files are kept](#where-files-are-kept)
-12. [Recordings](#recordings)
-13. [Level files](#level-files)
-14. [Differences from upstream Digger](#differences-from-upstream-digger)
+1. [System requirements](#system-requirements)
+2. [Starting the game](#starting-the-game)
+3. [Playing](#playing)
+4. [Game modes](#game-modes)
+5. [Keys](#keys)
+6. [Gamepads](#gamepads)
+7. [Redefining the keys](#redefining-the-keys)
+8. [High scores](#high-scores)
+9. [Command line](#command-line)
+10. [Exit statuses](#exit-statuses)
+11. [Settings file](#settings-file)
+12. [Where files are kept](#where-files-are-kept)
+13. [Recordings](#recordings)
+14. [Level files](#level-files)
+15. [Playing in a web browser](#playing-in-a-web-browser)
+16. [Differences from upstream Digger](#differences-from-upstream-digger)
+
+## System requirements
+
+The release archives on the project's releases page each hold the program,
+this manual (`MANUAL.md`), the licence (`LICENSE`), the credits (`NOTICE`)
+and the licences of the libraries built into the program
+(`THIRD-PARTY-LICENSES.html`), in one folder named after the archive.
+
+| Archive | Runs on |
+|---|---|
+| `digger-<version>-linux-x86_64.tar.gz` | 64-bit PC Linux with glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later), an X11 or Wayland desktop and, for sound, ALSA or a sound server with an ALSA plug-in (PulseAudio, PipeWire) |
+| `digger-<version>-linux-aarch64.tar.gz` | The same on 64-bit ARM Linux |
+| `digger-<version>-windows-x86_64.zip` | 64-bit Windows 10 or 11; nothing else needs installing |
+| `digger-<version>-macos-universal.tar.gz` | macOS 11 Big Sur or newer, on Apple silicon or Intel |
+| `digger-<version>-web.tar.gz` | Any static web server (see [Playing in a web browser](#playing-in-a-web-browser)) |
+
+Any graphics hardware that can show a desktop is enough: the picture is
+drawn by the processor. Older Linux systems can build the program from
+source with a Rust toolchain (see `README.md`).
+
+The downloads are not signed, so each system asks once before the first
+start:
+
+- **Linux:** unpack the archive (`tar xzf digger-<version>-linux-x86_64.tar.gz`)
+  and run `./digger` in the folder it makes. To get a menu entry, copy
+  `digger` to `~/.local/bin/`, `digger.png` to
+  `~/.local/share/icons/hicolor/64x64/apps/` and `digger.desktop` to
+  `~/.local/share/applications/`.
+- **Windows:** unpack the zip file with *Extract All*, then double-click
+  `digger.exe`. When SmartScreen says *Windows protected your PC*, choose
+  *More info* and then *Run anyway*. The program also opens a console
+  window, which shows its notices; `digger.exe --help` in a terminal lists
+  the options.
+- **macOS:** unpack the archive (double-click it in Finder) and move
+  `Digger.app` to *Applications*. The first time, Control-click (or
+  right-click) `Digger.app`, choose *Open* and confirm with *Open*; on
+  macOS 15 and later, if no *Open* button is offered, open *System
+  Settings → Privacy & Security* and choose *Open Anyway* next to the
+  message about Digger. The command line is reached as
+  `Digger.app/Contents/MacOS/digger`.
 
 ## Starting the game
 
@@ -439,6 +482,12 @@ The program does not read upstream Digger's `.digger.rc` or `DIGGER.INI`.
 | Score file `scores.toml` | `$XDG_DATA_HOME/digger/`, or `~/.local/share/digger/` | `%APPDATA%\digger\data\` | `~/Library/Application Support/digger/` |
 | Recordings saved with F8 | `recordings/` in the score file's folder | the same | the same |
 
+In a web browser nothing is written to files: settings and scores are kept
+in the browser's local storage for the site the game is served from (see
+[Playing in a web browser](#playing-in-a-web-browser)), and a recording
+saved with F8 is a download, which goes wherever the browser puts
+downloads.
+
 `--config <FILE>` replaces the settings file, `--data-dir <DIR>` the folder
 of the score file and of the `recordings` folder.
 
@@ -499,6 +548,93 @@ A level file (`.dlf`, upstream's format) holds the score step for bonus lives
 bare file name, plays them in place of the built-in levels. A missing,
 unreadable or too-short file stops the program with exit status 66. Scores
 made with a level file are kept in their own tables.
+
+## Playing in a web browser
+
+The web version is the same game built for WebAssembly: the same levels,
+rules, keys, gamepad mapping, key redefinition and high-score tables. It
+runs in the two most recent versions of Chrome, Edge, Firefox and Safari on
+a desktop computer, and needs a keyboard or a gamepad; on a device with
+only a touch screen the page says so (the title screen still runs). The
+whole game is less than 1 MiB to download; once the title screen shows, it uses
+no network.
+
+The page shows the game picture, scaled up by the largest whole number that
+fits the browser window, and under it buttons for *Fullscreen*, *Play
+recording…* and *Save recording*, a table of the keys in effect (it follows
+key redefinition) and a footer with the version, the licence and a link to
+the source code of that version.
+
+**Sound.** Browsers allow sound only after you have pressed something on
+the page, so the game starts silent with the line *Press a key or click to
+turn sound on* below the picture. The first key press, click or gamepad
+button turns sound on and also counts as game input: pressing the key that
+starts a game starts it with sound. Music already playing goes on from where
+it has got to. If the browser offers no sound output, the line is replaced
+by a notice and the game plays silently.
+
+**Keys.** Click the picture, or press a key, to give the game the keyboard.
+While it has the keyboard, the game's keys no longer do what the browser
+would do with them (arrows and Space do not scroll, F1 opens no help).
+Clicking elsewhere, such as the address bar, releases every held key.
+Differences from the desktop program:
+
+- **F10** on the title screen does nothing: a web page is never closed by
+  the game. During a game F10 still ends it and returns to the title screen.
+- **F11** or **Alt+Enter**, or the *Fullscreen* button, uses the browser's
+  fullscreen mode; **Escape** leaves it, and the game goes on.
+- Switching to another tab or minimising the window stops the game at once
+  and silences it. A game in progress is then paused as with Space and
+  continues when you press a key; the title screen and a recording being
+  played go on by themselves when the page is shown again. Hidden time is
+  never made up, so a gauntlet clock loses nothing.
+
+**Options in the address.** In place of a command line, the page reads
+these parameters after `?` in its address, joined with `&`. They apply to
+that visit only and are never saved; without them, the saved settings apply.
+
+| Parameter | Meaning |
+|---|---|
+| `speed=<N>` | Game speed 0–500, as `--speed` (`speed=0` runs as fast as the browser can) |
+| `level=<N>` | The level games start on, 1–1000, as `--start-level` |
+| `mode=<MODE>` | The mode the title screen opens with: `one-player`, `two-players`, `two-diggers`, `gauntlet` or `two-digger-gauntlet` |
+| `quiet` or `quiet=1` | Start with all sound off and no sound line; F9 switches sound on |
+
+For example `index.html?mode=gauntlet&speed=30` opens in gauntlet mode at
+speed 30, and `?level=5&quiet` starts games on level 5 without sound. A
+value that is not allowed, such as `speed=fast`, is ignored with a notice
+naming the parameter and the value; parameters the game does not know are
+ignored silently.
+
+**Recordings.** After a game, **F8** on the title screen or the *Save
+recording* button downloads its recording, under the same name the desktop
+program would give it (for example `ABC12300.drf`) and with the same
+content, so the desktop program replays it to the same score. The button is
+greyed out until a game has been played. *Play recording…* opens a file
+picker for `.drf` and `.edrf` files; the chosen file is read on your
+computer, never uploaded, and played back as with `--play`, and the title
+screen returns at its end. A file that is not a recording, of a kind not
+supported or larger than 16 MiB is refused with a notice saying why.
+
+**Saved settings and scores.** Settings (sound, music, mode, keys, …) and
+the high-score tables are kept in the browser's local storage, under the
+keys `digger:settings` and `digger:scores`, and are written at once when
+they change. They belong to the site address the game was opened from and
+are removed when you clear that site's data. If the browser refuses
+storage (some private windows, or site data blocked in the settings), a
+notice says that settings and scores will not be kept: the game plays
+normally and remembers them until the page is closed.
+
+**Putting it on a web server.** Unpack `digger-<version>-web.tar.gz` and
+copy the contents of its `site` folder to any static web server, at the
+site root or in a sub-folder; the files refer to each other by relative
+addresses. The server must send `.wasm` files as `application/wasm`. From
+a source checkout, `cargo xtask web --serve` builds the same files into
+`dist/web/` and serves them at `http://127.0.0.1:8000/`; `--port <N>` and
+`--prefix <PATH>` choose another port or a sub-folder, for example
+`cargo xtask web --serve --port 8080 --prefix /games/digger/` serves the
+game at `http://127.0.0.1:8080/games/digger/`. Opening `index.html` straight
+from a disk folder does not work: browsers load WebAssembly only over HTTP.
 
 ## Differences from upstream Digger
 

@@ -5,13 +5,16 @@
 
 #![forbid(unsafe_code)]
 
+mod archive;
 mod bisect;
 mod ci;
 mod conformance;
 mod convert;
 mod cut;
 mod deps;
+mod dist;
 mod dump_state;
+mod icons;
 mod import;
 mod recordings;
 mod render;
@@ -83,6 +86,13 @@ enum Command {
     /// web-release profile, wasm-bindgen, the page in web/) and check the
     /// download size budget; with --serve, serve it on 127.0.0.1.
     Web(web::WebArgs),
+    /// Write the Linux and macOS icons under packaging/ from the game's
+    /// window icon (or compare with --check).
+    Icons(icons::IconsArgs),
+    /// Build one release archive, dist/digger-<V>-<platform>.<tar.gz|zip>,
+    /// reproducibly; with --check-reproducible build it twice in two
+    /// copies of the tree and compare the SHA-256 values.
+    Dist(dist::DistArgs),
 }
 
 fn main() -> ExitCode {
@@ -101,6 +111,8 @@ fn main() -> ExitCode {
         Command::Bisect(args) => return ExitCode::from(bisect::run(&args)),
         Command::TraceDiff(args) => return ExitCode::from(trace_diff::run(&args)),
         Command::Web(args) => web::run(&args).map_err(Into::into),
+        Command::Icons(args) => icons::run(&args).map_err(Into::into),
+        Command::Dist(args) => dist::run(&args).map_err(Into::into),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
