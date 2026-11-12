@@ -23,8 +23,8 @@ use std::path::Path;
 use digger_core::recording::parse;
 use digger_core::replay::{Replay, ReplayOptions, ReplayReport, ReplayStep, verify};
 use digger_core::{
-    FrameInput, Game, GameConfig, GameMode, GauntletSeconds, LevelLayout, LevelNumber, LevelSet,
-    Observer, PlayerId, StartLevel,
+    DiggerId, FrameInput, Game, GameConfig, GameMode, GauntletSeconds, LevelLayout, LevelNumber,
+    LevelSet, Observer, PlayerId, StartLevel, StateView,
 };
 
 /// Recordings of the corpus that pass: one and two players, DRF and eDRF.
@@ -42,11 +42,23 @@ fn baseline(name: &str) -> ReplayReport {
     verify(&corpus(name), ReplayOptions::default()).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
-/// The levels the playback starts, in order.
+/// A quick-tier recording in which the player reaches the five-life cap and
+/// would earn more lives without it (replay-verification spec, "Unlimited
+/// lives does not leak in").
+const AT_THE_CAP: &str = "thevoids.edrf";
+
+/// The levels the playback starts, in order, and the most lives any digger
+/// had at the end of a tick.
 #[derive(Default)]
-struct Levels(Vec<u16>);
+struct Levels(Vec<u16>, u32);
 
 impl Observer for Levels {
+    fn tick_end(&mut self, _tick: u32, state: StateView<'_>) {
+        for digger in DiggerId::ALL {
+            self.1 = self.1.max(state.lives(digger));
+        }
+    }
+
     fn level_plan(
         &mut self,
         _player: PlayerId,
@@ -59,8 +71,9 @@ impl Observer for Levels {
 }
 
 /// `name` played back while the caller holds `caller` and steps a live
-/// game under it beside the playback; the report and the levels played.
-fn beside(name: &str, caller: &GameConfig) -> (ReplayReport, Vec<u16>) {
+/// game under it beside the playback; the report, the levels played and
+/// the most lives a digger had.
+fn beside(name: &str, caller: &GameConfig) -> (ReplayReport, Vec<u16>, u32) {
     let before = caller.clone();
     let recording = parse(&corpus(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
     let mut replay = Replay::new(&recording, ReplayOptions::default()).expect("playable");
@@ -77,14 +90,14 @@ fn beside(name: &str, caller: &GameConfig) -> (ReplayReport, Vec<u16>) {
         *caller, before,
         "{name}: the caller's configuration changed"
     );
-    (report, levels.0)
+    (report, levels.0, levels.1)
 }
 
 /// Asserts that every recording replays under `caller` exactly as in the
 /// baseline.
 fn assert_isolated(caller: &GameConfig) {
     for name in RECORDINGS {
-        let (report, levels) = beside(name, caller);
+        let (report, levels, _) = beside(name, caller);
         assert_eq!(report, baseline(name), "{name} under {caller:?}");
         assert_eq!(levels.first(), Some(&1), "{name}: starts on level 1");
     }
@@ -97,6 +110,11 @@ fn isolation_unlimited_lives() {
         ..GameConfig::default()
     };
     assert_isolated(&caller);
+
+    // A recording that reaches the cap: the cap stays in force.
+    let (report, _, most) = beside(AT_THE_CAP, &caller);
+    assert_eq!(report, baseline(AT_THE_CAP), "{AT_THE_CAP}");
+    assert_eq!(most, 5, "{AT_THE_CAP}: the five-life cap");
 }
 
 #[test]
