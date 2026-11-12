@@ -579,6 +579,14 @@ impl Shell {
         out.requests.push(Request::BindingsChanged);
     }
 
+    /// The platform switched between the window and fullscreen at the
+    /// player's request: the new state enters the runtime changes, so it
+    /// is written to the configuration file at exit (`configuration` spec,
+    /// saving settings).
+    pub(crate) fn fullscreen_changed(&mut self, fullscreen: bool) {
+        self.runtime.fullscreen = Some(fullscreen);
+    }
+
     /// The key and pad-button bindings in effect.
     pub(crate) fn bindings(&self) -> Bindings {
         Bindings::from_settings(&self.settings)

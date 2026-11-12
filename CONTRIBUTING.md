@@ -27,6 +27,11 @@ rustc --version
 On Linux the desktop frontend added in later phases needs the development
 packages for ALSA, libudev, xkbcommon and Wayland (on Debian or Ubuntu:
 `libasound2-dev`, `libudev-dev`, `libxkbcommon-dev`, `libwayland-dev`).
+Running the game under X11 also needs `libxkbcommon-x11-0`, which winit
+loads at run time; without it winit stops with a panic naming the library.
+Setting `DIGGER_FRAME_COUNTER=1` prints how many frames have run every ten
+seconds, for checking the frame pacing against a stopwatch (750 frames a
+minute at the default speed).
 
 ## Building and testing
 

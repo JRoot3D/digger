@@ -148,13 +148,25 @@ fn bad_config_file_exits_78() {
     let output = digger(&["--config", &config_arg], Some(&dir));
     assert_eq!(status(&output), 78, "{output:?}");
 
-    // An unknown setting only warns.
+    // An unknown setting only warns. The program then goes on past the
+    // configuration; a `--verify` file that does not exist stops it there
+    // with status 1, before any window opens.
     fs::write(&config, "[game]\nturbo = true\n").unwrap_or_else(|e| panic!("{e}"));
-    let output = digger(&["--config", &config_arg], Some(&dir));
-    assert_eq!(status(&output), 0, "{output:?}");
+    let missing = dir.join("none.drf").to_string_lossy().into_owned();
+    let output = digger(&["--config", &config_arg, "--verify", &missing], Some(&dir));
+    assert_eq!(status(&output), 1, "{output:?}");
+    let text = stderr(&output);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
     assert!(
-        stderr(&output).contains("digger: warning: ") && stderr(&output).contains("game.turbo"),
-        "{output:?}"
+        lines.first().is_some_and(
+            |line| line.starts_with("digger: warning: ") && line.contains("game.turbo")
+        ),
+        "{text}"
+    );
+    assert!(
+        lines.get(1).is_some_and(|line| line.contains("none.drf")),
+        "{text}"
     );
     let _ = fs::remove_dir_all(&dir);
 }
@@ -177,9 +189,18 @@ fn missing_level_file_exits_66() {
 #[test]
 fn missing_config_file_is_not_an_error() {
     let dir = temp_dir("fresh");
-    let output = digger(&["/S:40", "/Q"], Some(&dir));
-    assert_eq!(status(&output), 0, "{output:?}");
-    assert!(stderr(&output).is_empty(), "{output:?}");
+    // The program goes on past the configuration; a `--verify` file that
+    // does not exist stops it there with status 1, before any window
+    // opens, and is the only message.
+    let missing = dir.join("none.drf").to_string_lossy().into_owned();
+    let output = digger(&["/S:40", "/Q", "--verify", &missing], Some(&dir));
+    assert_eq!(status(&output), 1, "{output:?}");
+    let text = stderr(&output);
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert!(
+        text.starts_with("digger: error: cannot play back ") && text.contains("none.drf"),
+        "{text}"
+    );
     // Starting does not create the configuration file.
     assert!(!dir.join("config.toml").exists());
     let _ = fs::remove_dir_all(&dir);

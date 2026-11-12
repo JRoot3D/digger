@@ -18,14 +18,6 @@
 //! spec, frame pacing). Falling more than [`MAX_DUE`] frame times behind
 //! restarts the schedule from the current time (recovery after a stall).
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the pacer is driven by the platform event loop of a later task group"
-    )
-)]
-
 use std::time::{Duration, Instant};
 
 use crate::config::FrameTime;

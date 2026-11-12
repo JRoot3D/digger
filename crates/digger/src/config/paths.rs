@@ -12,14 +12,6 @@
 //! | Windows | `%APPDATA%\digger\config\` | `%APPDATA%\digger\data\` |
 //! | macOS | `~/Library/Application Support/digger/` | the same |
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the paths are used by main, the shell and the score store of later task groups"
-    )
-)]
-
 use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;

@@ -65,6 +65,7 @@ src/
     blit.rs          indices + palette → XRGB rows (pure)
   platform/          the only modules that touch winit, softbuffer, cpal, gilrs
     app.rs           `ApplicationHandler` implementation, event translation
+    keys.rs          winit key codes → `KeyName` (added in task 12.2)
     window.rs        window attributes, icon, fullscreen, softbuffer surface
     audio.rs         cpal stream lifecycle
     pads.rs          gilrs polling
@@ -173,6 +174,8 @@ Unpaced mode (speed 0): `ControlFlow::Poll`; each `about_to_wait` runs frames fo
 The pacer's interface is one batch per wake-up (decided in task 6.1): `begin()` fixes the frames due (paced) or the 8 ms budget (unpaced); `next_frame()` is asked before each frame, so the unpaced budget is measured against the clock as frames run and the first frame of a batch always runs; `end() -> Wake { redraw, control }` gives the redraw decision and `Control::WaitUntil(deadline)` or `Control::Poll`. `set_frame_time` ends the open batch, so a speed change takes effect from the next frame; changing to or from unpaced restarts the schedule at the current time. `reanchor()` serves pause end, focus return and scene changes. Deadlines are durations on the clock's timeline; the real clock converts them to an `Instant`.
 
 *Alternatives considered:* a dedicated game thread with a sleep loop (needs `Game` behind a mutex or a channel of pictures, and macOS requires the window on the main thread anyway); pacing from the audio callback's sample count (precise, but ties the game to a device that may not exist).
+
+Settled in task group 12 (no spec conflict; each is a reading of the `desktop-app` spec): a close request is kept until the next `about_to_wait`, which runs one frame at once with `close_requested` set, outside the pacing, so the scene ends as on quit (a game steps once more and its recording is written) and asks for the exit; the platform then returns the shell to `main`, which saves the runtime changes and turns a verification report into its line or status. If the event loop stops without the shell having asked (the platform ended it), the same close frame runs during shutdown. Presses that X11 reports as synthetic (keys already held when focus returns) are not new presses and are dropped; synthetic releases are kept. The Meta keys are winit's `Super` keys. The debug frame counter of D15 is switched on by the environment variable `DIGGER_FRAME_COUNTER` (any value but empty or `0`) rather than a command-line option, so it stays out of the user-facing option list; it prints a `digger: notice:` line every ten seconds of wall-clock time. Toggling fullscreen enters the new state in the runtime-change layer (`Shell::fullscreen_changed`), so it is saved at exit. Until task group 13 opens the audio device, the frames' sound goes to a `NullDriver` and `RetryAudio` does nothing.
 
 ### D5. Presentation with softbuffer
 

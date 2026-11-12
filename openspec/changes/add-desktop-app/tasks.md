@@ -97,13 +97,13 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 12. Window, event loop and presentation
 
-- [ ] 12.1 Implement window creation in `resumed` (title, 1280×800 physical default, 640×400 minimum, resizable, icon where supported) and the `NoDisplay` error path. Verify: `cargo run -p digger` opens the window; on Linux with `DISPLAY` and `WAYLAND_DISPLAY` unset the binary prints the error and exits 69 (integration test `no_display_exits_69`, Linux only).
-- [ ] 12.2 Implement key event translation (physical key → `KeyName`, repeat flag, text, modifiers, Alt+Enter chord) into `InputState`. Verify: unit test `winit_keycode_table_covers_all_key_names` and manual check that arrow keys move Digger.
-- [ ] 12.3 Implement `about_to_wait` pacing (`WaitUntil` next deadline, due frames, `Poll` in unpaced mode) calling `shell.frame`. Verify: with the debug frame counter enabled, 750 ± 2 frames are counted in 60 s at the default speed; CPU use is near idle on the title screen.
-- [ ] 12.4 Implement softbuffer presentation on `RedrawRequested` with viewport recomputation on resize and scale-factor change. Verify: manual check of letterboxing at several window sizes in each scale mode against the values of the `desktop-app` spec.
-- [ ] 12.5 Implement fullscreen toggling (borderless, pointer hidden, previous size restored), `--fullscreen` start and the runtime-change entry. Verify: manual check of Alt+Enter and F11 on the title, in a game and during pause; `fullscreen = true` appears in the saved file.
-- [ ] 12.6 Implement focus and close events, platform requests (`Exit`, `ToggleFullscreen`, `RetryAudio`) and the single shutdown path (stop audio, pending recording, settings save). Verify: closing the window in each scene exits with status 0 and leaves the files described in the `desktop-app` spec.
-- [ ] 12.7 Run the three workspace checks; commit `feat(digger): window, event loop and softbuffer presentation`.
+- [x] 12.1 Implement window creation in `resumed` (title, 1280×800 physical default, 640×400 minimum, resizable, icon where supported) and the `NoDisplay` error path. Verify: `cargo run -p digger` opens the window; on Linux with `DISPLAY` and `WAYLAND_DISPLAY` unset the binary prints the error and exits 69 (integration test `no_display_exits_69`, Linux only).
+- [x] 12.2 Implement key event translation (physical key → `KeyName`, repeat flag, text, modifiers, Alt+Enter chord) into `InputState`. Verify: unit test `winit_keycode_table_covers_all_key_names` and manual check that arrow keys move Digger.
+- [x] 12.3 Implement `about_to_wait` pacing (`WaitUntil` next deadline, due frames, `Poll` in unpaced mode) calling `shell.frame`. Verify: with the debug frame counter enabled, 750 ± 2 frames are counted in 60 s at the default speed; CPU use is near idle on the title screen.
+- [x] 12.4 Implement softbuffer presentation on `RedrawRequested` with viewport recomputation on resize and scale-factor change. Verify: manual check of letterboxing at several window sizes in each scale mode against the values of the `desktop-app` spec.
+- [x] 12.5 Implement fullscreen toggling (borderless, pointer hidden, previous size restored), `--fullscreen` start and the runtime-change entry. Verify: manual check of Alt+Enter and F11 on the title, in a game and during pause; `fullscreen = true` appears in the saved file.
+- [x] 12.6 Implement focus and close events, platform requests (`Exit`, `ToggleFullscreen`, `RetryAudio`) and the single shutdown path (stop audio, pending recording, settings save). Verify: closing the window in each scene exits with status 0 and leaves the files described in the `desktop-app` spec.
+- [x] 12.7 Run the three workspace checks; commit `feat(digger): window, event loop and softbuffer presentation`.
 
 ## 13. Audio device and gamepads
 

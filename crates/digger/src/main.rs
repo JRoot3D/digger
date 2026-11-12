@@ -3,13 +3,17 @@
 //! The module layout follows design D1 of `add-desktop-app`: everything
 //! that talks to a window, an audio device or a gamepad lives in
 //! [`platform`]; the shell, input mapping, pacing, presentation maths,
-//! configuration and score storage are device-free. For now the binary
-//! parses its command line and configuration, runs `--verify --headless`,
-//! and otherwise stops there; the window follows in a later task group.
+//! configuration and score storage are device-free. The binary parses its
+//! command line and configuration, runs `--verify --headless` without a
+//! window, and otherwise runs the shell in the game window.
 
 #![forbid(unsafe_code)]
 
+use std::path::Path;
 use std::process::ExitCode;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use digger_core::recording::RecordingKind;
 
 mod cli;
 mod config;
@@ -37,9 +41,14 @@ fn main() -> ExitCode {
     }
 }
 
+/// The environment variable that turns on the debug frame counter (design
+/// D15): any value but empty or `0`.
+const FRAME_COUNTER_VAR: &str = "DIGGER_FRAME_COUNTER";
+
 /// The program: parse the command line; run a headless verification, or
-/// load the configuration file, resolve the settings and check the level
-/// file. The window and the shell are wired in by a later task group.
+/// load the configuration file, resolve the settings, check the level
+/// file, and run the shell in the window until it ends; then save what the
+/// player changed and report a verification's result.
 fn run() -> Result<(), AppError> {
     let options = match cli::parse(std::env::args_os())? {
         cli::Command::Print(text) => {
@@ -69,6 +78,86 @@ fn run() -> Result<(), AppError> {
         .as_deref()
         .map(cli::levels::load)
         .transpose()?;
-    let _ = (paths, settings, levels);
-    Ok(())
+    // A recording to verify that cannot be read ends the program with
+    // status 1 before any window opens.
+    let verify = options
+        .verify
+        .as_deref()
+        .map(headless::VerifyJob::load)
+        .transpose()?;
+    let setup = shell::Setup {
+        levels: levels
+            .as_ref()
+            .map_or_else(digger_core::LevelSet::builtin, |file| file.levels),
+        record_kind: options
+            .record
+            .as_deref()
+            .map_or(RecordingKind::Drf, shell::recording::kind_for_path),
+        base_seed: clock_seed(),
+        score_levels: scores::LevelSet::for_level_file(
+            levels.as_ref().map(|file| file.path.as_path()),
+        ),
+        record_path: options.record.clone(),
+        recordings_dir: Some(paths.recordings_dir()),
+        config_file: Some(paths.config_file().to_path_buf()),
+        redefine_keys: options.redefine_keys,
+        play: options.play.clone(),
+        loop_playback: options.loop_playback,
+        take_over_at: options.take_over_at,
+        verify,
+    };
+    let window = platform::WindowOptions {
+        fullscreen: settings.fullscreen,
+        scale: settings.scale,
+        frame_counter: std::env::var_os(FRAME_COUNTER_VAR)
+            .is_some_and(|value| !value.is_empty() && value != "0"),
+    };
+    let store = scores::store::ScoreStore::open_reporting(paths.scores_file());
+    let shell = shell::Shell::with_store(settings, setup, store);
+    let (shell, status) = platform::run(shell, window)?;
+    finish(
+        &shell,
+        paths.config_file(),
+        status,
+        options.verify.as_deref(),
+    )
+}
+
+/// The end of the single shutdown path, after the platform stopped the
+/// sound and the shell wrote any pending recording (`desktop-app` spec,
+/// clean shutdown): the settings the player changed are saved (a failure
+/// is a notice), and a verification run prints its result line or ends
+/// with its status.
+fn finish(
+    shell: &shell::Shell,
+    config_file: &Path,
+    status: u8,
+    verify: Option<&Path>,
+) -> Result<(), AppError> {
+    if let Err(error) = config::file::save(config_file, shell.runtime_changes()) {
+        report::notice(error);
+    }
+    if let (Some(report), Some(file)) = (shell.verify_report(), verify) {
+        let line = headless::conclude(report, file)?;
+        print!("{line}");
+        return Ok(());
+    }
+    match status {
+        0 => Ok(()),
+        status => Err(AppError::Verify {
+            status,
+            message: None,
+        }),
+    }
+}
+
+/// A base seed for live games from the system clock: games differ from
+/// run to run, while the simulation itself stays deterministic.
+fn clock_seed() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            // Seconds and nanoseconds folded into 64 bits.
+            since.as_secs().rotate_left(32) ^ u64::from(since.subsec_nanos())
+        })
 }
