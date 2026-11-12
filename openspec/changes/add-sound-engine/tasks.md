@@ -20,11 +20,11 @@ Work from `specs/sound/spec.md`, `design.md` and `docs/research/04-sound.md`. Do
 
 ## 3. Tick core, voice selection and the manual driver
 
-- [ ] 3.1 Add `voice.rs` with `Voice`, `TickTrace` and `Voice::tone()` applying the divisor gate (41..=16383 sounds), the music clamp to divisor 1000, "level 1 is silent", the Nyquist guard and the peak formula `((level - 1) * 32767 / 49) / 2`; verify with tests `divisor_gate_edges` (40, 41, 16383, 16384), `music_divisor_clamped_to_1000`, `peak_table_for_all_levels` (50 -> 16383, 35 -> 11368, 20 -> 6352, 8 -> 2340, 2 -> 334, 1 -> silent)
-- [ ] 3.2 Add `noise.rs` with `NoiseRng` (state 0, `wrapping_mul(0x15A4E35).wrapping_add(1)`, low 31 bits modulo range); verify with `noise_first_values` (ranges 63 then 64 give 1 then 54; state 1 then 22695478)
-- [ ] 3.3 Add `effects/mod.rs` with the `Step { offer, done }` type, an `Effects` struct with empty slots and a `tick()` that folds offers in the documented order, plus `synth.rs` with `Synth::new`, `apply(Input)` and `tick() -> TickTrace` handling only `StopAll` so far; verify with `empty_synth_is_silent` (1000 ticks of `Voice::Silent`)
-- [ ] 3.4 Add `driver.rs` with `ManualDriver` (`send`, `control`, `advance_ticks(n) -> Vec<TickTrace>`, `events()`) and the `SoundSink` trait; verify with `commands_apply_in_order_at_next_tick` (fall-start then fall-stop before one tick leaves no fall effect) using a temporary test-only effect if none exists yet
-- [ ] 3.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; all pass; commit `feat(sound): add tick core, voice selection and manual driver`
+- [x] 3.1 Add `voice.rs` with `Voice`, `TickTrace` and `Voice::tone()` applying the divisor gate (41..=16383 sounds), the music clamp to divisor 1000, "level 1 is silent", the Nyquist guard and the peak formula `((level - 1) * 32767 / 49) / 2`; verify with tests `divisor_gate_edges` (40, 41, 16383, 16384), `music_divisor_clamped_to_1000`, `peak_table_for_all_levels` (50 -> 16383, 35 -> 11368, 20 -> 6352, 8 -> 2340, 2 -> 334, 1 -> silent)
+- [x] 3.2 Add `noise.rs` with `NoiseRng` (state 0, `wrapping_mul(0x15A4E35).wrapping_add(1)`, low 31 bits modulo range); verify with `noise_first_values` (ranges 63 then 64 give 1 then 54; state 1 then 22695478)
+- [x] 3.3 Add `effects/mod.rs` with the `Step { offer, done }` type, an `Effects` struct with empty slots and a `tick()` that folds offers in the documented order, plus `synth.rs` with `Synth::new`, `apply(Input)` and `tick() -> TickTrace` handling only `StopAll` so far; verify with `empty_synth_is_silent` (1000 ticks of `Voice::Silent`)
+- [x] 3.4 Add `driver.rs` with `ManualDriver` (`send`, `control`, `advance_ticks(n) -> Vec<TickTrace>`, `events()`) and the `SoundSink` trait; verify with `commands_apply_in_order_at_next_tick` (fall-start then fall-stop before one tick leaves no fall effect) using a temporary test-only effect if none exists yet
+- [x] 3.5 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --workspace`; all pass; commit `feat(sound): add tick core, voice selection and manual driver`
 
 ## 4. Effects
 

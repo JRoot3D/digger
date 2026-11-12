@@ -47,6 +47,31 @@ pub enum SoundEvent {
     DirgeFinished,
 }
 
+/// One item on the way into the engine: a simulation command or a
+/// frontend control (design D2).
+///
+/// Both kinds share one queue so that they take effect in the order they
+/// were sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Input {
+    /// A command emitted by the simulation.
+    Game(SoundCommand),
+    /// A control sent by the frontend.
+    Control(SoundControl),
+}
+
+impl From<SoundCommand> for Input {
+    fn from(command: SoundCommand) -> Self {
+        Self::Game(command)
+    }
+}
+
+impl From<SoundControl> for Input {
+    fn from(control: SoundControl) -> Self {
+        Self::Control(control)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

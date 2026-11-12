@@ -151,7 +151,7 @@ pub enum Voice {
 pub struct TickTrace { pub voice: Voice, pub effect_offer: Option<Divisor>, pub music_level: Level }
 ```
 
-`tick()` returns the `TickTrace`. This is the seam for tests: every spec scenario about divisors, levels and tick counts is asserted on traces, with no samples involved. The divisor gate (41..=16383), the music clamp (>= 1000) and "level 1 is silent" are applied in one function, `Voice::tone() -> Option<Tone { hz, peak }>`, so the death effect's shape (kept quirk SQ1) is isolated there.
+`tick()` returns the `TickTrace`. This is the seam for tests: every spec scenario about divisors, levels and tick counts is asserted on traces, with no samples involved. The divisor gate (41..=16383), the music clamp (>= 1000) and "level 1 is silent" are applied in one function, `Voice::tone(rate) -> Option<Tone { hz, peak }>` (the sample rate is needed for the Nyquist guard of D6), so the death effect's shape (kept quirk SQ1) is isolated there.
 
 Upstream's `spkrmode`, `wavetype`, `soundt0flag` and per-band mute flags are not ported. Their whole observable effect is "which voice sounds", plus the silent-jingle bug, which is fixed.
 
