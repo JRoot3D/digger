@@ -38,11 +38,11 @@ at a time and group 13 forbids any that remain.
 
 ## 4. eDRF reader
 
-- [ ] 4.1 Implement the eDRF line reader (LF/CR LF, blank lines skipped outside maps, unterminated last line dropped and flagged as truncated) and the `C`, `E`, `R`, `Q`, `Z` records; verify with table-driven tests for each accepted form and each bad form of the spec scenario "Bad record" (`X 1234`, `C 12G4`, `C 1 2`, `Q 2`, `Z 100`), asserting the line number and quoted text
-- [ ] 4.2 Implement `I` records: slot lists, run lists stored as `(value, count)` pairs, padding of unlisted slots, zero count and wrong run-list count rejected; verify with tests for every scenario of "eDRF control values and input records" and `edrf_huge_count_is_not_expanded` (parse `I @4000000000` and consume three values)
-- [ ] 4.3 Implement `L` records: inline 10-row maps (leading space, padding, empty line as earth row) and reuse by 1-based index; verify with tests `edrf_inline_map`, `edrf_map_reuse`, `edrf_map_reuse_unknown_index`, `edrf_map_row_too_long`, `edrf_map_row_without_space`
-- [ ] 4.4 Assemble `EdrfRecording` (queues per kind, quit slot, end record, truncated flag; nothing may follow `Z`) and write the "DRF" and "eDRF" sections of `docs/recording-formats.md` (grammar, semantics, the port's deviations from upstream's reader); verify with test `corpus_edrf_parse` that all 27 corpus files parse, each `Z` tick total equals the `ticks=` value of its `.out` file and `2riptest01` has `Q 0` and `Z 1024`, and that every production of the two spec grammar scenarios appears in the document
-- [ ] 4.5 Run the gate and commit (`feat(core): read eDRF recordings`)
+- [x] 4.1 Implement the eDRF line reader (LF/CR LF, blank lines skipped outside maps, unterminated last line dropped and flagged as truncated) and the `C`, `E`, `R`, `Q`, `Z` records; verify with table-driven tests for each accepted form and each bad form of the spec scenario "Bad record" (`X 1234`, `C 12G4`, `C 1 2`, `Q 2`, `Z 100`), asserting the line number and quoted text
+- [x] 4.2 Implement `I` records: slot lists, run lists stored as `(value, count)` pairs, padding of unlisted slots, zero count and wrong run-list count rejected; verify with tests for every scenario of "eDRF control values and input records" and `edrf_huge_count_is_not_expanded` (parse `I @4000000000` and consume three values)
+- [x] 4.3 Implement `L` records: inline 10-row maps (leading space, padding, empty line as earth row) and reuse by 1-based index; verify with tests `edrf_inline_map`, `edrf_map_reuse`, `edrf_map_reuse_unknown_index`, `edrf_map_row_too_long`, `edrf_map_row_without_space`
+- [x] 4.4 Assemble `EdrfRecording` (queues per kind, quit slot, end record, truncated flag; nothing may follow `Z`) and write the "DRF" and "eDRF" sections of `docs/recording-formats.md` (grammar, semantics, the port's deviations from upstream's reader); verify with test `corpus_edrf_parse` that all 27 corpus files parse, each `Z` tick total equals the `ticks=` value of its `.out` file and `2riptest01` has `Q 0` and `Z 1024`, and that every production of the two spec grammar scenarios appears in the document
+- [x] 4.5 Run the gate and commit (`feat(core): read eDRF recordings`)
 
 ## 5. State hash
 

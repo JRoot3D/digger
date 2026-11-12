@@ -17,6 +17,7 @@ This directory holds the scenario and integration tests of the simulation
 | `soak.rs` | every mode for 50,000 frames in a debug build (task 15.3) |
 | `corpus_integrity.rs` | the upstream recording corpus in `tests/recordings/` against its manifest: digests, counts 23/27/27, twins and one-line results (`add-recording-and-conformance`, task 2.3) |
 | `drf_corpus.rs` | every upstream `.drf` header parses and its body tokenises with the DRF cursor alone; the "DRF corpus" table of `docs/conformance.md` is current (`add-recording-and-conformance`, task 3.5) |
+| `edrf_corpus.rs` | every upstream `.edrf` parses with the eDRF reader, its `Z` tick total equals its `.out` result, and `docs/recording-formats.md` carries both spec grammars (`add-recording-and-conformance`, task 4.4) |
 | `quirks_doc.rs` | `docs/compat-quirks.md` names only existing tests (task 15.4) |
 | `golden_frames.rs`, `sprite_model.rs` | renderer and sprite layer (`add-assets-and-renderer`) |
 
