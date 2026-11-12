@@ -6,36 +6,28 @@
 //! and `-V`) and one optional bare argument. Every error is a usage error
 //! with exit status 64, never clap's own status 2 (which means "diverged"
 //! in verification runs), and quotes options in the form the user typed.
+//!
+//! The browser has no command line: this module is compiled for the
+//! desktop only, and its settings [`Layer`] is the one the browser's query
+//! string fills (add-web-build-and-releases, design decision 9; shared
+//! parts in [`crate::launch`]).
 
-#[cfg(not(target_arch = "wasm32"))]
 use std::ffi::OsString;
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
-// The web build has no command line: only [`Redefine`] is shared with it
-// until task 2.6 of add-web-build-and-releases splits the launch options
-// (temporary gates of task 1.2).
-#[cfg(not(target_arch = "wasm32"))]
 use clap::error::{ContextKind, ContextValue, ErrorKind};
-#[cfg(not(target_arch = "wasm32"))]
 use clap::{ArgAction, ColorChoice, Parser};
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::config::{GameMode, Layer, ModeConflict, ScaleMode, Speed};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::error::AppError;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod legacy;
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod levels;
 #[cfg(test)]
 mod manual_tests;
 
-#[cfg(not(target_arch = "wasm32"))]
 use legacy::Translated;
 
-#[cfg(not(target_arch = "wasm32"))]
 /// Digger Remastered, re-created in Rust.
 #[derive(Debug, Parser)]
 #[command(
@@ -182,23 +174,8 @@ struct Cli {
     bare: Option<OsString>,
 }
 
-/// How the key redefinition opens before the title screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    target_arch = "wasm32",
-    expect(
-        dead_code,
-        reason = "temporary (task 1.2): only the desktop command line makes one"
-    )
-)]
-pub(crate) enum Redefine {
-    /// The usual list of actions.
-    Usual,
-    /// Every action (`--redefine-keys=all`, `/KA`).
-    All,
-}
+pub(crate) use crate::launch::Redefine;
 
-#[cfg(not(target_arch = "wasm32"))]
 /// What the program was asked to do, apart from the settings.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Options {
@@ -227,7 +204,6 @@ pub(crate) struct Options {
     pub(crate) redefine_keys: Option<Redefine>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// The outcome of parsing the command line.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Command {
@@ -238,7 +214,6 @@ pub(crate) enum Command {
     Print(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// Parses the command line `args` (program name first).
 ///
 /// # Errors
@@ -267,7 +242,6 @@ where
     Ok(Command::Run(Box::new(options)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// A clap error as a usage error, with a long option that came from an
 /// upstream alias replaced by the alias as typed.
 fn usage_error(error: &clap::Error, translated: &Translated) -> AppError {
@@ -295,19 +269,16 @@ fn usage_error(error: &clap::Error, translated: &Translated) -> AppError {
     AppError::Usage(text.to_owned())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// A usage error saying that `first` cannot be combined with `second`.
 fn conflict(first: &str, second: &str) -> AppError {
     AppError::Usage(format!("{first} cannot be combined with {second}"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// A usage error saying that `option` needs `other`.
 fn needs(option: &str, other: &str) -> AppError {
     AppError::Usage(format!("{option} can only be used together with {other}"))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// Checks the combinations of the `configuration` spec and turns the parsed
 /// command line into [`Options`].
 fn convert(cli: Cli, translated: &Translated) -> Result<Options, AppError> {
@@ -399,7 +370,6 @@ fn convert(cli: Cli, translated: &Translated) -> Result<Options, AppError> {
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// The speed given as a bare number.
 fn bare_speed(text: &str) -> Result<u16, AppError> {
     text.parse::<u16>()

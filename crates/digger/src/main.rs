@@ -29,6 +29,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_arch = "wasm32"))]
 use digger_core::recording::RecordingKind;
 
+#[cfg(not(target_arch = "wasm32"))]
 mod cli;
 mod config;
 mod error;
@@ -44,6 +45,7 @@ mod event;
 )]
 mod headless;
 mod input;
+mod launch;
 #[cfg(test)]
 mod manual_doc;
 mod notice;

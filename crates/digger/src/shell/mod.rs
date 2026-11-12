@@ -31,12 +31,12 @@ use digger_core::video::Framebuffer;
 use digger_core::{GameConfig, GauntletSeconds, LevelSet, SoundCommand, StartLevel};
 use digger_sound::SoundControl;
 
-use crate::cli::Redefine;
 use crate::config::file::SaveError;
 use crate::config::{FrameTime, GameMode, Layer, Settings};
 use crate::event::AppEvent;
 use crate::headless::VerifyJob;
 use crate::input::{Action, Bindings, InputFrame};
+use crate::launch::Redefine;
 use crate::notice::Notice;
 use crate::page::Phase;
 use crate::scores::store::ScoreStore;

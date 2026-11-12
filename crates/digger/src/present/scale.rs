@@ -282,4 +282,49 @@ mod tests {
         assert_eq!(&layout.col_map()[..6], &[0, 0, 1, 1, 2, 2]);
         assert_eq!((layout.width(), layout.height()), (1280, 800));
     }
+
+    /// The browser applies the desktop `integer` rule to its viewport in
+    /// device pixels (add-web-build-and-releases, `web-build` spec, canvas
+    /// presentation and scaling); the same function serves both.
+    #[test]
+    fn viewport_1920x1080_is_scale_2() {
+        let v = viewport(1920, 1080, ScaleMode::Integer);
+        assert_eq!(v, rect(320, 140, 1280, 800));
+        assert_eq!((v.w / 640, v.h / 400), (2, 2));
+    }
+
+    #[test]
+    fn viewport_2560x1440_is_scale_3() {
+        // A 1280×720 CSS-pixel viewport at 2 device pixels per CSS pixel,
+        // or a 2560×1440 screen in fullscreen.
+        let v = viewport(2560, 1440, ScaleMode::Integer);
+        assert_eq!(v, rect(320, 120, 1920, 1200));
+        assert_eq!((v.w / 640, v.h / 400), (3, 3));
+    }
+
+    #[test]
+    fn viewport_1000x700_is_scale_1() {
+        let v = viewport(1000, 700, ScaleMode::Integer);
+        assert_eq!(v, rect(180, 150, 640, 400));
+    }
+
+    #[test]
+    fn viewport_small_keeps_8_to_5() {
+        for (w, h) in [
+            (639, 400),
+            (640, 399),
+            (500, 400),
+            (320, 200),
+            (480, 1000),
+            (1000, 250),
+        ] {
+            let v = viewport(w, h, ScaleMode::Integer);
+            assert!(v.w <= w && v.h <= h, "{w}x{h}: {v:?}");
+            assert!(v.w == w || v.h == h, "{w}x{h}: fills one side, {v:?}");
+            // 8:5 within one pixel of rounding.
+            let shape = u64::from(v.w) * 5;
+            let target = u64::from(v.h) * 8;
+            assert!(shape.abs_diff(target) <= 8, "{w}x{h}: {v:?} is not 8:5");
+        }
+    }
 }
