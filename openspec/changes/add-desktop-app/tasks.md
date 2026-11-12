@@ -64,11 +64,11 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 8. Title screen
 
-- [ ] 8.1 Implement the static title scene: title picture, `D I G G E R` at (100,0), mode label lines with their x positions, high-score table rows. Verify: shell test `title_static_layout` and golden CRC `title_frame0_crc`.
-- [ ] 8.2 Encode the 287-frame animation script as a data table and its interpreter (spawns, moves, labels, shots, cycle reset). Verify: unit test `title_script_keyframes` (labels present from frames 83, 156, 163, 183, 203, 223; cast panel cleared at frame 0) and golden CRCs at frames 164, 240 and 286.
-- [ ] 8.3 Implement mode cycling in upstream order with table reload, and recording the change for saving. Verify: shell tests `mode_cycle_order` and `mode_cycle_wraps_and_swaps_table`.
-- [ ] 8.4 Implement start detection (any key minus excluded actions and modifiers, pad fire/pause buttons, keys held from before ignored) and the quit, redefine and save-recording actions on the title. Verify: shell tests `title_space_starts`, `title_f7_does_not_start`, `title_held_key_does_not_start`, `title_quit_exits_zero`.
-- [ ] 8.5 Run the three workspace checks; commit `feat(digger): title screen with animation and mode selection`.
+- [x] 8.1 Implement the static title scene: title picture, `D I G G E R` at (100,0), mode label lines with their x positions, high-score table rows. Verify: shell test `title_static_layout` and golden CRC `title_frame0_crc`.
+- [x] 8.2 Encode the 287-frame animation script as a data table and its interpreter (spawns, moves, labels, shots, cycle reset). Verify: unit test `title_script_keyframes` (labels present from frames 83, 156, 163, 183, 203, 223; cast panel cleared at frame 0) and golden CRCs at frames 164, 240 and 286.
+- [x] 8.3 Implement mode cycling in upstream order with table reload, and recording the change for saving. Verify: shell tests `mode_cycle_order` and `mode_cycle_wraps_and_swaps_table`.
+- [x] 8.4 Implement start detection (any key minus excluded actions and modifiers, pad fire/pause buttons, keys held from before ignored) and the quit action on the title; the redefine and save-recording actions are recognised there as title actions that never start a game, and what they open or write is wired by the tasks that build them (10.1 and 10.3 for redefinition, 9.6 for saving). Verify: shell tests `title_space_starts`, `title_f7_does_not_start`, `title_held_key_does_not_start`, `title_quit_exits_zero`.
+- [x] 8.5 Run the three workspace checks; commit `feat(digger): title screen with animation and mode selection`.
 
 ## 9. Game over, initials entry and recordings
 

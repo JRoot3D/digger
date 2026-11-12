@@ -28,7 +28,7 @@ use digger_core::{
 };
 
 use super::recording::LiveRecording;
-use super::{Context, Scene, ShellInput, TitleScene, Transition};
+use super::{Context, ShellInput, Transition};
 use crate::input::{Action, PadChange};
 
 /// A frame that only asks the core to quit the game.
@@ -260,7 +260,7 @@ impl PlayScene {
 /// Back to the title screen; the sound of the game stops.
 fn to_title(cx: &mut Context<'_>) -> Transition {
     cx.sound([SoundCommand::StopAll]);
-    Transition::To(Scene::Title(TitleScene::new()))
+    Transition::To(cx.title())
 }
 
 /// A recording being played back (design D2). Player controls are ignored;

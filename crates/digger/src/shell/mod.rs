@@ -30,6 +30,7 @@ use digger_sound::SoundControl;
 
 use crate::config::{FrameTime, GameMode, Layer, Settings};
 use crate::input::{Action, InputFrame};
+use crate::scores::{self, ScoreTable, Scores, TableKey};
 
 mod game_over;
 mod initials;
@@ -154,6 +155,9 @@ pub(crate) struct Setup {
     /// The base seed of the first live game; each later game derives its
     /// own from it. The platform draws it from the clock, tests fix it.
     pub(crate) base_seed: u64,
+    /// The level set the score tables are kept for: the built-in levels
+    /// or the level file's name.
+    pub(crate) score_levels: scores::LevelSet,
 }
 
 impl Default for Setup {
@@ -162,6 +166,7 @@ impl Default for Setup {
             levels: LevelSet::builtin(),
             record_kind: RecordingKind::Drf,
             base_seed: 0,
+            score_levels: scores::LevelSet::Builtin,
         }
     }
 }
@@ -172,7 +177,11 @@ pub(crate) struct Context<'a> {
     /// The resolved settings.
     settings: &'a Settings,
     /// The selected game mode.
-    mode: GameMode,
+    mode: &'a mut GameMode,
+    /// The settings the player changed at run time.
+    runtime: &'a mut Layer,
+    /// The high-score tables.
+    scores: &'a Scores,
     /// The set-up of the program.
     setup: &'a Setup,
     /// How many live games were started so far.
@@ -191,7 +200,27 @@ impl Context<'_> {
 
     /// The configuration of a new live game in the selected mode.
     fn game_config(&self) -> GameConfig {
-        game_config(self.settings, self.mode, &self.setup.levels)
+        game_config(self.settings, *self.mode, &self.setup.levels)
+    }
+
+    /// The score table of the selected mode.
+    fn table(&self) -> &ScoreTable {
+        self.scores.table(&TableKey::from_mode(
+            *self.mode,
+            self.setup.score_levels.clone(),
+        ))
+    }
+
+    /// Selects the next game mode and enters it in the runtime changes,
+    /// to be saved at exit (`desktop-app` spec, mode selection).
+    fn change_mode(&mut self) {
+        *self.mode = title::next_mode(*self.mode);
+        self.runtime.mode = Some(*self.mode);
+    }
+
+    /// The title screen for the selected mode.
+    fn title(&self) -> Scene {
+        Scene::Title(TitleScene::new(*self.mode, self.table()))
     }
 
     /// A new live game in the selected mode, with its own seed.
@@ -260,22 +289,32 @@ pub(crate) struct Shell {
     games_started: u64,
     /// The recording of the last finished game, until it is saved.
     last_game: Option<FinishedRecording>,
+    /// The high-score tables.
+    scores: Scores,
     /// The current scene.
     scene: Scene,
 }
 
 impl Shell {
-    /// A shell on the title screen.
+    /// A shell on the title screen, with fresh score tables.
     pub(crate) fn new(settings: Settings, setup: Setup) -> Self {
+        Self::with_scores(settings, setup, Scores::default())
+    }
+
+    /// A shell on the title screen, showing the tables of `scores`.
+    pub(crate) fn with_scores(settings: Settings, setup: Setup, scores: Scores) -> Self {
+        let mode = settings.mode;
+        let table = scores.table(&TableKey::from_mode(mode, setup.score_levels.clone()));
         Self {
             runtime: Layer::default(),
-            mode: settings.mode,
+            mode,
             frame_time: settings.speed.frame_time(),
             sound_on: settings.sound_enabled,
             music_on: settings.music,
             games_started: 0,
             last_game: None,
-            scene: Scene::Title(TitleScene::new()),
+            scene: Scene::Title(TitleScene::new(mode, table)),
+            scores,
             settings,
             setup,
         }
@@ -287,7 +326,9 @@ impl Shell {
         self.function_actions(input, &mut out);
         let mut cx = Context {
             settings: &self.settings,
-            mode: self.mode,
+            mode: &mut self.mode,
+            runtime: &mut self.runtime,
+            scores: &self.scores,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
@@ -377,13 +418,15 @@ impl Shell {
         }
     }
 
-    /// Starts a live game in the selected mode (the title screen's start,
-    /// task group 8, calls the same code).
+    /// Starts a live game in the selected mode, as the title screen's
+    /// start does.
     pub(crate) fn start_game(&mut self) {
         let mut out = Pending::default();
         let mut cx = Context {
             settings: &self.settings,
-            mode: self.mode,
+            mode: &mut self.mode,
+            runtime: &mut self.runtime,
+            scores: &self.scores,
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
@@ -401,6 +444,11 @@ impl Shell {
     /// The current scene.
     pub(crate) const fn scene(&self) -> &Scene {
         &self.scene
+    }
+
+    /// The selected game mode.
+    pub(crate) const fn mode(&self) -> GameMode {
+        self.mode
     }
 
     /// The settings the player changed with in-game actions.
