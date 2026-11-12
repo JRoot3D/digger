@@ -183,6 +183,10 @@ pub(crate) struct Storage {
     store: Box<dyn Store>,
     /// A failure was reported already.
     failed: bool,
+    /// Every failed save raises its notice, not only the first (the
+    /// desktop, whose `high-scores` spec prints a notice for each score
+    /// file that cannot be written).
+    every_failure: bool,
     /// The notices raised since they were last taken.
     notices: Vec<Notice>,
 }
@@ -193,7 +197,19 @@ impl Storage {
         Self {
             store: Box::new(store),
             failed: false,
+            every_failure: false,
             notices: Vec::new(),
+        }
+    }
+
+    /// The desktop's rule around `store`: as [`Storage::new`], except
+    /// that every failed save raises its notice, naming the file and the
+    /// cause, as phase 6 printed it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn reporting_every_failure(store: impl Store + 'static) -> Self {
+        Self {
+            every_failure: true,
+            ..Self::new(store)
         }
     }
 
@@ -230,9 +246,9 @@ impl Storage {
     }
 
     /// A save of `key` failed with `error`: the first failure raises the
-    /// notice, later ones are dropped.
+    /// notice, later ones are dropped unless every failure is reported.
     pub(crate) fn failed(&mut self, key: StoreKey, error: StoreError) {
-        if !std::mem::replace(&mut self.failed, true) {
+        if !std::mem::replace(&mut self.failed, true) || self.every_failure {
             self.notices.push(Notice::StorageUnavailable { key, error });
         }
     }
@@ -310,5 +326,18 @@ mod tests {
             "high scores not saved: the test store refuses saves; they are kept until the \
              program ends"
         );
+    }
+
+    #[test]
+    fn storage_desktop_reports_every_failure() {
+        let mut storage = Storage::reporting_every_failure(MemoryStore::refusing());
+        assert!(!storage.save(StoreKey::Scores, "x"));
+        assert!(!storage.save(StoreKey::Scores, "y"));
+        assert!(!storage.save(StoreKey::Settings, "z"));
+        assert_eq!(storage.take_notices().len(), 3);
+        let mut storage = Storage::new(MemoryStore::refusing());
+        assert!(!storage.save(StoreKey::Scores, "x"));
+        assert!(!storage.save(StoreKey::Settings, "z"));
+        assert_eq!(storage.take_notices().len(), 1);
     }
 }

@@ -154,7 +154,11 @@ fn run() -> Result<(), AppError> {
         frame_counter: std::env::var_os(FRAME_COUNTER_VAR)
             .is_some_and(|value| !value.is_empty() && value != "0"),
     };
-    let mut shell = shell::Shell::with_storage(settings, setup, store::Storage::new(files));
+    let mut shell = shell::Shell::with_storage(
+        settings,
+        setup,
+        store::Storage::reporting_every_failure(files),
+    );
     shell.set_transfer(transfer::NativeFileTransfer::new(paths.recordings_dir()));
     let platform::Finished { shell, status } = platform::run(platform::App::new(shell, window))?;
     finish(shell, status, options.verify.as_deref())

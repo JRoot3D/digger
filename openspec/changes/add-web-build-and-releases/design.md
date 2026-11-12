@@ -125,9 +125,10 @@ state and the sound handle. The seams:
 `StoreKey` is an enum (`Settings`, `Scores`), not a string, so a caller cannot
 invent a storage key. The shell owns the store through a small `Storage` wrapper that
 applies the failure rule on every target: the first failed save of either
-key raises one `Notice::StorageUnavailable` (on the desktop its text still
-names the file and the cause, as phase 6 printed it), later failures raise
-none, and the values stay in memory. A store may keep a damaged value
+key raises one `Notice::StorageUnavailable`, later failures raise
+none, and the values stay in memory. The desktop keeps phase 6's
+`high-scores` rule instead: every failed save prints its notice, naming the
+file and the cause (`Storage::reporting_every_failure`). A store may keep a damaged value
 aside before replacing it (`set_aside`: the desktop's `scores.toml.bad`;
 local storage simply replaces it). On the desktop the settings are still
 saved at exit, as phase 6 does; the browser saves them as they change
