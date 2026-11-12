@@ -167,6 +167,19 @@ the state of the game.
   initials is left to the desktop app, which acts on the player result the
   step reports, so the simulation never blocks on input.
 
+## Recording and playback quirks (`add-recording-and-conformance`)
+
+Each entry reproduces a rule of upstream's recording formats, playback or
+state hash, so that the port's recordings and checkpoints agree with
+upstream's corpus. The ids follow the design of `add-recording-and-conformance`
+(P1 to P16); later task groups of that change add the rows not yet listed.
+
+| Id | Behaviour | Class | Implemented in | Test |
+|---|---|---|---|---|
+| P10 | The state hash covers both digger slots, all six monster slots and all seven bag slots whether or not they are in use; it includes the per-digger `firepressed` and `levdone` flags, which the original keeps but never sets (always 0); and a monster slot's body values (sprite position and facing, alive, nobbin) only while the slot holds a monster body, from its spawn until the next round's monster reset, so a killed monster keeps them (research 01 §8, research 02 §2, §4.2, §4.7) | Format | the field table `state_hash::layout` (`crates/digger-core/src/state_hash/layout.rs`); the constant flags and the body condition in `StateHashFields::from_view` (`crates/digger-core/src/state_hash/view.rs`) | `state_hash::layout::tests::layout_golden`, `state_hash::tests::monster_block_is_variable_length`, `state_hash::tests::hash_stream_length_fresh_game` |
+| P11 | The round-end hash (`E` records) is taken after the round's clean-up, with fireballs and the bonus removed, the bags tidied, the field saved and the monster sprites erased (the slots keep their "in use" flags, as upstream's `erasemonsters` only erases sprites), and appends the tick count (research 01 §8, research 05 §4.6) | Format | the `Observer::round_end` call site in `Ctx::end_round` (`crates/digger-core/src/sim/mod.rs`); `StateHashFields::hash_at_round_end` (`crates/digger-core/src/state_hash/mod.rs`) | `state_hash::tests::round_end_hash_after_cleanup`, `state_hash::tests::round_end_appends_tick` |
+| P13 | On the tick the gauntlet runs out the clock wraps below zero, and the hash writes the wrapped unsigned 32-bit value followed by the time-out flag (research 01 §7.4, §8) | Affects the simulation | `GauntletClock::count_down` (`crates/digger-core/src/sim/gauntlet.rs`, quirk Q13), read through `StateView::gauntlet_clock` into `GauntletHashFields` (`crates/digger-core/src/state_hash/view.rs`) | `state_hash::tests::gauntlet_clock_wrap_hashed`, `state_hash::tests::gauntlet_appends_clock_and_timeout` |
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user

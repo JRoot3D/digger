@@ -298,6 +298,50 @@ mod tests {
     }
 
     #[test]
+    fn hash_ignores_unhashed_values() {
+        use crate::state_hash::StateHashFields;
+
+        let mut game = Game::new(GameConfig::default(), 0);
+        while game.state().ticks() < 40 {
+            game.step(&FrameInput::NONE);
+        }
+        let before = StateHashFields::from_view(game.state());
+        assert!(
+            before.monster.slots.iter().any(|slot| slot.body.is_some()),
+            "a monster is in play"
+        );
+
+        // Values the hash does not cover (replay-verification spec,
+        // "Values that are not hashed"): the dirge timer, the fireball
+        // available flag, a monster's dead-and-shown flag and animation,
+        // the penalty counter, the round counter and the other player's
+        // saved field.
+        let sim = &mut game.sim;
+        for digger in &mut sim.diggers {
+            digger.dirge_wait = 77;
+            digger.fire_ready = !digger.fire_ready;
+        }
+        for monster in &mut sim.monsters.slots {
+            monster.dead = !monster.dead;
+            monster.frame.advance();
+        }
+        sim.penalty.charge(super::super::PenaltySite::ALL[0]);
+        sim.round = sim.round.wrapping_add(5);
+        sim.saved_fields.save(PlayerId::ALL[1], &Field::EARTH);
+        sim.main_tune = None;
+        let after = StateHashFields::from_view(game.state());
+        assert_eq!(after, before);
+        assert_eq!(after.hash(), before.hash());
+
+        // A hashed value does change it.
+        game.sim.diggers[0].lives += 1;
+        assert_ne!(
+            StateHashFields::from_view(game.state()).hash(),
+            before.hash()
+        );
+    }
+
+    #[test]
     fn trace_line_follows_the_first_tick() {
         let mut game = Game::new(GameConfig::default(), 0);
         while game.state().ticks() == 0 {

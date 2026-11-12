@@ -67,6 +67,7 @@ crates/digger-core/src/
     mod.rs        HashFields from the simulation's StateView, walk(), hash(), hash_at_round_end()
     layout.rs     the field table (names, widths, order, conditions)
     codes.rs      enum -> wire-code mappings
+    view.rs       the *HashFields values built from StateView
   replay/
     mod.rs        Replay, ReplayOptions, ReplayReport, Outcome, verify()
     playback.rs   PlaybackSource (DRF and eDRF variants), ReplayObserver, take-over

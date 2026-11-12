@@ -1,0 +1,83 @@
+playfield cell                   16-bit per cell    always
+digger    bonus_start_time_left  16-bit once        always
+digger    bonus_time_left        16-bit once        always
+digger    emerald_mask           16-bit once        always
+digger    bonus_visible          bool   once        always
+digger    bonus_mode             bool   once        always
+digger    diggers_visible        bool   once        always
+digger    emeralds               8-bit  per cell    always
+digger    h                      16-bit per digger  always
+digger    v                      16-bit per digger  always
+digger    rx                     16-bit per digger  always
+digger    ry                     16-bit per digger  always
+digger    moved                  16-bit per digger  always
+digger    bag_time               16-bit per digger  always
+digger    recharge_time          16-bit per digger  always
+digger    death_stage            16-bit per digger  always
+digger    death_bag              16-bit per digger  always
+digger    death_frame            16-bit per digger  always
+digger    death_timer            16-bit per digger  always
+digger    emerald_window         16-bit per digger  always
+digger    emerald_run            16-bit per digger  always
+digger    eat_multiplier         16-bit per digger  always
+digger    lives                  16-bit per digger  always
+digger    invincibility          16-bit per digger  always
+digger    not_firing             bool   per digger  always
+digger    fire_pressed           bool   per digger  always
+digger    dead                   bool   per digger  always
+digger    level_done             bool   per digger  always
+digger    invincible             bool   per digger  always
+digger    x                      16-bit per digger  always
+digger    y                      16-bit per digger  always
+digger    facing                 16-bit per digger  always
+digger    alive                  bool   per digger  always
+digger    fireball_x             16-bit per digger  always
+digger    fireball_y             16-bit per digger  always
+digger    fireball_direction     16-bit per digger  always
+digger    fireball_stage         16-bit per digger  always
+monster   next_monster           16-bit once        always
+monster   total_monsters         16-bit once        always
+monster   max_on_screen          16-bit once        always
+monster   next_spawn_time        16-bit once        always
+monster   spawn_gap              16-bit once        always
+monster   next_chase             16-bit once        always
+monster   bonus_pending          bool   once        always
+monster   h                      16-bit per monster always
+monster   v                      16-bit per monster always
+monster   xr                     16-bit per monster always
+monster   yr                     16-bit per monster always
+monster   direction              16-bit per monster always
+monster   delay                  16-bit per monster always
+monster   counter                16-bit per monster always
+monster   death                  16-bit per monster always
+monster   death_bag              16-bit per monster always
+monster   death_delay            16-bit per monster always
+monster   standstill             16-bit per monster always
+monster   chase                  16-bit per monster always
+monster   in_use                 bool   per monster always
+monster   x                      16-bit per monster with monster body
+monster   y                      16-bit per monster with monster body
+monster   facing                 16-bit per monster with monster body
+monster   alive                  bool   per monster with monster body
+monster   nobbin                 bool   per monster with monster body
+bag       push_count             16-bit once        always
+bag       gold_time              16-bit once        always
+bag       x                      16-bit per bag     always
+bag       y                      16-bit per bag     always
+bag       h                      16-bit per bag     always
+bag       v                      16-bit per bag     always
+bag       xr                     16-bit per bag     always
+bag       yr                     16-bit per bag     always
+bag       direction              16-bit per bag     always
+bag       wobble                 16-bit per bag     always
+bag       gold_age               16-bit per bag     always
+bag       cells_fallen           16-bit per bag     always
+bag       wobbling               bool   per bag     always
+bag       unfallen               bool   per bag     always
+bag       exists                 bool   per bag     always
+game      rng_state              32-bit once        always
+game      score_1                32-bit once        always
+game      score_2                32-bit once        always
+game      gauntlet_clock         32-bit once        gauntlet only
+game      timed_out              bool   once        gauntlet only
+game      tick                   32-bit once        round end only

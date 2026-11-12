@@ -206,3 +206,167 @@ and by the grammar above.
   records) and no limit on the file size.
 - A map cut off by the end of the data, and any record after `Z`, are bad
   records; upstream leaves such a level pending or reads on.
+
+## State hash
+
+The `C`, `E` and `Z` records of an eDRF recording carry a hash of the game
+state (replay-verification spec; research 01 §8). The port computes it in
+`digger_core::state_hash` from one field table (`state_hash/layout.rs`);
+the table below is generated from it, and the test
+`state_hash::layout::tests::layout_doc_is_current` fails when this section
+is stale (run it with `DIGGER_UPDATE_DOCS=1` to rewrite the table).
+
+### Value
+
+The hash is the MD5 digest of the state stream cut to its first four
+bytes, read as one unsigned 32-bit number with the first digest byte most
+significant. In a record it is written as exactly eight upper-case
+hexadecimal digits, so it equals the first eight characters of the
+digest's usual hex form, leading zeros included (`000ABC01`).
+
+### Encoding
+
+Every value is written at a fixed width in little-endian byte order, with
+no padding and no separators: 8-bit values as one byte, 16-bit values as
+two, 32-bit values as four, yes/no values as one byte 0 or 1. Negative
+values are two's complement; the gauntlet clock and the tick count are
+unsigned. The simulation's enums are written as the original's numbers
+(`state_hash/codes.rs`):
+
+| Value | Codes |
+|---|---|
+| Direction | right 0, up 2, left 4, down 6, none −1 (FF FF) |
+| Digger death stage | 0 never placed, 1 bag (also while alive), 2 grave, 3 monster, 4 tombstone, 5 arc, 6 out of play |
+| Monster death | 0 none, 1 carried by a bag, 4 bag stopped |
+| Fireball stage | 0 flying (or none in play), 1 to 3 exploding, 4 spent |
+| Bag index, digger record index | 0-based |
+| Emerald mask | 1 first player, 2 second player |
+
+### Order and conditions
+
+The stream holds the playfield block, the digger block, the monster
+block, the bag block, then the random-number state, both total scores and,
+in the gauntlet modes only, the gauntlet clock and the time-out flag. The
+round-end form (`E` records) appends the tick count. A per-cell entry
+occurs 150 times in a row, cell (h, v) at position v × 15 + h. A run of
+consecutive per-slot entries is written once for each slot in turn: both
+digger slots, all six monster slots and all seven bag slots, whether or not
+the game uses them (quirk P10). The digger records are the original's
+`digdat[0]` and `digdat[1]`: in an alternating game record `n` is player
+`n`'s. The flags `fire_pressed` and `level_done` are kept by the original
+but never set and are always 0.
+
+A monster slot's body values (`with monster body`) are present from the
+tick a monster is spawned into the slot until the monster reset at the
+start of the next round; a monster that was killed or removed keeps them,
+with "alive" 0, until then. A stream is therefore 903 bytes long in a
+non-gauntlet game with no monster body, 908 in a gauntlet game, and up to
+951 (plus 5) with all six bodies; the round-end form adds 4.
+
+Only the live state of the player currently playing is covered: the field
+in play and the bags in play, never the saved field or bags of the other
+alternating player. Nothing about the picture, the palette, sound, pause
+or real time enters the stream. Values the original keeps but does not
+hash — the dirge timer, the death-music progress, a digger's "fireball
+available" look, a monster's "dead and still shown" flag and its animation
+— do not change the hash.
+
+The round-end hash is taken after the round's clean-up: fireballs and the
+bonus removed, the bags tidied, the field saved and the monster sprites
+erased (quirk P11).
+
+<!-- state-hash-table:begin -->
+| # | Block | Name | Width | Repeat | Present | Value |
+|---|---|---|---|---|---|---|
+| 1 | playfield | `cell` | 16-bit | per cell | always | tunnel bit set of the cell (`field`) |
+| 2 | digger | `bonus_start_time_left` | 16-bit | once | always | bonus-start countdown (`startbonustimeleft`) |
+| 3 | digger | `bonus_time_left` | 16-bit | once | always | bonus time left (`bonustimeleft`) |
+| 4 | digger | `emerald_mask` | 16-bit | once | always | emerald bit of the current player, 1 or 2 (`emmask`) |
+| 5 | digger | `bonus_visible` | bool | once | always | bonus (cherry) shown (`bonusvisible`) |
+| 6 | digger | `bonus_mode` | bool | once | always | bonus mode on (`bonusmode`) |
+| 7 | digger | `diggers_visible` | bool | once | always | diggers shown (`digvisible`) |
+| 8 | digger | `emeralds` | 8-bit | per cell | always | emerald bits of the cell, bit 0 player 1, bit 1 player 2 (`emfield`) |
+| 9 | digger | `h` | 16-bit | per digger | always | cell column (`h`) |
+| 10 | digger | `v` | 16-bit | per digger | always | cell row (`v`) |
+| 11 | digger | `rx` | 16-bit | per digger | always | x remainder (`rx`) |
+| 12 | digger | `ry` | 16-bit | per digger | always | y remainder (`ry`) |
+| 13 | digger | `moved` | 16-bit | per digger | always | direction moved this tick (`mdir`) |
+| 14 | digger | `bag_time` | 16-bit | per digger | always | bag-push pause (`bagtime`) |
+| 15 | digger | `recharge_time` | 16-bit | per digger | always | fireball recharge countdown (`rechargetime`) |
+| 16 | digger | `death_stage` | 16-bit | per digger | always | death stage (`deathstage`) |
+| 17 | digger | `death_bag` | 16-bit | per digger | always | index of the killing bag (`deathbag`) |
+| 18 | digger | `death_frame` | 16-bit | per digger | always | death animation counter (`deathani`) |
+| 19 | digger | `death_timer` | 16-bit | per digger | always | death timer (`deathtime`) |
+| 20 | digger | `emerald_window` | 16-bit | per digger | always | emerald-streak window countdown (`emocttime`) |
+| 21 | digger | `emerald_run` | 16-bit | per digger | always | emeralds in the streak (`emn`) |
+| 22 | digger | `eat_multiplier` | 16-bit | per digger | always | monster-eating score multiplier (`msc`) |
+| 23 | digger | `lives` | 16-bit | per digger | always | lives (`lives`) |
+| 24 | digger | `invincibility` | 16-bit | per digger | always | invincibility ticks (`ivt`) |
+| 25 | digger | `not_firing` | bool | per digger | always | no fireball in play (`notfiring`) |
+| 26 | digger | `fire_pressed` | bool | per digger | always | fire pressed, never set: always 0 (`firepressed`) |
+| 27 | digger | `dead` | bool | per digger | always | death sequence over (`dead`) |
+| 28 | digger | `level_done` | bool | per digger | always | level done, never set: always 0 (`levdone`) |
+| 29 | digger | `invincible` | bool | per digger | always | invincible (`invin`) |
+| 30 | digger | `x` | 16-bit | per digger | always | sprite x (`dob.x`) |
+| 31 | digger | `y` | 16-bit | per digger | always | sprite y (`dob.y`) |
+| 32 | digger | `facing` | 16-bit | per digger | always | facing direction (`dob.dir`) |
+| 33 | digger | `alive` | bool | per digger | always | alive and controllable (`dob.alive`) |
+| 34 | digger | `fireball_x` | 16-bit | per digger | always | fireball x (`bob.x`) |
+| 35 | digger | `fireball_y` | 16-bit | per digger | always | fireball y (`bob.y`) |
+| 36 | digger | `fireball_direction` | 16-bit | per digger | always | fireball direction (`bob.dir`) |
+| 37 | digger | `fireball_stage` | 16-bit | per digger | always | fireball explosion stage (`bob.expsn`) |
+| 38 | monster | `next_monster` | 16-bit | once | always | monsters spawned this round (`nextmonster`) |
+| 39 | monster | `total_monsters` | 16-bit | once | always | monsters for the level (`totalmonsters`) |
+| 40 | monster | `max_on_screen` | 16-bit | once | always | most monsters at once (`maxmononscr`) |
+| 41 | monster | `next_spawn_time` | 16-bit | once | always | time to next spawn (`nextmontime`) |
+| 42 | monster | `spawn_gap` | 16-bit | once | always | gap between spawns (`mongaptime`) |
+| 43 | monster | `next_chase` | 16-bit | once | always | digger the next monster chases (`chase`) |
+| 44 | monster | `bonus_pending` | bool | once | always | bonus still to appear this round (`unbonusflag`) |
+| 45 | monster | `h` | 16-bit | per monster | always | cell column (`h`) |
+| 46 | monster | `v` | 16-bit | per monster | always | cell row (`v`) |
+| 47 | monster | `xr` | 16-bit | per monster | always | x remainder (`xr`) |
+| 48 | monster | `yr` | 16-bit | per monster | always | y remainder (`yr`) |
+| 49 | monster | `direction` | 16-bit | per monster | always | movement direction (`dir`) |
+| 50 | monster | `delay` | 16-bit | per monster | always | delay before next move (`t`) |
+| 51 | monster | `counter` | 16-bit | per monster | always | nobbin crossing count / time as hobbin (`hnt`) |
+| 52 | monster | `death` | 16-bit | per monster | always | death stage (`death`) |
+| 53 | monster | `death_bag` | 16-bit | per monster | always | squashing bag index (`bag`) |
+| 54 | monster | `death_delay` | 16-bit | per monster | always | death delay (`dtime`) |
+| 55 | monster | `standstill` | 16-bit | per monster | always | start delay (`stime`) |
+| 56 | monster | `chase` | 16-bit | per monster | always | digger record chased (`chase`) |
+| 57 | monster | `in_use` | bool | per monster | always | slot in use (`flag`) |
+| 58 | monster | `x` | 16-bit | per monster | with monster body | sprite x (`pos.x`) |
+| 59 | monster | `y` | 16-bit | per monster | with monster body | sprite y (`pos.y`) |
+| 60 | monster | `facing` | 16-bit | per monster | with monster body | facing direction (`pos.dir`) |
+| 61 | monster | `alive` | bool | per monster | with monster body | alive (`isalive`) |
+| 62 | monster | `nobbin` | bool | per monster | with monster body | is a nobbin (`ISNOB`) |
+| 63 | bag | `push_count` | 16-bit | once | always | push counter (`pushcount`) |
+| 64 | bag | `gold_time` | 16-bit | once | always | gold lifetime for the level (`goldtime`) |
+| 65 | bag | `x` | 16-bit | per bag | always | pixel x (`x`) |
+| 66 | bag | `y` | 16-bit | per bag | always | pixel y (`y`) |
+| 67 | bag | `h` | 16-bit | per bag | always | cell column (`h`) |
+| 68 | bag | `v` | 16-bit | per bag | always | cell row (`v`) |
+| 69 | bag | `xr` | 16-bit | per bag | always | x remainder (`xr`) |
+| 70 | bag | `yr` | 16-bit | per bag | always | y remainder (`yr`) |
+| 71 | bag | `direction` | 16-bit | per bag | always | direction (`dir`) |
+| 72 | bag | `wobble` | 16-bit | per bag | always | wobble countdown (`wt`) |
+| 73 | bag | `gold_age` | 16-bit | per bag | always | gold timer (`gt`) |
+| 74 | bag | `cells_fallen` | 16-bit | per bag | always | cells fallen (`fallh`) |
+| 75 | bag | `wobbling` | bool | per bag | always | wobbling (`wobbling`) |
+| 76 | bag | `unfallen` | bool | per bag | always | not yet fallen (`unfallen`) |
+| 77 | bag | `exists` | bool | per bag | always | exists (`exist`) |
+| 78 | game | `rng_state` | 32-bit | once | always | random-number state (`randv`) |
+| 79 | game | `score_1` | 32-bit | once | always | total score of player/digger 1 (`gettscore(0)`) |
+| 80 | game | `score_2` | 32-bit | once | always | total score of player/digger 2 (`gettscore(1)`) |
+| 81 | game | `gauntlet_clock` | 32-bit | once | gauntlet only | gauntlet clock, unsigned, wrapped on the time-out tick (`cgtime`) |
+| 82 | game | `timed_out` | bool | once | gauntlet only | gauntlet time is out (`timeout`) |
+| 83 | game | `tick` | 32-bit | once | round end only | ticks since game start, unsigned (`ticks`) |
+
+| Block | Bytes |
+|---|---|
+| playfield | 300 |
+| digger | 263 |
+| monster | 163 to 211 |
+| bag | 165 |
+| game | 12 to 21 |
+<!-- state-hash-table:end -->
