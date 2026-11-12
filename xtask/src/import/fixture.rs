@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::font::{GLYPH_BYTES, GLYPH_NAMES};
+use super::music::{BONUS_NOTES, DIRGE_NOTES, MUSIC_FILE, NORMAL_NOTES};
 use super::sprites::{ImageSize, upstream_size, upstream_sizes};
 use super::title::{PICTURE_LEN, STREAM_LEN};
 use super::{FONT_FILE, ICON_FILE, LEVEL_FILE, SPRITE_FILE, TITLE_FILE};
@@ -249,6 +250,70 @@ pub(crate) fn game_c(layouts: &[Vec<String>]) -> String {
     text
 }
 
+/// Made-up tune values (`divisor, duration` pairs and the end marker) for
+/// the fixture's `sound_backend.c`, with the upstream shapes.
+pub(crate) fn fixture_tune(table: &str) -> Vec<u16> {
+    const DIVISORS: [u16; 6] = [0x11d1, 0xfdf, 0xe24, 0xd59, 0xbe4, 0x7d00];
+    let tune = |seed: usize, notes: usize| -> Vec<u16> {
+        let mut values: Vec<u16> = pattern(seed, notes, &[0, 1, 2, 3, 4, 5])
+            .iter()
+            .zip(pattern(seed + 1, notes, &[2, 4, 6]))
+            .flat_map(|(&pick, units)| {
+                let divisor = DIVISORS.get(usize::from(pick)).copied().unwrap_or(0x11d1);
+                [divisor, u16::from(units)]
+            })
+            .collect();
+        values.push(0x7d64);
+        values
+    };
+    match table {
+        "backgjingle" => tune(1, NORMAL_NOTES),
+        "bonusjingle" => tune(3, BONUS_NOTES),
+        "battlejingle" => tune(5, 37),
+        _ => {
+            // 12 notes lasting 50 units, then 12 rests.
+            let mut values = vec![0x7d00, 6];
+            for _ in 0..11 {
+                values.extend([0xefb, 4]);
+            }
+            for _ in 0..DIRGE_NOTES - 12 {
+                values.extend([0x7d00, 16]);
+            }
+            values.push(0x7d64);
+            values
+        }
+    }
+}
+
+/// A fixture `sound_backend.c`: the four tune lists among code and other
+/// initialised declarations, as upstream has them. Each `(table, values)` of
+/// `overrides` replaces that list's values.
+pub(crate) fn sound_backend_c(overrides: &[(&str, Vec<u16>)]) -> String {
+    let mut text = String::from(
+        "/* Digger fixture */\n\n#include \"def.h\"\n\n\
+         static const int16_t newlevjingle[11]={0x8e8,0x712,0x5f2,0x7f0,0x6ac,0x54c,\n\
+         0x7f0,0x6ac,0x54c,0x474,0x474};\n\
+         static bool soundfireflag[FIREBALLS]={false,false},sff[FIREBALLS];\n\
+         static int16_t soundfirevalue[FIREBALLS],soundfiren[FIREBALLS]={0,0};\n\n\
+         void soundfire(int n)\n{\n  soundfirevalue[n]=500;\n  soundfireflag[n]=true;\n}\n\n",
+    );
+    for table in ["bonusjingle", "backgjingle", "dirge", "battlejingle"] {
+        let values = overrides
+            .iter()
+            .find(|(name, _)| *name == table)
+            .map_or_else(|| fixture_tune(table), |(_, values)| values.clone());
+        let cells: Vec<String> = values.iter().map(|v| format!("0x{v:x}")).collect();
+        let rows: Vec<String> = cells.chunks(16).map(|row| row.join(",")).collect();
+        let _ = writeln!(
+            text,
+            "static const int16_t {table}[]={{\n  {}}};\n",
+            rows.join(",\n  ")
+        );
+    }
+    text += "void musicupdate(void)\n{\n  if (dirge[musicp]==0x7d64)\n    musicoff();\n}\n";
+    text
+}
+
 /// A directory removed again when dropped.
 #[derive(Debug)]
 pub(crate) struct TempDir(PathBuf);
@@ -276,7 +341,7 @@ impl Drop for TempDir {
     }
 }
 
-/// A complete fixture upstream checkout holding the five source files.
+/// A complete fixture upstream checkout holding the six source files.
 pub(crate) fn upstream(tag: &str) -> Result<TempDir, Box<dyn std::error::Error>> {
     let dir = TempDir::new(tag)?;
     std::fs::write(dir.path().join(SPRITE_FILE), vgagrafx_c())?;
@@ -287,6 +352,7 @@ pub(crate) fn upstream(tag: &str) -> Result<TempDir, Box<dyn std::error::Error>>
     )?;
     std::fs::write(dir.path().join(ICON_FILE), icon_c())?;
     std::fs::write(dir.path().join(LEVEL_FILE), game_c(&fixture_layouts()))?;
+    std::fs::write(dir.path().join(MUSIC_FILE), sound_backend_c(&[]))?;
     Ok(dir)
 }
 

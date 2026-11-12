@@ -183,6 +183,7 @@ fn manifest_lists_the_imported_files() -> Result<(), Box<dyn Error>> {
             "icon.rgba",
             "index.rs",
             "levels.bin",
+            "music.bin",
             "sprites.bin",
             "title.zz"
         ]

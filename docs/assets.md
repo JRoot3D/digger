@@ -1,7 +1,7 @@
 # Game assets
 
-The sprites, font, title picture, window icon and built-in level layouts
-exist upstream only as data tables in C source files. `cargo xtask
+The sprites, font, title picture, window icon, built-in level layouts and
+music exist upstream only as data tables in C source files. `cargo xtask
 import-assets` reads those tables **as data** from a checkout of
 [sobomax/digger](https://github.com/sobomax/digger) at commit
 `638125eecc2a36629b886f58d7b75253894cf3d3` and writes the files in
@@ -83,6 +83,42 @@ layout with other than 10 rows, a row of other than 15 characters and any
 character outside the alphabet, naming the layout, row and column.
 `digger-core` embeds the file with `include_bytes!` as a 1200-byte array.
 
+### `music.bin` (2786 bytes)
+
+The four tunes (research 04 §3.1; requirements in the `sound` spec of
+`add-sound-engine`, design D11). All integers are little-endian:
+
+```text
+offset 0   magic "DGMU" (4 bytes)
+offset 4   version u8 = 1
+offset 5   tune count u8 = 4
+offset 6   per tune, in the order normal, bonus, dirge, battle:
+             note count u16
+             note count x (divisor u16, duration u16)
+```
+
+A note's divisor is the PIT divisor of its pitch, 32000 (`0x7d00`) for a
+rest; its duration is in tune units (the ticks per unit depend on the tune
+and tempo and are applied by `digger-sound`). At the pinned commit the tunes
+have 145 (normal), 160 (bonus), 24 (dirge) and 364 (battle) notes.
+
+Upstream keeps the tunes in `sound_backend.c` as the `static const int16_t`
+initialiser lists `backgjingle` (normal), `bonusjingle`, `dirge` and
+`battlejingle`, flat `divisor, duration` pairs closed by the end marker
+`0x7d64`. That file is mostly code, so the importer asks the table reader
+for these four lists only (`ctable::parse_only`) and skips every other
+declaration unread. It checks and drops the end marker (the note count
+replaces it) and stores every note as upstream has it: rests stay in place
+and the battle tune is stored untransposed, the transposition being applied
+by `digger-sound` when it decodes the blob. The importer rejects a list
+without the end marker, an odd number of values before it, an end marker
+inside the list, an empty tune, a note of duration 0, a normal tune of other
+than 145 notes, a bonus tune of other than 160, and a dirge of other than 24
+notes whose first 12 do not last 50 units in all or whose last 12 are not
+all rests, naming the file and table. The battle tune's length is not fixed;
+the import prints all four note counts. `digger-sound` embeds the file with
+`include_bytes!`.
+
 ### `index.rs`
 
 Generated Rust source that `digger-core` pulls in with `include!`:
@@ -142,8 +178,9 @@ unmodified checkout `git status` shows no change afterwards.
 
 Later changes extend the same command rather than adding new ones:
 `add-simulation-core` added the level layouts (`assets/levels.bin`, read
-from `game.c` by `xtask/src/import/levels.rs`) and `add-sound-engine` adds
-the music tables (`assets/music.bin`). Each extension:
+from `game.c` by `xtask/src/import/levels.rs`) and `add-sound-engine` added
+the music tables (`assets/music.bin`, read from `sound_backend.c` by
+`xtask/src/import/music.rs`). Each extension:
 
 1. adds a module under `xtask/src/import/` that reads its tables through the
    table reader in `ctable.rs` and validates their shape, returning

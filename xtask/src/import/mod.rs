@@ -1,6 +1,6 @@
-//! `cargo xtask import-assets`: read the upstream sprite, font, title, icon
-//! and level tables as data and turn them into the committed files in `assets/`
-//! (design D2, D7).
+//! `cargo xtask import-assets`: read the upstream sprite, font, title, icon,
+//! level and music tables as data and turn them into the committed files in
+//! `assets/` (design D2, D7; add-sound-engine design D11).
 //!
 //! Upstream C is never compiled or run: its source files are read as text by
 //! the table reader in [`ctable`], which understands only array and pointer
@@ -14,6 +14,7 @@ pub(crate) mod icon;
 pub(crate) mod index;
 pub(crate) mod levels;
 pub(crate) mod manifest;
+pub(crate) mod music;
 pub(crate) mod sprites;
 pub(crate) mod title;
 
@@ -99,6 +100,12 @@ pub(crate) enum ImportError {
         column: usize,
         byte: u8,
     },
+    /// A tune list does not have the expected shape.
+    Tune {
+        file: String,
+        table: String,
+        message: String,
+    },
     /// The title stream does not inflate to the expected picture.
     TitleInflate {
         file: String,
@@ -180,6 +187,11 @@ impl fmt::Display for ImportError {
                 file,
                 table,
                 message,
+            }
+            | Self::Tune {
+                file,
+                table,
+                message,
             } => write!(f, "{file}: table `{table}`: {message}"),
             Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
             Self::Drift {
@@ -215,15 +227,19 @@ impl std::error::Error for ImportError {
 
 /// Reads and parses one upstream source file.
 pub(crate) fn read_source(upstream: &Path, name: &str) -> Result<TableFile, ImportError> {
+    ctable::parse(name, &read_text(upstream, name)?)
+}
+
+/// Reads one upstream source file.
+fn read_text(upstream: &Path, name: &str) -> Result<Vec<u8>, ImportError> {
     let path = upstream.join(name);
     if !path.is_file() {
         return Err(ImportError::MissingFile { file: path });
     }
-    let text = std::fs::read(&path).map_err(|source| ImportError::Io {
+    std::fs::read(&path).map_err(|source| ImportError::Io {
         path: path.clone(),
         source,
-    })?;
-    ctable::parse(name, &text)
+    })
 }
 
 /// The default output directory: `assets/` in the workspace root.
@@ -238,6 +254,7 @@ pub(crate) const FONT_OUT: &str = "font.bin";
 pub(crate) const TITLE_OUT: &str = "title.zz";
 pub(crate) const ICON_OUT: &str = "icon.rgba";
 pub(crate) const LEVELS_OUT: &str = "levels.bin";
+pub(crate) const MUSIC_OUT: &str = "music.bin";
 pub(crate) const INDEX_OUT: &str = "index.rs";
 pub(crate) const MANIFEST_OUT: &str = "manifest.txt";
 
@@ -259,6 +276,8 @@ pub(crate) struct Import {
     pub(crate) files: Vec<OutputFile>,
     /// CRC-32 of the inflated title picture.
     pub(crate) title_crc32: u32,
+    /// The note count of each tune, in `music.bin` order.
+    pub(crate) tune_notes: [usize; 4],
 }
 
 /// Reads and validates every upstream table and builds all outputs in
@@ -275,6 +294,7 @@ pub(crate) fn build(upstream: &Path) -> Result<Import, ImportError> {
     let title = title::import(&read_source(upstream, TITLE_FILE)?)?;
     let icon = icon::import(&read_source(upstream, ICON_FILE)?)?;
     let levels = levels::import(&read_source(upstream, LEVEL_FILE)?)?;
+    let music = music::import(&music::parse(&read_text(upstream, music::MUSIC_FILE)?)?)?;
     let index = index::render(&sprites.entries, &font.glyph_index);
 
     let mut files = vec![
@@ -299,6 +319,10 @@ pub(crate) fn build(upstream: &Path) -> Result<Import, ImportError> {
             bytes: levels,
         },
         OutputFile {
+            name: MUSIC_OUT,
+            bytes: music.blob,
+        },
+        OutputFile {
             name: INDEX_OUT,
             bytes: index.into_bytes(),
         },
@@ -311,6 +335,7 @@ pub(crate) fn build(upstream: &Path) -> Result<Import, ImportError> {
     Ok(Import {
         files,
         title_crc32: title.picture_crc32,
+        tune_notes: music.counts,
     })
 }
 
@@ -397,6 +422,12 @@ pub(crate) fn run(args: &ImportArgs) -> Result<(), ImportError> {
         title::PICTURE_LEN,
         import.title_crc32
     );
+    for (tune, notes) in music::TUNES.iter().zip(import.tune_notes) {
+        eprintln!(
+            "import-assets: {} tune (`{}`): {notes} notes",
+            tune.label, tune.table
+        );
+    }
     if args.check {
         check(&import, &out)?;
         eprintln!(
@@ -512,6 +543,7 @@ mod tests {
                 "title.zz",
                 "icon.rgba",
                 "levels.bin",
+                "music.bin",
                 "index.rs",
                 "manifest.txt"
             ]
@@ -555,7 +587,7 @@ mod tests {
         write(&build(checkout.path())?, first.path())?;
         write(&build(checkout.path())?, second.path())?;
         let files = snapshot(first.path())?;
-        assert_eq!(files.len(), 7);
+        assert_eq!(files.len(), 8);
         assert_eq!(files, snapshot(second.path())?);
         // Writing again over the first output changes nothing either.
         write(&build(checkout.path())?, first.path())?;
@@ -684,7 +716,7 @@ mod tests {
         let empty = TempDir::new("check-empty")?;
         let error = check(&import, empty.path()).err();
         assert!(
-            matches!(&error, Some(ImportError::Drift { missing, .. }) if missing.len() == 7),
+            matches!(&error, Some(ImportError::Drift { missing, .. }) if missing.len() == 8),
             "{error:?}"
         );
         Ok(())

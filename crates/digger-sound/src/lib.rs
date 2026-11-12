@@ -8,16 +8,20 @@
 //!   from `digger-core`), the frontend's [`SoundControl`]s and the
 //!   engine's [`SoundEvent`]s.
 //! - [`config`]: the [`SoundConfig`] an engine is created with.
+//! - [`music`]: the tune tables, decoded from the embedded asset into
+//!   [`TuneTables`].
 //! - [`units`]: the newtypes the engine counts in.
 
 #![forbid(unsafe_code)]
 
 pub mod command;
 pub mod config;
+pub mod music;
 pub mod units;
 
 pub use command::{EmeraldStep, FireballId, SoundCommand, SoundControl, SoundEvent, Tempo, Tune};
 pub use config::{ConfigError, SoundConfig};
+pub use music::{Note, TableError, TuneTables};
 pub use units::{Divisor, Hertz, Level, SampleRate, SoundTicks, Volume};
 
 #[cfg(test)]

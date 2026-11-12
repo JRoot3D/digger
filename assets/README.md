@@ -18,6 +18,7 @@ The data is read, as data, from the C source tables of
 | `title.zz` | `title_gz.c` | the title picture, zlib stream copied verbatim |
 | `icon.rgba` | `icon.c` | the 64x64 window icon |
 | `levels.bin` | `game.c` | the eight built-in 10x15 level layouts |
+| `music.bin` | `sound_backend.c` | the four tunes: normal, bonus, dirge and battle |
 | `index.rs` | (generated) | sprite and glyph index included by `digger-core` |
 | `manifest.txt` | (generated) | SHA-256 digest and length of every file above |
 

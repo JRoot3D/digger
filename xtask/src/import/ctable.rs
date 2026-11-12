@@ -7,8 +7,8 @@
 //! - preprocessor lines, of which only `#define NAME <number>` is remembered
 //!   (it may give an array size);
 //! - array initialisers `[qualifiers] type NAME[N] = { number, … };` with
-//!   decimal or hexadecimal numbers, for 8-bit (`uint8_t`, `unsigned char`)
-//!   and 32-bit (`uint32_t`) element types;
+//!   decimal or hexadecimal numbers, for 8-bit (`uint8_t`, `unsigned char`),
+//!   16-bit (`int16_t`, `uint16_t`) and 32-bit (`uint32_t`) element types;
 //! - pointer tables `[qualifiers] type * [const] NAME[N] = { element, … };`
 //!   whose elements are identifiers, `NULL` or `0`; identifiers are resolved
 //!   against the arrays of the same file;
@@ -20,7 +20,10 @@
 //!   any other shape are skipped.
 //!
 //! Every other top-level item (function definitions, declarations without an
-//! initialiser) is skipped as a balanced run of tokens. Anything malformed
+//! initialiser) is skipped as a balanced run of tokens. [`parse_only`] reads
+//! just the arrays it is asked for and skips every other initialised
+//! declaration in the same way, whatever its type, so that tables can be
+//! taken from a file that is mostly code (such as `sound_backend.c`). Anything malformed
 //! inside an initialiser, or anything unbalanced, is a
 //! [`ImportError::Syntax`] carrying the file name and line. The reader never
 //! panics, whatever bytes it is given.
@@ -34,6 +37,8 @@ use super::ImportError;
 pub(crate) enum TableData {
     /// An array of 8-bit values.
     Bytes(Vec<u8>),
+    /// An array of 16-bit values (`int16_t` ones are at most 0x7FFF).
+    Halves(Vec<u16>),
     /// An array of 32-bit values.
     Words(Vec<u32>),
     /// A pointer table: each element names an array of the same file, or is
@@ -103,6 +108,15 @@ impl TableFile {
         }
     }
 
+    /// The 16-bit array called `name`.
+    pub(crate) fn halves(&self, name: &str) -> Result<&[u16], ImportError> {
+        let table = self.require(name)?;
+        match &table.data {
+            TableData::Halves(values) => Ok(values),
+            _ => Err(self.wrong_kind(name, table, "a 16-bit array")),
+        }
+    }
+
     /// The 32-bit array called `name`.
     pub(crate) fn words(&self, name: &str) -> Result<&[u32], ImportError> {
         let table = self.require(name)?;
@@ -134,6 +148,21 @@ impl TableFile {
 
 /// Reads every table of `text`; `file` names the source in error messages.
 pub(crate) fn parse(file: &str, text: &[u8]) -> Result<TableFile, ImportError> {
+    parse_scoped(file, text, None)
+}
+
+/// Reads only the arrays called `names` from `text`; every other initialised
+/// declaration, of any type, is skipped to its `;`. The file must still lex
+/// (comments, literals and numbers well formed) and be balanced.
+pub(crate) fn parse_only(
+    file: &str,
+    text: &[u8],
+    names: &[&str],
+) -> Result<TableFile, ImportError> {
+    parse_scoped(file, text, Some(names))
+}
+
+fn parse_scoped(file: &str, text: &[u8], only: Option<&[&str]>) -> Result<TableFile, ImportError> {
     let lexed = Lexer::new(file, text).run()?;
     let mut parser = Parser {
         file,
@@ -141,6 +170,7 @@ pub(crate) fn parse(file: &str, text: &[u8]) -> Result<TableFile, ImportError> {
         pos: 0,
         defines: &lexed.defines,
         tables: BTreeMap::new(),
+        only,
     };
     parser.run()?;
     let table_file = TableFile {
@@ -160,7 +190,10 @@ fn resolve_pointers(table_file: &TableFile) -> Result<(), ImportError> {
         };
         for symbol in elements.iter().flatten() {
             let resolved = table_file.tables.get(symbol).is_some_and(|target| {
-                matches!(target.data, TableData::Bytes(_) | TableData::Words(_))
+                matches!(
+                    target.data,
+                    TableData::Bytes(_) | TableData::Halves(_) | TableData::Words(_)
+                )
             });
             if !resolved {
                 return Err(ImportError::UnknownSymbol {
@@ -184,7 +217,7 @@ enum TokenKind {
     Number(u64),
     /// A string literal's bytes between the quotes, as written.
     Str(Vec<u8>),
-    /// A character literal (only ever skipped).
+    /// A character literal or a suffixed integer (only ever skipped).
     Literal,
     Punct(u8),
 }
@@ -355,6 +388,20 @@ impl<'a> Lexer<'a> {
                 self.bump();
             }
             let digits = self.text.get(start..self.pos).unwrap_or_default();
+            // An integer with a `u`/`l` suffix is lexed so that code using
+            // one can be skipped, but it is never accepted as a table value.
+            let body_len = digits.len()
+                - digits
+                    .iter()
+                    .rev()
+                    .take_while(|b| matches!(b, b'u' | b'U' | b'l' | b'L'))
+                    .count();
+            if let Some(body) = digits.get(..body_len)
+                && body_len < digits.len()
+                && self.number_value(line, body).is_ok()
+            {
+                return Ok(TokenKind::Literal);
+            }
             return self.number_value(line, digits).map(TokenKind::Number);
         }
         if byte == b'"' || byte == b'\'' {
@@ -394,7 +441,8 @@ impl<'a> Lexer<'a> {
     }
 
     /// The value of a decimal or hexadecimal literal. Octal (a leading zero
-    /// followed by more digits) and suffixes are rejected.
+    /// followed by more digits) and suffixes are rejected (a suffixed
+    /// integer is lexed as a [`TokenKind::Literal`] instead).
     fn number_value(&self, line: usize, digits: &[u8]) -> Result<u64, ImportError> {
         let text = String::from_utf8_lossy(digits);
         let parsed = if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X"))
@@ -427,6 +475,10 @@ impl<'a> Lexer<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ElementKind {
     Byte,
+    /// 16 bits; `signed` for `int16_t`, whose values stop at 0x7FFF.
+    Half {
+        signed: bool,
+    },
     Word,
     Pointer,
 }
@@ -438,6 +490,8 @@ struct Parser<'a> {
     pos: usize,
     defines: &'a BTreeMap<String, u64>,
     tables: BTreeMap<String, Table>,
+    /// When set, the only arrays read; every other declaration is skipped.
+    only: Option<&'a [&'a str]>,
 }
 
 impl<'a> Parser<'a> {
@@ -536,10 +590,21 @@ impl<'a> Parser<'a> {
         head: &[Token],
         eq_line: usize,
     ) -> Result<(), ImportError> {
-        let is_array = head
+        let bracket = head
             .iter()
-            .any(|token| token.kind == TokenKind::Punct(b'['));
-        if !is_array {
+            .position(|token| token.kind == TokenKind::Punct(b'['));
+        if let Some(only) = self.only {
+            let wanted = bracket
+                .and_then(|at| at.checked_sub(1))
+                .and_then(|at| head.get(at))
+                .is_some_and(|token| {
+                    matches!(&token.kind, TokenKind::Ident(name) if only.contains(&name.as_str()))
+                });
+            if !wanted {
+                return self.skip_to_semicolon(eq_line);
+            }
+        }
+        if bracket.is_none() {
             // A scalar initialiser: not an array, but a struct initialiser
             // may hold string-group members. Skip the rest to its `;`.
             if let (
@@ -584,6 +649,7 @@ impl<'a> Parser<'a> {
         }
         let count = match &data {
             TableData::Bytes(values) => values.len(),
+            TableData::Halves(values) => values.len(),
             TableData::Words(values) => values.len(),
             TableData::Pointers(values) => values.len(),
             TableData::StringGroups(groups) => groups.len(),
@@ -774,6 +840,12 @@ impl<'a> Parser<'a> {
                     "uint8_t" | "char" if element.is_none() && !pointer => {
                         element = Some(ElementKind::Byte);
                     }
+                    "int16_t" if element.is_none() && !pointer => {
+                        element = Some(ElementKind::Half { signed: true });
+                    }
+                    "uint16_t" if element.is_none() && !pointer => {
+                        element = Some(ElementKind::Half { signed: false });
+                    }
                     "uint32_t" if element.is_none() && !pointer => {
                         element = Some(ElementKind::Word);
                     }
@@ -842,6 +914,7 @@ impl<'a> Parser<'a> {
         kind: ElementKind,
     ) -> Result<TableData, ImportError> {
         let mut bytes = Vec::new();
+        let mut halves = Vec::new();
         let mut words = Vec::new();
         let mut pointers = Vec::new();
         loop {
@@ -861,6 +934,19 @@ impl<'a> Parser<'a> {
                         )
                     })?;
                     bytes.push(value);
+                }
+                (ElementKind::Half { signed }, TokenKind::Number(value)) => {
+                    let limit = if signed { 0x7FFF } else { 0xFFFF };
+                    let value = u16::try_from(*value)
+                        .ok()
+                        .filter(|value| *value <= limit)
+                        .ok_or_else(|| {
+                            self.syntax(
+                                token.line,
+                                format!("{value} does not fit in the 16-bit `{name}`"),
+                            )
+                        })?;
+                    halves.push(value);
                 }
                 (ElementKind::Word, TokenKind::Number(value)) => {
                     let value = u32::try_from(*value).map_err(|_| {
@@ -907,6 +993,7 @@ impl<'a> Parser<'a> {
         }
         Ok(match kind {
             ElementKind::Byte => TableData::Bytes(bytes),
+            ElementKind::Half { .. } => TableData::Halves(halves),
             ElementKind::Word => TableData::Words(words),
             ElementKind::Pointer => TableData::Pointers(pointers),
         })
@@ -1136,6 +1223,48 @@ mod tests {
         assert_eq!(syntax_line("uint8_t a[3]={1,2};"), Some(1));
         assert_eq!(syntax_line("uint8_t a[]={1};\nuint8_t a[]={2};"), Some(2));
         assert_eq!(syntax_line("uint8_t a[]={1}\nuint8_t b[]={2};"), Some(2));
+    }
+
+    #[test]
+    fn ctable_reads_16_bit_arrays() {
+        let file =
+            parse_text("static const int16_t a[3]={0x7d64, 2, 0};\nuint16_t b[]={0xffff};\n");
+        let Ok(file) = file else {
+            unreachable!("should parse: {file:?}");
+        };
+        assert_eq!(file.halves("a").ok(), Some(&[0x7d64, 2, 0][..]));
+        assert_eq!(file.halves("b").ok(), Some(&[0xffff][..]));
+        assert!(file.bytes("a").is_err());
+        assert_eq!(syntax_line("int16_t a[]={\n0x8000};"), Some(2));
+        // Suffixed integers are skipped in code but rejected in a table.
+        assert!(parse_text("long f(void) { return 0x15a4e35l * 1UL; }").is_ok());
+        assert_eq!(syntax_line("int16_t a[]={1,\n2l};"), Some(2));
+        assert_eq!(syntax_line("int x = 12lx;"), Some(1));
+        assert_eq!(syntax_line("uint16_t a[]={0x10000};"), Some(1));
+    }
+
+    #[test]
+    fn ctable_parse_only_skips_other_declarations() {
+        let text = "#define FIREBALLS 2\n\
+                    static bool flag[FIREBALLS]={false,false},other[UNDEFINED];\n\
+                    static int16_t value[FIREBALLS],n[FIREBALLS]={0,0};\n\
+                    struct s x = { .a = 1 };\n\
+                    static const int16_t wanted[]={1, 2,\n 3};\n\
+                    void f(void) { char c = '}'; if (wanted[0]) { g(\"{\"); } }\n";
+        let file = super::parse_only("fixture.c", text.as_bytes(), &["wanted"]);
+        let Ok(file) = file else {
+            unreachable!("should parse: {file:?}");
+        };
+        assert_eq!(file.halves("wanted").ok(), Some(&[1, 2, 3][..]));
+        assert_eq!(file.tables().count(), 1);
+        // The whole-file reader rejects the same text.
+        assert!(parse_text(text).is_err());
+        // A wanted table is still checked.
+        let error = super::parse_only("fixture.c", b"int16_t w[]={1,,2};", &["w"]).err();
+        assert!(
+            matches!(error, Some(ImportError::Syntax { line: 1, .. })),
+            "{error:?}"
+        );
     }
 
     #[test]
