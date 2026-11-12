@@ -81,6 +81,41 @@ export async function setHidden(page, hidden) {
   }, hidden);
 }
 
+/// Sets the browser viewport to `width` × `height` device pixels, whatever
+/// the project's pixel ratio (`Desktop Safari` has 2 device pixels per CSS
+/// pixel, the other desktop devices 1). The web-build spec states the
+/// canvas sizes in device pixels; returns the pixel ratio.
+export async function setDeviceViewport(page, width, height) {
+  const ratio = await page.evaluate(() => window.devicePixelRatio);
+  await page.setViewportSize({ width: Math.round(width / ratio), height: Math.round(height / ratio) });
+  return ratio;
+}
+
+/// Whether this browser, on this machine, has an audio output a page can
+/// play into: an audio context can be made and its destination takes at
+/// least one channel, which is what the game's output needs. Headless
+/// Firefox and WebKit on a Linux machine without a sound server or sound
+/// card (the GitHub runners) have none: their destination reports 0
+/// channels. Probed on a page of its own in the same browser context, so
+/// the game page sees no gesture and its console no autoplay report.
+export async function hasAudioOutput(context) {
+  const probe = await context.newPage();
+  try {
+    return await probe.evaluate(async () => {
+      try {
+        const audio = new AudioContext();
+        const channels = audio.destination.maxChannelCount;
+        await audio.close();
+        return channels >= 1;
+      } catch {
+        return false;
+      }
+    });
+  } finally {
+    await probe.close();
+  }
+}
+
 /// Text of every notice on the page.
 export async function notices(page) {
   return page.locator("#notices p").allTextContents();

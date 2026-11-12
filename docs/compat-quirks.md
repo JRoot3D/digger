@@ -406,6 +406,40 @@ Playwright project in `web/tests/` (`npx playwright test`).
 | WB1 | The exit key on the title screen does not end the program in a browser, as in upstream's web build (research 05 §8.4): a page is never closed by the game, so the title screen simply runs on; during a game the exit key still ends the game and the title screen follows, and a close request (none comes in a browser) also ends a game on the title screen | Presentation, kept from upstream's web build | `ExitPolicy::StayOnTitle`, set by the web `run` (`shell/mod.rs`, `main.rs`) | `web_exit_stays_on_title` |
 | WB2 | A hidden page (another tab, a minimised window) pauses a game played by a person through the game's own pause phase, as the pause key does, so hidden time consumes no ticks and the gauntlet clock stands still; the request is kept until the core honours it on a main-phase tick (SH2), so a page hidden while a level is still being drawn pauses once play starts. The title screen and playbacks only stop stepping while hidden and go on by themselves when the page is shown again (port decision, as SH5) | Port decision | `Shell::event` on `AppEvent::Visibility` (`shell/mod.rs`) with `Pause` (`shell/play.rs`); the web driver stops stepping and audio while hidden (`platform/web/app.rs`) | `hidden_during_play_enters_pause_phase`, `hidden_during_playback_resumes_alone`; Playwright `a hidden page stops the game, which shows its pause when visible again` |
 
+Facts of the browsers the smoke tests run in (release job `web`, GitHub's
+`ubuntu-24.04` runners), which the tests take into account without
+changing what they prove where the browser can show it:
+
+- **No audio output in headless Firefox and WebKit on the runners.** The
+  runners have neither a sound card nor a sound server; Firefox and WebKit
+  then give a page an audio context whose destination takes 0 channels,
+  so the game cannot open its output when the first key press unlocks the
+  audio. That is the spec's "No audio device" scenario, and the page
+  behaves as it says: `data-audio` becomes `failed`, the notice "Sound is
+  unavailable" appears and the game starts from the same key press.
+  Headless Chromium has a fake output and reaches `running`. The test
+  `sound waits for a key press, which still starts the game` therefore
+  first probes, on a page of its own, whether the browser offers an output
+  with at least one channel: with one it requires `running`, without one
+  it requires `failed` and the notice; the prompt, the started game and
+  the absence of an autoplay report are checked either way. The probe asks
+  the machine, not the engine's name, so a runner with a sound server
+  makes every engine prove `running`.
+- **WebKit's desktop device has 2 device pixels per CSS pixel.**
+  Playwright's `Desktop Safari` sets `devicePixelRatio` 2 (Chrome and
+  Firefox: 1). The canvas tests set the viewport in device pixels, as the
+  spec's scenarios state them (`setDeviceViewport` in
+  `web/tests/specs/fixtures.js`), so 1920×1080 device pixels is 960×540
+  CSS pixels there and the canvas is 1280×800 device pixels, 640×400 CSS
+  pixels. A separate test pins the spec's high-density scenario (1280×720
+  CSS pixels at ratio 2: 1920×1200, scale 3) in every engine.
+- **At speed 0 a short playback can end between two polls.** Firefox runs
+  all 1,024 ticks of `2riptest01.edrf` before the test's first poll of
+  `data-phase` could see `playback`; the result shown was the recorded
+  one, so this was no divergence. The recording tests collect every value the page sets
+  (a mutation observer) and check the sequence instead of polling for the
+  passing phase.
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user

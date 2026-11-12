@@ -15,21 +15,71 @@ const expected = (name) =>
 /// page's recording file input.
 const pick = (page, file) => page.locator("#recording-file").setInputFiles(file);
 
+/// Starts collecting every value the page root's `data-phase` and
+/// `data-audio`, and the sound prompt's `hidden`, take from now on, each
+/// in the order set (the current one first, repeats dropped).
+const watchStatus = (page) =>
+  page.evaluate(() => {
+    const root = document.documentElement;
+    const prompt = document.getElementById("sound-prompt");
+    const seen = { phase: [], audio: [], promptHidden: [] };
+    const note = (list, value) => {
+      if (list[list.length - 1] !== value) list.push(value);
+    };
+    const now = () => {
+      note(seen.phase, root.dataset.phase);
+      note(seen.audio, root.dataset.audio);
+      note(seen.promptHidden, prompt.hidden);
+    };
+    now();
+    // A record per change, with the value it replaced: within one
+    // animation callback the playback may set a phase and leave it again.
+    const handle = (records) => {
+      for (const record of records) {
+        const list =
+          record.target === prompt
+            ? seen.promptHidden
+            : record.attributeName === "data-phase"
+              ? seen.phase
+              : seen.audio;
+        note(list, record.target === prompt ? record.oldValue !== null : record.oldValue);
+      }
+      now();
+    };
+    const observer = new MutationObserver(handle);
+    observer.observe(root, { attributes: true, attributeOldValue: true, attributeFilter: ["data-phase", "data-audio"] });
+    observer.observe(prompt, { attributes: true, attributeOldValue: true, attributeFilter: ["hidden"] });
+    window.__statusSeen = () => {
+      handle(observer.takeRecords());
+      return seen;
+    };
+  });
+
+/// What [`watchStatus`] collected.
+const statusSeen = (page) => page.evaluate(() => window.__statusSeen());
+
 for (const name of ["2test01.drf", "2riptest01.edrf"]) {
   for (const prompt of [false, true]) {
     const query = prompt ? "?speed=0" : "?speed=0&quiet";
     test(`${name} plays back to its recorded result (${query})`, async ({ page }) => {
       await open(page, query);
+      await watchStatus(page);
       await pick(page, recording(name));
-      await expect(page.locator("html")).toHaveAttribute("data-phase", "playback");
+      // The result is shown when the playback ends, and the title screen
+      // follows.
+      await expect(page.locator("html")).toHaveAttribute("data-result", expected(name), { timeout: 45_000 });
+      await expect(page.locator("html")).toHaveAttribute("data-phase", "title");
+      const seen = await statusSeen(page);
+      // The playback ran: at speed 0 a short recording can be over before
+      // a poll of the attribute would see it, so every value the page set
+      // is checked instead.
+      expect(seen.phase).toContain("playback");
       if (prompt) {
         // The prompt is visible throughout and changes nothing.
+        expect(seen.audio).toEqual(["locked"]);
+        expect(seen.promptHidden).toEqual([false]);
         await expect(page.locator("#sound-prompt")).toBeVisible();
-        await expect(page.locator("html")).toHaveAttribute("data-audio", "locked");
       }
-      await expect(page.locator("html")).toHaveAttribute("data-phase", "title", { timeout: 45_000 });
-      await expect(page.locator("html")).toHaveAttribute("data-result", expected(name));
-      if (prompt) await expect(page.locator("#sound-prompt")).toBeVisible();
       expect(await notices(page)).toEqual([]);
     });
   }

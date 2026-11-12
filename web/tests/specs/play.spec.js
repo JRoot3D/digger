@@ -2,7 +2,17 @@
 // callback, canvas presentation and scaling, audio starts only after a user
 // gesture, hidden tab pauses the game).
 
-import { test, expect, open, attribute, frames, press, setHidden } from "./fixtures.js";
+import {
+  test,
+  expect,
+  open,
+  attribute,
+  frames,
+  press,
+  setHidden,
+  setDeviceViewport,
+  hasAudioOutput,
+} from "./fixtures.js";
 
 /// Console lines in which a browser reports audio held back for want of a
 /// user gesture.
@@ -20,34 +30,59 @@ test("a key press starts a game that runs at 12.5 frames per second", async ({ p
   expect(after - before).toBeLessThanOrEqual(131);
 });
 
+/// The canvas's backing store, in device pixels, and its size on the page,
+/// in CSS pixels.
+const canvasSize = (page) =>
+  page.evaluate(() => {
+    const canvas = document.getElementById("game");
+    const box = canvas.getBoundingClientRect();
+    return { backing: [canvas.width, canvas.height], css: [box.width, box.height] };
+  });
+
+// The viewport sizes are device pixels, as in the spec's scenarios; on a
+// project with 2 device pixels per CSS pixel (WebKit's `Desktop Safari`)
+// the page is half as many CSS pixels wide and high.
 for (const [width, height, canvasWidth, canvasHeight, scale] of [
   [1920, 1080, 1280, 800, "2"],
   [1000, 700, 640, 400, "1"],
 ]) {
   test(`a ${width}x${height} viewport gives a ${canvasWidth}x${canvasHeight} canvas`, async ({ page }) => {
-    await page.setViewportSize({ width, height });
+    const ratio = await setDeviceViewport(page, width, height);
     await open(page, "?quiet");
-    const backing = () =>
-      page.evaluate(() => {
-        const canvas = document.getElementById("game");
-        return [canvas.width, canvas.height];
-      });
-    await expect.poll(backing).toEqual([canvasWidth, canvasHeight]);
+    await expect
+      .poll(async () => (await canvasSize(page)).backing)
+      .toEqual([canvasWidth, canvasHeight]);
     await expect(page.locator("html")).toHaveAttribute("data-scale", scale);
+    // Each backing pixel is one device pixel.
+    expect((await canvasSize(page)).css).toEqual([canvasWidth / ratio, canvasHeight / ratio]);
   });
 }
 
+test.describe("on a display with 2 device pixels per CSS pixel", () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  test("a 1280x720 viewport gives a 1920x1200 canvas at scale 3", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await open(page, "?quiet");
+    await expect.poll(async () => (await canvasSize(page)).backing).toEqual([1920, 1200]);
+    await expect(page.locator("html")).toHaveAttribute("data-scale", "3");
+    expect((await canvasSize(page)).css).toEqual([960, 600]);
+  });
+});
+
 test("the viewport shrinking during a game changes the scale", async ({ page }) => {
-  await page.setViewportSize({ width: 1920, height: 1080 });
+  await setDeviceViewport(page, 1920, 1080);
   await open(page, "?quiet");
+  await expect(page.locator("html")).toHaveAttribute("data-scale", "2");
   await press(page, "Enter");
   await expect(page.locator("html")).toHaveAttribute("data-phase", "playing");
-  await page.setViewportSize({ width: 1000, height: 700 });
+  await setDeviceViewport(page, 1000, 700);
   await expect(page.locator("html")).toHaveAttribute("data-scale", "1");
   await expect(page.locator("html")).toHaveAttribute("data-phase", "playing");
 });
 
-test("sound waits for a key press, which still starts the game", async ({ page, watch }) => {
+test("sound waits for a key press, which still starts the game", async ({ page, context, watch }) => {
+  const output = await hasAudioOutput(context);
   await open(page);
   expect(await attribute(page, "audio")).toBe("locked");
   await expect(page.locator("#sound-prompt")).toBeVisible();
@@ -56,7 +91,17 @@ test("sound waits for a key press, which still starts the game", async ({ page, 
   expect(await attribute(page, "audio")).toBe("locked");
   await expect(page.locator("#sound-prompt")).toBeVisible();
   await press(page, "Enter");
-  await expect(page.locator("html")).toHaveAttribute("data-audio", "running");
+  if (output) {
+    await expect(page.locator("html")).toHaveAttribute("data-audio", "running");
+  } else {
+    // This machine has no audio output for the browser to open (headless
+    // Firefox and WebKit on a Linux runner without a sound server: see
+    // docs/compat-quirks.md, web build). The key press still unlocks the
+    // audio, which fails as the spec's "No audio device" scenario says:
+    // the game goes on in silence and the page says sound is unavailable.
+    await expect(page.locator("html")).toHaveAttribute("data-audio", "failed");
+    await expect(page.locator("#notices p", { hasText: "Sound is unavailable" })).toHaveCount(1);
+  }
   await expect(page.locator("#sound-prompt")).toBeHidden();
   await expect(page.locator("html")).toHaveAttribute("data-phase", "playing");
   expect(watch.console.filter((line) => AUTOPLAY.test(line))).toEqual([]);
