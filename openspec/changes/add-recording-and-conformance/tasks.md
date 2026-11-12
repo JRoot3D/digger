@@ -97,9 +97,9 @@ at a time and group 13 forbids any that remain.
 
 ## 11. Malformed-input hardening
 
-- [ ] 11.1 Add `malformed_input.rs` with a deterministic mutation generator (fixed seeds, no new dependency): 10000 inputs from byte flips, deletions, insertions, line duplications and truncations of the quick-tier corpus files, each parsed and, if it parses, replayed with `max_ticks` set; verify no panic and every run ends with a report or an error (`mutated_recordings_never_panic`)
-- [ ] 11.2 Add prefix and resource tests: every 97th-byte prefix of each quick-tier file is parsed and replayed (`prefixes_are_never_verified`: an eDRF prefix is failed, stopped, truncated or a header error unless it is the whole file; DRF prefixes end without panic); `I @4000000000`, the DRF run `s4000000000`, a 10 MB line and a file of 1 000 000 blank lines each complete in under one second without large allocation (`huge_counts_and_lines_are_cheap`); verify both tests pass and fix any finding in the codecs
-- [ ] 11.3 Run the gate and commit (`test(core): harden recording codecs against malformed input`)
+- [x] 11.1 Add `malformed_input.rs` with a deterministic mutation generator (fixed seeds, no new dependency): 10000 inputs from byte flips, deletions, insertions, line duplications and truncations of the quick-tier corpus files, each parsed and, if it parses, replayed with `max_ticks` set; verify no panic and every run ends with a report or an error (`mutated_recordings_never_panic`)
+- [x] 11.2 Add prefix and resource tests: every 97th-byte prefix of each quick-tier file is parsed and replayed (`prefixes_are_never_verified`: an eDRF prefix is failed, stopped, truncated or a header error unless it is the whole file; DRF prefixes end without panic); `I @4000000000`, the DRF run `s4000000000`, a 10 MB line and a file of 1 000 000 blank lines each complete in under one second without large allocation (`huge_counts_and_lines_are_cheap`); verify both tests pass and fix any finding in the codecs (finding: a bad-record or bad-header error kept a full copy of its line, 10 MB for a 10 MB line; errors now keep an 80-byte excerpt, `EXCERPT_BYTES`)
+- [x] 11.3 Run the gate and commit (`test(core): harden recording codecs against malformed input`)
 
 ## 12. Divergence triage — make the upstream recordings pass
 

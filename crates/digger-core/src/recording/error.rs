@@ -43,12 +43,12 @@ pub enum HeaderProblem {
     },
     /// The mode line does not match the mode grammar.
     BadModeLine {
-        /// The line as found.
+        /// The line as found, cut as by [`EXCERPT_BYTES`].
         text: String,
     },
     /// The bonus-score line is not a decimal number from 0 to 65535.
     BadBonusScore {
-        /// The line as found.
+        /// The line as found, cut as by [`EXCERPT_BYTES`].
         text: String,
     },
 }
@@ -121,6 +121,24 @@ impl fmt::Display for ByteText {
     }
 }
 
+/// The most bytes of a line an error keeps (game-recording spec, "Malformed
+/// input never crashes"): an error about a 10 MB line holds and shows its
+/// first [`EXCERPT_BYTES`] bytes and a `...` mark, not a copy of the line.
+pub const EXCERPT_BYTES: usize = 80;
+
+/// `text` as kept in an error: lossily decoded, and cut after
+/// [`EXCERPT_BYTES`] bytes with `...` appended when it is longer.
+pub(crate) fn excerpt(text: &[u8]) -> String {
+    match text.get(..EXCERPT_BYTES) {
+        Some(head) if text.len() > EXCERPT_BYTES => {
+            let mut kept = String::from_utf8_lossy(head).into_owned();
+            kept.push_str("...");
+            kept
+        }
+        _ => String::from_utf8_lossy(text).into_owned(),
+    }
+}
+
 /// A recording that cannot be read or played (design D2).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -130,7 +148,7 @@ pub enum RecordingError {
     /// The version line dates the recording to 19981125 or earlier
     /// (game-recording spec, "Pre-1998 recordings are rejected").
     UnsupportedVersion {
-        /// The version line as found.
+        /// The version line as found, cut as by [`EXCERPT_BYTES`].
         version_line: String,
     },
     /// A header line is missing or malformed.
@@ -144,7 +162,7 @@ pub enum RecordingError {
     BadRecord {
         /// The 1-based line number.
         line: u32,
-        /// The line as found.
+        /// The line as found, cut as by [`EXCERPT_BYTES`].
         text: String,
     },
     /// The DRF body is malformed where playback read it.
@@ -336,5 +354,20 @@ mod tests {
         };
         assert_eq!(error.location(), Some(Location::Offset(3)));
         assert_eq!(Location::Offset(3).to_string(), "offset 3");
+    }
+
+    #[test]
+    fn errors_keep_an_excerpt_of_a_long_line() {
+        assert_eq!(excerpt(b"M3"), "M3");
+        let exact = "7".repeat(EXCERPT_BYTES);
+        assert_eq!(excerpt(exact.as_bytes()), exact);
+        let huge = "7".repeat(10 * 1024 * 1024);
+        let kept = excerpt(huge.as_bytes());
+        assert_eq!(kept.len(), EXCERPT_BYTES + 3);
+        assert!(kept.ends_with("7..."));
+        // A cut inside a multi-byte character is decoded lossily.
+        let mut text = vec![b'a'; EXCERPT_BYTES - 1];
+        text.extend_from_slice("\u{e9}\u{e9}".as_bytes());
+        assert!(excerpt(&text).ends_with("a\u{fffd}..."));
     }
 }

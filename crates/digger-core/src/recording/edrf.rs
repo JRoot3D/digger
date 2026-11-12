@@ -14,7 +14,7 @@
 
 use std::collections::VecDeque;
 
-use super::error::RecordingError;
+use super::error::{RecordingError, excerpt};
 use super::header::{Header, Line, LineReader, RecordingKind};
 use crate::sim::{Controls, LevelLayout, SlotId};
 
@@ -216,7 +216,7 @@ pub struct EndRecord {
 fn bad(line: &Line<'_>) -> RecordingError {
     RecordingError::BadRecord {
         line: line.number,
-        text: String::from_utf8_lossy(line.text).into_owned(),
+        text: excerpt(line.text),
     }
 }
 

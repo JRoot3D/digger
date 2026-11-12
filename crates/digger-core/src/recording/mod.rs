@@ -34,7 +34,7 @@ pub use edrf::{
     InputRecord, LevelMap, LevelRecord, Record, Run,
 };
 
-pub use error::{DrfProblem, HeaderProblem, Location, RecordingError};
+pub use error::{DrfProblem, EXCERPT_BYTES, HeaderProblem, Location, RecordingError};
 pub(crate) use header::{DRF_FIRST_LINE_TEXT, EDRF_FIRST_LINE_TEXT};
 pub use header::{
     Header, LAST_UNSUPPORTED_DATE, RecordingKind, WRITER_VERSION_LINE, detect_kind, mode_line_for,

@@ -380,7 +380,12 @@ Integration tests in `crates/digger-core/tests/`:
 
 CI: the existing test job runs `cargo test --workspace` (quick tier, debug
 build, overflow checks on — useful, since a wrapping operation that was
-written as plain arithmetic panics here). A new `conformance` job runs
+written as plain arithmetic panics here). `digger-core` itself is built
+with `opt-level = 2` in the test profile (`[profile.test.package.digger-core]`
+in the workspace manifest): debug assertions and overflow checks stay on,
+but the thousands of short playbacks of `malformed_input.rs` and the quick
+tier take seconds instead of the quarter of an hour an unoptimised build
+needs (found while doing task 11.2). A new `conformance` job runs
 `cargo test --release -p digger-core --test conformance -- --include-ignored`
 on Linux, and uploads `target/conformance/report.md` from `cargo xtask
 conformance --tier full`. The quick tier also runs on Windows and macOS

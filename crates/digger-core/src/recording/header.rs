@@ -7,7 +7,7 @@
 //! Lines end in LF or CR LF; a last line without a line end is still a
 //! header line.
 
-use super::error::{HeaderProblem, RecordingError};
+use super::error::{HeaderProblem, RecordingError, excerpt};
 use crate::sim::{GameMode, StartLevel};
 
 /// The first line of an eDRF recording.
@@ -303,22 +303,26 @@ impl Header {
             line: VERSION_LINE,
             reason: HeaderProblem::MissingVersionLine,
         })?;
-        let version_line = String::from_utf8_lossy(version.text).into_owned();
         if !version_supported(version.text) {
-            return Err(RecordingError::UnsupportedVersion { version_line });
+            return Err(RecordingError::UnsupportedVersion {
+                version_line: excerpt(version.text),
+            });
         }
+        let version_line = String::from_utf8_lossy(version.text).into_owned();
 
         let mode = lines.next_line().ok_or(RecordingError::BadHeader {
             line: MODE_LINE,
             reason: HeaderProblem::MissingModeLine,
         })?;
-        let mode_line = String::from_utf8_lossy(mode.text).into_owned();
         let Some((game_mode, start_level)) = parse_mode_line(mode.text) else {
             return Err(RecordingError::BadHeader {
                 line: MODE_LINE,
-                reason: HeaderProblem::BadModeLine { text: mode_line },
+                reason: HeaderProblem::BadModeLine {
+                    text: excerpt(mode.text),
+                },
             });
         };
+        let mode_line = String::from_utf8_lossy(mode.text).into_owned();
 
         let bonus = lines.next_line().ok_or(RecordingError::BadHeader {
             line: BONUS_LINE,
@@ -328,7 +332,7 @@ impl Header {
             return Err(RecordingError::BadHeader {
                 line: BONUS_LINE,
                 reason: HeaderProblem::BadBonusScore {
-                    text: String::from_utf8_lossy(bonus.text).into_owned(),
+                    text: excerpt(bonus.text),
                 },
             });
         };

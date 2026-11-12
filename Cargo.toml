@@ -46,3 +46,10 @@ cast_possible_truncation = "warn"
 disallowed_types = "allow"
 disallowed_methods = "allow"
 disallowed_macros = "allow"
+
+# The simulation is optimised in test builds, so that the quick conformance
+# tier and the malformed-input tests (thousands of short playbacks) run in
+# seconds; debug assertions and overflow checks stay on, as in any test
+# build (design D11 of add-recording-and-conformance).
+[profile.test.package.digger-core]
+opt-level = 2
