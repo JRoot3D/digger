@@ -77,7 +77,7 @@ jobs:
             runner: windows-2022
             ext: zip
           - platform: macos-universal
-            runner: macos-14
+            runner: macos-15
             ext: tar.gz
     defaults:
       run:

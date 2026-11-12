@@ -96,7 +96,7 @@ tag again.
 | `linux-x86_64` | `ubuntu-22.04` | `cargo xtask dist --platform linux-x86_64`: `digger-V-linux-x86_64.tar.gz` |
 | `linux-aarch64` | `ubuntu-22.04-arm` | The same on a hosted arm64 runner: `digger-V-linux-aarch64.tar.gz` |
 | `windows-x86_64` | `windows-2022` | MSVC build with the C runtime linked statically: `digger-V-windows-x86_64.zip` |
-| `macos-universal` | `macos-14` | Both Apple targets, joined with `lipo`, ad-hoc signed, in `Digger.app`: `digger-V-macos-universal.tar.gz` |
+| `macos-universal` | `macos-15` | Both Apple targets, joined with `lipo`, ad-hoc signed, in `Digger.app`: `digger-V-macos-universal.tar.gz` |
 | `web` | `ubuntu-24.04` | `cargo xtask dist --platform web` (`digger-V-web.tar.gz`), then the Playwright smoke tests in Chromium, Firefox and WebKit against the `site/` of that archive |
 | `reproducible` | `ubuntu-22.04` | Builds the Linux x86_64 and the web archive twice each, in two copies of the tree in different directories, and fails unless the SHA-256 values agree |
 | `publish` | `ubuntu-24.04` | Collects the five archives, writes `SHA256SUMS` (one `sha256  file` line per archive, sorted by name), creates the draft release with all six files, and deploys the web `site/` to GitHub Pages unless the tag has a pre-release suffix |
