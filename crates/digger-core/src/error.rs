@@ -11,6 +11,7 @@ use crate::sim::{ConfigError, LevelError};
 
 /// A failure to decode embedded asset data.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AssetError {
     /// The title stream is not a valid zlib stream.
     TitleInflate,

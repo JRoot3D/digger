@@ -349,6 +349,7 @@ impl Default for MonsterSetup {
 
 /// A set-up that would put the game into a state it cannot reach.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SetupError {
     /// The digger record is not in play in this mode.
     DiggerNotInPlay {

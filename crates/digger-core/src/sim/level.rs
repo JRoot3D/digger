@@ -376,6 +376,7 @@ fn is_q07_cell(plan: LevelPlan, cell: CellPos) -> bool {
 
 /// Level data that cannot be used (design D10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum LevelError {
     /// Custom level data is shorter than the bonus step and eight layouts.
     TooShort {

@@ -225,6 +225,7 @@ pub struct GameConfig {
 
 /// A configuration that cannot be played (design D10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ConfigError {
     /// Two alternating players combined with two simultaneous diggers.
     TwoPlayersWithTwoDiggers,
