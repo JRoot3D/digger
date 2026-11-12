@@ -234,15 +234,15 @@ None of these affects the simulation: the sound engine never feeds back
 into the game. They are listed because this file is the project's single
 register (design D14 of `add-sound-engine`). Test names are those of the
 `digger-sound` crate, with the module path for library tests; run one with
-`cargo test -p digger-sound <name>`. Entries SF7, SF8 and SF10 are added
-with the synthesis and drivers.
+`cargo test -p digger-sound <name>`. Entries SF7 and SF8 are added with
+the drivers.
 
 Kept (the audible shape of the original):
 
 | Id | Quirk | Class | Isolated in | Test |
 |---|---|---|---|---|
 | SQ1 | A divisor of 16384 (0x4000) or more is silent, so the death effect is heard only on ticks 4 to 22 of its 51 while it displaces music on all 51 (research 04 §1.2, §2) | Presentation, kept | `Voice::tone` (`crates/digger-sound/src/voice.rs`) | `death_is_audible_on_ticks_4_to_22` (`tests/effects_trace.rs`) |
-| SQ2 | A tone's frequency is `1193181 / divisor` with integer division, so every frequency is a whole number of Hz (research 04 §1.2) | Presentation, kept | `Divisor::hertz` (`crates/digger-sound/src/units.rs`) | `units::tests::divisor_division_truncates` |
+| SQ2 | A tone's frequency is `1193181 / divisor` with integer division, so every frequency is a whole number of Hz (research 04 §1.2); the square-wave generator plays exactly this whole-Hz frequency, so a tone's wave repeats exactly once per second | Presentation, kept | `Divisor::hertz` (`crates/digger-sound/src/units.rs`), used by `Voice::tone` and `SquareOsc` (`crates/digger-sound/src/osc.rs`) | `units::tests::divisor_division_truncates`, `osc::tests::one_second_of_523_hz_has_1046_transitions` |
 | SQ3 | Effect priority is the original's updater order (the last effect to offer a divisor on a tick is heard), and an effect that offers nothing on a tick lets a lower one through; with both fireballs sounding the one heard alternates by a round-robin turn that is kept across ticks and stop-all (research 04 §1.3, §2) | Presentation, kept | `Effects::tick` and `Turn` (`crates/digger-sound/src/effects/mod.rs`) | `effect_priority_pairs`, `two_fireballs_alternate`, `two_explosions_alternate` (`tests/effects_trace.rs`) |
 | SQ4 | A fire-start for a flying fireball resets its base divisor to 500 but not its two-tick cadence; fire-stop and explode reset both (research 04 §2) | Presentation, kept | `FireSlot` (`crates/digger-sound/src/effects/fire.rs`) | `fire_restart_keeps_cadence` (`tests/effects_trace.rs`) |
 | SQ5 | Gold and death still sound on the tick on which they end, so they last 31 and 51 ticks (research 04 §2) | Presentation, kept | `Step { offer, done }` (`crates/digger-sound/src/effects/mod.rs`), `Gold` and `Death` | `gold_lasts_31_ticks`, `death_lasts_51_ticks` (`tests/effects_trace.rs`) |
@@ -273,6 +273,19 @@ Fixed (presentation bugs, with the reason):
 | SF5 | A dirge requested with music off switches the music flag on and restores it later (at the dirge's first rest or at stop-music), a hidden state that a toggle in between could leave wrong | The dirge plays and advances whatever the music switch says, and never changes the switch: after it, a normal-tune request stays silent while music is off | the `music_on \|\| dirge` rule in `Synth::advance` (`crates/digger-sound/src/synth.rs`) | `dirge_plays_with_music_off` (`tests/music_trace.rs`) |
 | SF6 | The fall effect's on/off phase survives a stop and a restart, so a restarted fall may sound up to 2 ticks (27 ms) earlier or later | A fall-start always begins the same cycle, tone on its third tick at divisor 1000 | `Fall::new` (`crates/digger-sound/src/effects/fall.rs`) | `fall_first_three_tones`, `fall_restart_begins_same_cycle` (`tests/effects_trace.rs`) |
 | SF9 | The emerald step indexes the divisor table without a bounds check; the jingle's tone gate divides by the beat frequency, which is a division by zero if the two frequencies were equal | `EmeraldStep` holds only 0 to 7, so the lookup cannot go out of range; the beat is computed from two valid divisors and 0 Hz means "never gated off" | `emerald_divisor` (`crates/digger-sound/src/effects/emerald.rs`), `jingle::beat` (`crates/digger-sound/src/jingle.rs`) | `effects::tests::emerald_step_range`, `jingle::tests::zero_beat_is_ungated` |
+| SF10 | The output filter (high-pass 1000 Hz, then low-pass 4000 Hz) is a compile-time choice that differs between the build systems: the GNU makefile builds raw square waves, the CMake and FreeBSD builds filter (research 04 §4.2) | A runtime switch, on by default as in the CMake build; switching it on clears the filter's state, so a toggle is deterministic | `OutputFilter` (`crates/digger-sound/src/filter.rs`), the `SetFilter` arm of `Synth::apply_control` (`crates/digger-sound/src/synth.rs`) | `synth::tests::filter_toggle`, `filter::tests::coefficients_at_44100` |
+
+Generator tolerance (design D6). The port does not reproduce the
+original's floating-point generator sample for sample: it plays each tone
+with an exact integer phase accumulator. Against the original, each level
+change of a square wave may fall up to one sample earlier or later, and the
+phase of a tone that starts after a silent tick restarts at 0. Against the
+port itself there is no tolerance: tick traces and unfiltered samples are
+exact and the same on every platform. Filtered output uses `f64` and
+`f64::tan`, so it may differ in the last bit between platforms and is
+checked by tolerance tests only. Tests:
+`osc::tests::phase_kept_across_frequency_change`, `generator_props`
+(`tests/generator_props.rs`), `synth::tests::render_is_chunk_size_independent`.
 
 The user pause and the jingle's freeze are kept apart. The original uses
 one flag for both, so a resume during the jingle would unfreeze effects and

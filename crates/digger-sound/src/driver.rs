@@ -56,6 +56,31 @@ impl ManualDriver {
         (0..n).map(|_| self.tick()).collect()
     }
 
+    /// Renders the next `n` samples, ticking before samples N-1, 2N-1, ...
+    /// of the stream (N samples per tick).
+    ///
+    /// Inputs sent before the call are applied, in order, immediately
+    /// before the first tick that falls within these samples. Ticks run by
+    /// [`ManualDriver::advance_ticks`] do not move the sample position.
+    pub fn render(&mut self, n: usize) -> Vec<i16> {
+        let mut out = vec![0; n];
+        self.render_into(&mut out);
+        out
+    }
+
+    /// Fills `out` with the next samples, as [`ManualDriver::render`].
+    pub fn render_into(&mut self, out: &mut [i16]) {
+        let pending = &mut self.pending;
+        let events = &mut self.events;
+        self.synth.render_with(out, |synth| {
+            for input in pending.drain(..) {
+                synth.apply(input);
+            }
+            events.extend(synth.take_events());
+        });
+        self.events.extend(self.synth.take_events());
+    }
+
     /// Takes the events reported since the last call, oldest first.
     pub fn events(&mut self) -> Vec<SoundEvent> {
         core::mem::take(&mut self.events)

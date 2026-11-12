@@ -17,7 +17,12 @@
 //!   decide whether it is audible, and the [`TickTrace`] a tick reports.
 //! - [`noise`]: the engine's own [`NoiseRng`].
 //! - [`effects`]: the effect slots and the order in which they are heard.
-//! - [`synth`]: the pure core, [`Synth`], which applies inputs and ticks.
+//! - [`osc`]: the square-wave generator, [`SquareOsc`], and the jingle's
+//!   [`Gate`].
+//! - [`filter`]: the optional [`OutputFilter`] (high-pass 1 kHz, then
+//!   low-pass 4 kHz).
+//! - [`synth`]: the pure core, [`Synth`], which applies inputs, ticks and
+//!   renders samples.
 //! - [`driver`]: [`ManualDriver`], which runs the engine without a device,
 //!   and the [`SoundSink`] sending interface.
 
@@ -27,9 +32,11 @@ pub mod command;
 pub mod config;
 pub mod driver;
 pub mod effects;
+pub mod filter;
 pub mod jingle;
 pub mod music;
 pub mod noise;
+pub mod osc;
 pub mod synth;
 pub mod units;
 pub mod voice;
@@ -39,9 +46,11 @@ pub use command::{
 };
 pub use config::{ConfigError, SoundConfig};
 pub use driver::{ManualDriver, SoundSink};
+pub use filter::{FirstOrder, OutputFilter};
 pub use jingle::LevelDone;
 pub use music::{MusicPlayer, Note, TableError, TuneParams, TuneTables};
 pub use noise::NoiseRng;
+pub use osc::{Gate, SquareOsc};
 pub use synth::Synth;
 pub use units::{Divisor, Hertz, Level, SampleRate, SoundTicks, Volume};
 pub use voice::{TickTrace, Tone, Voice};
