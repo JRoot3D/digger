@@ -23,14 +23,19 @@ runs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
         fi
-    # rustup reads rust-toolchain.toml (Rust 1.99, the wasm32 and Apple
-    # targets).
+    # rustup reads rust-toolchain.toml (Rust 1.99 and the wasm32 target).
     - name: Install the pinned toolchain
       shell: bash
       run: |
         rustup toolchain install
         rustc --version
         cargo --version
+    # The universal macOS build needs both Apple targets; rust-toolchain.toml
+    # leaves them out so other machines do not download them.
+    - name: Add the Apple targets
+      if: runner.os == 'macOS'
+      shell: bash
+      run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
     # cpal (ALSA) and gilrs (libudev) find the system libraries through
     # pkg-config when the desktop crate is built on Linux.
     - name: Install the ALSA and udev development packages
