@@ -41,6 +41,7 @@ src/
   config/
     mod.rs           `Settings` (resolved), `Layer` (all-Option), merge, validate
     file.rs          TOML read (table walk with key paths), write, atomic save
+    schema.rs        the static schema table (path, type, range, default, comment)
     paths.rs         platform directories, `--config` / `--data-dir` overrides
   scores/
     mod.rs           `ScoreTable`, `TableKey`, qualify, insert
@@ -212,6 +213,16 @@ clap then parses a derive struct with long options only (plus `-h`, `-V`), one o
 - The file is parsed into a `toml::Table` and walked against a static schema table (`path`, type, range, default). Walking by hand rather than deriving gives errors that carry the full key path and the offending value, lets unknown keys be warnings, and keeps range rules in one place that the default-file writer and the manual's table are generated from (a test compares `docs/manual.md`'s settings table with the schema).
 - `GameMode` is a five-variant enum; "two players and two diggers" cannot be represented after resolution. This is the configuration-time rejection the porting plan asks for in place of upstream's out-of-bounds indexing.
 - Saving: `Shell` keeps a `Layer` of runtime changes (only fields the player changed with actions). On save, the file layer is re-read (or defaults if absent), the runtime layer is applied on top, and the complete file is written with a one-line header comment. Writes go to `config.toml.tmp` in the same directory followed by a rename. Comments a user added by hand are lost on save; the manual says so.
+
+Details settled in task group 2 (no spec conflict; each is a reading of the `configuration` and `input-controls` specs):
+
+- A key bound to two actions is checked on the file's bindings *together with the defaults of the actions the file leaves out*: `p1_fire = ["Space"]` alone is refused, because `pause` keeps its default `Space`; the message names the key, both actions and the key path of the action the file set.
+- The same rule applies to the `[gamepad]` button lists (one button, one pad action). A key or button listed twice under one action, and an empty `[keys]` list ("one or more key names"), are refused; an empty button list is allowed (`quit = []` is the default).
+- Key and button names are matched exactly, then ignoring letter case (`space` reads as `Space`); the file is always written with the canonical spelling.
+- The directional pad is not a bindable button name (non-goal: no d-pad remapping); bindable names are `South East North West C Z LeftTrigger LeftTrigger2 RightTrigger RightTrigger2 Select Start Mode LeftThumb RightThumb`.
+- A whole number is accepted for `gamepad.dead_zone`; a fraction is refused for an integer setting.
+- A save whose complete text equals the file already on disk writes nothing; a file that has become invalid since start is left untouched and the save is reported as a notice.
+- With no home directory and no `--config` / `--data-dir`, the program stops with status 78 naming both options.
 
 Config file schema (all keys, defaults shown):
 

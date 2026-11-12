@@ -12,12 +12,12 @@ Conventions for every group: work from the specs in this change and `docs/resear
 
 ## 2. Settings model and configuration file
 
-- [ ] 2.1 Define `Settings`, `Layer`, `GameMode`, `ScaleMode`, `Speed`/`FrameTime` and the static schema table (path, type, range, default) for every key of the `configuration` spec. Verify: unit test `schema_defaults_match_spec` checks each default (speed 40, sample rate 44100, buffer 512, volume 100, dead zone 0.5, …).
-- [ ] 2.2 Implement `KeyName` (W3C code names) and `PadButton` name parsing and printing, and the default `[keys]` and `[gamepad]` bindings. Verify: unit tests `key_names_round_trip` and `default_bindings_unique` (20 actions, no key twice).
-- [ ] 2.3 Implement reading the file by walking the TOML table against the schema: type, range, unknown names, duplicate key bindings, unknown keys as warnings. Verify: unit tests `config_out_of_range_names_key`, `config_duplicate_binding`, `config_unknown_key_warns`, `config_invalid_toml`.
-- [ ] 2.4 Implement `Settings::resolve` (defaults < file < command line; mode taken from the command line as a whole). Verify: unit tests `precedence_cli_over_file` and `mode_option_replaces_file_mode`.
-- [ ] 2.5 Implement saving: runtime-change layer over the re-read file, complete file with header comment, write to `config.toml.tmp` and rename, directory creation. Verify: unit tests `first_save_writes_all_keys`, `cli_values_not_saved`, `no_change_no_write` in a temporary directory. Include platform paths (`config.toml`, data directory) with the `--config` and `--data-dir` overrides, verified by `paths_overrides` and per-platform expectations under `#[cfg(target_os)]`.
-- [ ] 2.6 Run the three workspace checks; commit `feat(digger): settings model and TOML configuration file`.
+- [x] 2.1 Define `Settings`, `Layer`, `GameMode`, `ScaleMode`, `Speed`/`FrameTime` and the static schema table (path, type, range, default) for every key of the `configuration` spec. Verify: unit test `schema_defaults_match_spec` checks each default (speed 40, sample rate 44100, buffer 512, volume 100, dead zone 0.5, …).
+- [x] 2.2 Implement `KeyName` (W3C code names) and `PadButton` name parsing and printing, and the default `[keys]` and `[gamepad]` bindings. Verify: unit tests `key_names_round_trip` and `default_bindings_unique` (20 actions, no key twice).
+- [x] 2.3 Implement reading the file by walking the TOML table against the schema: type, range, unknown names, duplicate key bindings, unknown keys as warnings. Verify: unit tests `config_out_of_range_names_key`, `config_duplicate_binding`, `config_unknown_key_warns`, `config_invalid_toml`.
+- [x] 2.4 Implement `Settings::resolve` (defaults < file < command line; mode taken from the command line as a whole). Verify: unit tests `precedence_cli_over_file` and `mode_option_replaces_file_mode`.
+- [x] 2.5 Implement saving: runtime-change layer over the re-read file, complete file with header comment, write to `config.toml.tmp` and rename, directory creation. Verify: unit tests `first_save_writes_all_keys`, `cli_values_not_saved`, `no_change_no_write` in a temporary directory. Include platform paths (`config.toml`, data directory) with the `--config` and `--data-dir` overrides, verified by `paths_overrides` and per-platform expectations under `#[cfg(target_os)]`.
+- [x] 2.6 Run the three workspace checks; commit `feat(digger): settings model and TOML configuration file`.
 
 ## 3. Command line
 
