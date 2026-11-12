@@ -254,3 +254,39 @@ fn conformance_list_matches_corpus() {
         .collect();
     println!("pending: {pending:?}");
 }
+
+#[test]
+fn tracking_table_lists_every_recording() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/conformance.md");
+    let doc = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let start = doc
+        .find("## Tracking table")
+        .expect("docs/conformance.md has a tracking table");
+    let table = doc.get(start..).unwrap_or_default();
+    let mut rows = Vec::new();
+    for line in table.lines().filter(|l| l.starts_with("| `")) {
+        let cells: Vec<&str> = line.trim_matches('|').split('|').map(str::trim).collect();
+        let file = cells
+            .first()
+            .and_then(|c| c.strip_prefix('`'))
+            .and_then(|c| c.strip_suffix('`'))
+            .unwrap_or_else(|| panic!("a recording name: {line}"));
+        let status = cells.get(1).copied().unwrap_or_default();
+        rows.push((file.to_owned(), status.to_owned()));
+    }
+    assert_eq!(rows.len(), 50, "one row per recording");
+    let listed: BTreeSet<&str> = rows.iter().map(|(file, _)| file.as_str()).collect();
+    let expected: BTreeSet<&str> = RECORDINGS.iter().map(|e| e.file).collect();
+    assert_eq!(listed, expected, "the table and the list differ");
+    for (file, status) in &rows {
+        let entry = RECORDINGS
+            .iter()
+            .find(|e| e.file == file)
+            .expect("a listed recording");
+        let expected = match entry.state {
+            State::Passing => "passing",
+            State::Pending => "failing",
+        };
+        assert_eq!(status, expected, "{file}: status in docs/conformance.md");
+    }
+}

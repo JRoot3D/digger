@@ -92,8 +92,8 @@ at a time and group 13 forbids any that remain.
 - [x] 10.2 Implement `cargo xtask dump-state <file> --from <tick> --to <tick> [--fields] [--out <path>]`; verify by dumping ticks 1–256 of `dror0.edrf` and checking 256 lines whose last full hash equals the hash the verifier computed for tick 256
 - [x] 10.3 Implement `cargo xtask cut <file.edrf> --at <tick> --out <path>` (same header, maps, seeds and controls up to the tick, then `Q 0`); verify with a test that the cut file parses, replays for exactly that many ticks and is classified truncated
 - [x] 10.4 Implement `cargo xtask bisect <file.edrf>`: print the failing window, the last matching checkpoint, the round-end checkpoints inside the window and the `dump-state` command to run; verify with an xtask test on a corpus eDRF with one altered `C` record that the reported window ends at that checkpoint's tick
-- [ ] 10.5 Write the triage procedure in `docs/conformance.md` (order of attack, reading a failure report, window → block → field, comparing candidate fixes with `cut` and `trace-diff`, how to record a finding; the procedure uses only checkpoints, the port's own dumps and the research reports — no upstream binary is built or run) and add the 50-row tracking table generated from the first `xtask conformance` report; verify the table has 50 rows and every command shown runs as written
-- [ ] 10.6 Run the gate and commit (`feat(xtask): add state dump, cut, bisect and trace diff for replay triage`)
+- [x] 10.5 Write the triage procedure in `docs/conformance.md` (order of attack, reading a failure report, window → block → field, comparing candidate fixes with `cut` and `trace-diff`, how to record a finding; the procedure uses only checkpoints, the port's own dumps and the research reports — no upstream binary is built or run) and add the 50-row tracking table generated from the first `xtask conformance` report; verify the table has 50 rows and every command shown runs as written
+- [x] 10.6 Run the gate and commit (`feat(xtask): add state dump, cut, bisect and trace diff for replay triage`)
 
 ## 11. Malformed-input hardening
 

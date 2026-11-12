@@ -126,3 +126,197 @@ the same control value for every slot on every tick
 twins in the ordinary run and the rest with `-- --ignored`). The
 converted files are also byte-identical to the twins once the version
 line is replaced: 23 of 23 (`twin_byte_identity_full`, informational).
+
+## Triage procedure
+
+What to do when a recording fails (design D12). The only evidence used is
+the recording's own checkpoints, the port's own per-tick dumps and the
+research reports in `docs/research/`. No upstream binary is built or run
+at any point, and no upstream C is read to be translated (porting plan,
+"No C"); upstream's source may be read to confirm a behaviour, and the fix
+is then written independently.
+
+### Order of attack
+
+eDRF before DRF, short before long, one digger before two diggers before
+gauntlet: `dror0`, `sobodig`, `thevoid`, `thevoids`, `ramon`, `muu27700`,
+then `2test01`, `2test02`, `2test03`, `2riptest01`, `gauntlet01`, then the
+16 long games in order of their tick totals. A DRF is attempted only after
+its eDRF twin passes; from then on a DRF failure can only come from the
+placement of control reads, the two-digger start-cell patch or the DRF's
+end handling. A fix found on a short recording often clears long ones, so
+rerun the cluster after every fix:
+
+```sh
+cargo xtask conformance --tier quick
+cargo xtask conformance --filter 2test03
+```
+
+All 50, with the long games, run fastest from an optimised build:
+
+```sh
+cargo run --release -p xtask -- conformance --tier full
+```
+
+### Reading a failure report
+
+`cargo xtask verify <file>` and the conformance report name the first
+failing checkpoint and the last one that matched:
+
+```text
+eDRF: the game diverges from the recording before tick 2391 (end of round state 119A35EA, recorded 66BA26CE)
+last matching checkpoint: tick 2369
+eDRF: playback of 2test03.edrf FAILED
+```
+
+- *tick state* is a `C` checkpoint (every 256 ticks): the state after that
+  tick differs, and the fault happened after the last match.
+- *end of round state* is an `E` checkpoint: the round-end hash, taken after
+  the round's clean-up and with the tick count appended. If the round ends
+  on a different tick from the recording's, the tick count alone makes it
+  differ; if the `C` of the same tick matched, the fault is in the clean-up.
+- *the game ends differently* is the `Z` record: tick total or final state.
+- `level N starts, recorded level M` means a round ended (or a level was
+  completed) at a different point.
+
+### Window, block, field
+
+1. **Window.** `bisect` turns the report into the window to examine: from
+   the tick after the last matching checkpoint to the failing one, with
+   the recording's round ends inside it and the commands to run next:
+
+   ```sh
+   cargo xtask bisect tests/recordings/data/2test03.edrf
+   ```
+
+   Round-end checkpoints usually cut a window well below 256 ticks. When
+   the window is a single tick whose own tick checkpoint matched, `bisect`
+   says so: look at the round-end clean-up (monsters removed, bags tidied,
+   playfield saved; research 01 §8) and at when the round ended.
+2. **Block.** Dump the window, one line per tick with the full hash, the
+   hash and byte length of the playfield, digger, monster, bag and game
+   blocks, the RNG state and both scores; `--fields` adds every hashed
+   value under its tick line:
+
+   ```sh
+   cargo xtask dump-state tests/recordings/data/2test03.edrf --from 2370 --to 2391 --fields --out target/triage/2test03-2370-2391.trace
+   ```
+
+   The state at the window's start is known to be right, so the fault is
+   an event inside the window. Read the dump against the research reports:
+   which events happen there (a death, a bag falling or breaking, bonus
+   mode, a monster spawning, the level ending) and which of them the
+   recording's next checkpoint contradicts. A monster block whose length
+   alone changes points at the "monster body exists" rule of design D5.
+   The RNG state shows at once when the port draws a different number of
+   random numbers.
+3. **Field.** The decoded values of the suspect block, tick by tick, show
+   which variable moves differently from what the reports describe. The
+   per-tick trace has no line for the round-end hash; for an `E` failure
+   the last tick's values are the state before the clean-up.
+
+### Comparing candidate fixes
+
+`cut` shortens a recording to the window so that each candidate fix is
+re-checked in well under a second; the cut file keeps the recording's
+header, maps, seeds, checkpoints and controls up to the tick and ends with
+`Q 0`, so it verifies as truncated (status 4) once every checkpoint in it
+matches, and as failed (status 2) while one does not:
+
+```sh
+cargo xtask cut tests/recordings/data/2test03.edrf --at 2391 --out target/triage/2test03-2391.edrf
+cargo xtask verify target/triage/2test03-2391.edrf
+```
+
+Dump the window before and after a change and compare the two dumps;
+`trace-diff` names the first tick and the first block that differ (and,
+with `--fields` dumps, the first value), with exit status 0 when the dumps
+agree, 1 when they differ and 2 when a file is not a dump:
+
+```sh
+cargo xtask dump-state target/triage/2test03-2391.edrf --from 2370 --to 2391 --fields --out target/triage/before.trace
+cargo xtask dump-state target/triage/2test03-2391.edrf --from 2370 --to 2391 --fields --out target/triage/after.trace
+cargo xtask trace-diff target/triage/before.trace target/triage/after.trace
+```
+
+(Run the second `dump-state` after applying the candidate fix; run on the
+unchanged code, as here, the two dumps agree.) The first diverging block
+between two candidates narrows the question to digger, monster, bag or
+playfield logic. `dump-state` plays on past a failed checkpoint with the
+recorded controls, so a window may extend beyond the first failure.
+
+### Recording a finding
+
+1. Fix `digger-core` with a scenario or unit test that fails without the
+   fix.
+2. If the research report was wrong or silent, add an entry to
+   `docs/compat-quirks.md` (class, description, the recording and tick that
+   exposed it, the test name) and list it under "Findings from
+   recordings". If a simulation spec requirement was wrong, add a MODIFIED
+   delta spec to `add-recording-and-conformance`.
+3. Update the recording's row in the tracking table below (status, first
+   failing checkpoint, cause, fixing commit) and flip its entry in
+   `crates/digger-core/tests/conformance.rs` from `pending` to `passing`.
+4. Commit per fixed defect (`fix(core): …` naming the quirk).
+
+## Tracking table
+
+One row per corpus recording, generated from the first full-tier report
+(`cargo xtask conformance --tier full`, 48 of 50 passing) and kept current
+by task group 12. *Status* is `passing` or `failing` and matches the
+recording's `passing`/`pending` entry in
+`crates/digger-core/tests/conformance.rs`
+(`tracking_table_lists_every_recording`).
+
+| Recording | Status | Outcome | First failing checkpoint | Last matching tick | Cause | Fixing commit |
+|---|---|---|---|---|---|---|
+| `2riptest01.edrf` | failing | failed | E at tick 1024 | 1024 | not yet localised (task group 12) | — |
+| `2test01.drf` | passing | completed | — | — | — | — |
+| `2test01.edrf` | passing | verified | — | 4489 | — | — |
+| `2test02.edrf` | passing | verified | — | 10461 | — | — |
+| `2test03.edrf` | failing | failed | E at tick 2391 | 2369 | not yet localised (task group 12) | — |
+| `a1104675.drf` | passing | completed | — | — | — | — |
+| `a1104675.edrf` | passing | verified | — | 111324 | — | — |
+| `a1195000.drf` | passing | completed | — | — | — | — |
+| `a1195000.edrf` | passing | verified | — | 119146 | — | — |
+| `a1262500.drf` | passing | completed | — | — | — | — |
+| `a1262500.edrf` | passing | verified | — | 260987 | — | — |
+| `b1072175.drf` | passing | completed | — | — | — | — |
+| `b1072175.edrf` | passing | verified | — | 130190 | — | — |
+| `dror0.drf` | passing | completed | — | — | — | — |
+| `dror0.edrf` | passing | verified | — | 2947 | — | — |
+| `f1172525.drf` | passing | completed | — | — | — | — |
+| `f1172525.edrf` | passing | verified | — | 201088 | — | — |
+| `g1322150.drf` | passing | completed | — | — | — | — |
+| `g1322150.edrf` | passing | verified | — | 155195 | — | — |
+| `gauntlet01.edrf` | passing | verified | — | 1790 | — | — |
+| `h1266775.drf` | passing | completed | — | — | — | — |
+| `h1266775.edrf` | passing | verified | — | 181703 | — | — |
+| `k1859075.drf` | passing | completed | — | — | — | — |
+| `k1859075.edrf` | passing | verified | — | 189762 | — | — |
+| `k2223700.drf` | passing | completed | — | — | — | — |
+| `k2223700.edrf` | passing | verified | — | 353132 | — | — |
+| `m1143925.drf` | passing | completed | — | — | — | — |
+| `m1143925.edrf` | passing | verified | — | 151534 | — | — |
+| `muu27700.drf` | passing | completed | — | — | — | — |
+| `muu27700.edrf` | passing | verified | — | 7757 | — | — |
+| `p1092525.drf` | passing | completed | — | — | — | — |
+| `p1092525.edrf` | passing | verified | — | 119931 | — | — |
+| `r2222400.drf` | passing | completed | — | — | — | — |
+| `r2222400.edrf` | passing | verified | — | 405894 | — | — |
+| `r3333300.drf` | passing | completed | — | — | — | — |
+| `r3333300.edrf` | passing | verified | — | 565330 | — | — |
+| `ramon.drf` | passing | completed | — | — | — | — |
+| `ramon.edrf` | passing | verified | — | 7051 | — | — |
+| `s1058800.drf` | passing | completed | — | — | — | — |
+| `s1058800.edrf` | passing | verified | — | 110574 | — | — |
+| `s1177650.drf` | passing | completed | — | — | — | — |
+| `s1177650.edrf` | passing | verified | — | 226318 | — | — |
+| `s1302025.drf` | passing | completed | — | — | — | — |
+| `s1302025.edrf` | passing | verified | — | 152165 | — | — |
+| `sobodig.drf` | passing | completed | — | — | — | — |
+| `sobodig.edrf` | passing | verified | — | 1378 | — | — |
+| `thevoid.drf` | passing | completed | — | — | — | — |
+| `thevoid.edrf` | passing | verified | — | 3866 | — | — |
+| `thevoids.drf` | passing | completed | — | — | — | — |
+| `thevoids.edrf` | passing | verified | — | 41673 | — | — |

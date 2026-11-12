@@ -4,9 +4,11 @@
 //! The recording is verified as `cargo xtask verify` does. When it fails
 //! (or stops early) the report names the failing window, from the tick
 //! after the last matching checkpoint to the tick of the failure; the
-//! round-end checkpoints the recording places inside that window, which
-//! the game did not reach where the recording has them; and the
-//! `dump-state` and `cut` commands to run next. It works only from the
+//! round-end checkpoints the recording places inside that window (the
+//! failing one included, when it is a round end); and the `dump-state` and
+//! `cut` commands to run next. When a round-end checkpoint fails on the
+//! very tick whose tick checkpoint matched, the window is that one tick and
+//! the report says that the difference arises in the round's clean-up. It works only from the
 //! recording's own checkpoints and the port's playback.
 //!
 //! The report goes to standard output; the exit status is 0 when the
@@ -19,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Args;
 use digger_core::recording::{Record, RecordingKind, TimedRecord, edrf_timeline};
-use digger_core::replay::{Outcome, ReplayOptions, ReplayReport, verify};
+use digger_core::replay::{Divergence, Failure, Outcome, ReplayOptions, ReplayReport, verify};
 
 /// Arguments of `cargo xtask bisect`.
 #[derive(Debug, Args)]
@@ -118,13 +120,24 @@ pub(crate) fn bisect(file: &Path, bytes: &[u8]) -> Result<String, String> {
         None => text
             .push_str("last matching checkpoint: none (the window starts at the game's start)\n"),
     }
+    let length = window.to - window.from + 1;
     let _ = writeln!(
         text,
-        "failing window: ticks {} to {} ({} ticks)",
+        "failing window: ticks {} to {} ({length} tick{})",
         window.from,
         window.to,
-        window.to - window.from + 1
+        if length == 1 { "" } else { "s" }
     );
+    if let Outcome::Failed(Failure::Divergence(Divergence::RoundEnd { tick, .. })) = &report.outcome
+        && report.last_good_checkpoint == Some(*tick)
+    {
+        let _ = writeln!(
+            text,
+            "note: the state after tick {tick} matched its tick checkpoint, so the \
+             difference arises in the round-end clean-up after it (monsters removed, \
+             bags tidied, playfield saved) or in the tick count the round-end hash appends"
+        );
+    }
     let round_ends = round_ends_in(&timeline, window);
     if round_ends.is_empty() {
         text.push_str("recorded round ends inside the window: none\n");
@@ -165,5 +178,68 @@ pub(crate) fn run(args: &BisectArgs) -> u8 {
             eprintln!("xtask bisect: {}: {error}", args.file.display());
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use digger_core::recording::RecordingKind;
+
+    fn report(outcome: Outcome, last: Option<u32>, ticks: u32) -> ReplayReport {
+        ReplayReport {
+            kind: RecordingKind::Edrf,
+            outcome,
+            scores: [0, 0],
+            two_scores: false,
+            level: 1,
+            ticks,
+            last_good_checkpoint: last,
+        }
+    }
+
+    fn round_end(tick: u32) -> Outcome {
+        Outcome::Failed(Failure::Divergence(Divergence::RoundEnd {
+            tick,
+            expected: 1,
+            actual: 2,
+        }))
+    }
+
+    #[test]
+    fn window_runs_from_after_the_last_match_to_the_failure() {
+        let tick = Outcome::Failed(Failure::Divergence(Divergence::Tick {
+            tick: 768,
+            expected: 1,
+            actual: 2,
+        }));
+        assert_eq!(
+            window(&report(tick.clone(), Some(700), 768)),
+            Some(Window { from: 701, to: 768 })
+        );
+        assert_eq!(
+            window(&report(tick, None, 768)),
+            Some(Window { from: 1, to: 768 })
+        );
+        assert_eq!(
+            window(&report(Outcome::Stopped, Some(1024), 2000)),
+            Some(Window {
+                from: 1025,
+                to: 2000
+            })
+        );
+        assert_eq!(window(&report(Outcome::Verified, Some(2947), 2947)), None);
+        assert_eq!(window(&report(Outcome::Truncated, Some(512), 600)), None);
+    }
+
+    #[test]
+    fn round_end_failing_on_a_matched_tick_is_a_one_tick_window() {
+        assert_eq!(
+            window(&report(round_end(1024), Some(1024), 1024)),
+            Some(Window {
+                from: 1024,
+                to: 1024
+            })
+        );
     }
 }

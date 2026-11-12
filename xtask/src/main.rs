@@ -98,3 +98,60 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a failed expectation in a test is a test failure"
+)]
+mod tests {
+    use super::*;
+
+    /// The `cargo xtask` command lines in the `sh` blocks of the triage
+    /// procedure of `docs/conformance.md`, as argument lists after
+    /// `cargo xtask` (or `cargo run … -p xtask --`).
+    fn triage_commands() -> Vec<Vec<String>> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/conformance.md");
+        let doc = std::fs::read_to_string(&path).expect("docs/conformance.md");
+        let start = doc.find("## Triage procedure").expect("the triage section");
+        let end = doc.find("## Tracking table").expect("the tracking table");
+        let mut commands = Vec::new();
+        let mut in_sh = false;
+        for line in doc.get(start..end).expect("a section").lines() {
+            let line = line.trim();
+            if line.starts_with("```") {
+                in_sh = line == "```sh";
+                continue;
+            }
+            if !in_sh {
+                continue;
+            }
+            let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
+            let args = if let Some(rest) = line.strip_prefix("cargo xtask ") {
+                rest.split_whitespace().map(str::to_owned).collect()
+            } else if let Some(dashes) = words.iter().position(|w| w == "--")
+                && line.starts_with("cargo run ")
+                && line.contains("-p xtask")
+            {
+                words.get(dashes + 1..).unwrap_or_default().to_vec()
+            } else {
+                panic!("not an xtask command in the triage procedure: {line}")
+            };
+            commands.push(args);
+        }
+        commands
+    }
+
+    #[test]
+    fn triage_commands_in_docs_parse() {
+        let commands = triage_commands();
+        assert!(commands.len() >= 9, "{commands:?}");
+        for args in commands {
+            let argv = std::iter::once("cargo xtask".to_owned()).chain(args.iter().cloned());
+            if let Err(error) = Cli::try_parse_from(argv) {
+                panic!("{args:?}: {error}");
+            }
+        }
+    }
+}
