@@ -48,12 +48,13 @@ pub(crate) enum AppError {
     },
     /// A verify run that did not succeed, with the status of the core's
     /// replay report (1 unreadable, 2 failed, 3 stopped, 4 truncated).
-    /// Only an unreadable recording (1) carries a message; the other
-    /// outcomes print the report's own diagnostics.
+    /// Only a recording that could not be read or parsed (1, or 2 for a
+    /// bad record) carries a message; the outcomes of a playback print the
+    /// report's own diagnostics.
     Verify {
         /// The status, 1 to 4.
         status: u8,
-        /// The message for an unreadable recording.
+        /// The message for a recording that could not be read or parsed.
         message: Option<String>,
     },
 }

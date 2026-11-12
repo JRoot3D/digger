@@ -27,6 +27,8 @@
 //! 50-frame `GAME OVER` or `TIME UP` notice follows. Quit and close work
 //! there too and add no entry.
 
+use std::path::{Path, PathBuf};
+
 use digger_core::recording::{Recording, RecordingError, RecordingKind};
 use digger_core::replay::{Recorder, Replay, ReplayOptions, ReplayStep};
 use digger_core::video::Framebuffer;
@@ -36,7 +38,7 @@ use digger_core::{
 
 use super::game_over::{GameOver, GameOverStep};
 use super::initials::InitialsScene;
-use super::recording::LiveRecording;
+use super::recording::{FinishedRecording, LiveRecording};
 use super::{Context, ShellInput, Transition};
 use crate::config::GameMode;
 use crate::input::{Action, PadChange};
@@ -325,16 +327,64 @@ fn to_title(cx: &mut Context<'_>) -> Transition {
     Transition::To(cx.title())
 }
 
-/// A recording being played back (design D2). Player controls are ignored;
-/// pause and quit work, focus loss does not pause.
+/// What a playback is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Purpose {
+    /// Shown for watching (`--play`, or a test): when it ends the program
+    /// goes on with the next recording of the list or the title screen.
+    Watch,
+    /// `--verify`: when it ends the program ends with its status.
+    Verify,
+}
+
+/// How a playback is left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Leave {
+    /// The recorded game ended.
+    End,
+    /// The quit action.
+    Quit,
+    /// The window was closed.
+    Close,
+}
+
+/// The playback itself, until it ends; then the last picture it showed.
+#[derive(Debug)]
+enum Feed {
+    /// The playback runs.
+    Playing(Box<Replay>),
+    /// The playback has ended and was reported.
+    Ended(Box<Framebuffer>),
+}
+
+/// A recording being played back (design D2, D11): `--play`, `--verify`
+/// and `--take-over-at`.
 ///
-/// Task group 7 needs playback only to show that focus loss leaves it
-/// running; the `--play` list, `--loop`, verification and taking over
-/// follow in task group 11.
+/// Player movement and fire controls are ignored and focus loss does not
+/// pause; pause and quit work, and the shell applies speed, sound, music
+/// and fullscreen as in every scene. The game reports no player result, so
+/// it never reaches high-score entry; the core's own closing notice is
+/// shown when the recorded game ends.
+///
+/// With a take-over tick, the game is handed to the player once that many
+/// ticks have been played: from the next tick the player's controls drive
+/// it and losing focus pauses it. Such a playback is recorded from its
+/// first frame, so the recording of a taken-over game covers both parts;
+/// it is handed to the shell like a live game's (written to the `--record`
+/// file, or kept for the save-recording action).
+///
+/// A verification run ends the program with the replay's status, after
+/// writing its re-recording to the `--record` file if one was given.
 #[derive(Debug)]
 pub(crate) struct PlaybackScene {
     /// The playback.
-    replay: Replay,
+    feed: Feed,
+    /// What it is for.
+    purpose: Purpose,
+    /// The tick after which the player takes over.
+    take_over_at: Option<u32>,
+    /// The recording file, for a playback of the `--play` list.
+    source: Option<PathBuf>,
     /// The pause requests.
     pause: Pause,
     /// What the last step reported.
@@ -343,32 +393,109 @@ pub(crate) struct PlaybackScene {
 
 impl PlaybackScene {
     /// A playback of `recording` from its first frame, with `options`
-    /// (a take-over tick, for example).
+    /// (a take-over tick, for example), that records nothing.
     pub(crate) fn with_options(
         recording: &Recording,
         options: ReplayOptions,
     ) -> Result<Self, RecordingError> {
-        Ok(Self {
-            replay: Replay::new(recording, options)?,
+        let replay = Replay::new(recording, options)?;
+        Ok(Self::of(
+            Ok(replay),
+            Purpose::Watch,
+            options.take_over_after,
+        ))
+    }
+
+    /// The playback of `recording` from the `--play` file `source`,
+    /// handed to the player after tick `take_over_at` if given; a playback
+    /// that can be taken over is recorded as `kind`.
+    pub(crate) fn watch(
+        recording: &Recording,
+        source: &Path,
+        take_over_at: Option<u32>,
+        kind: RecordingKind,
+    ) -> Self {
+        let options = ReplayOptions {
+            take_over_after: take_over_at,
+            ..ReplayOptions::default()
+        };
+        let replay = match take_over_at {
+            Some(_) => Replay::recording_as(recording, options, kind),
+            None => Replay::new(recording, options),
+        };
+        let mut scene = Self::of(replay, Purpose::Watch, take_over_at);
+        scene.source = Some(source.to_path_buf());
+        scene
+    }
+
+    /// The `--verify` playback of `recording`, re-recorded as `record` if
+    /// given.
+    pub(crate) fn verify(recording: &Recording, record: Option<RecordingKind>) -> Self {
+        let options = ReplayOptions::default();
+        let replay = match record {
+            Some(kind) => Replay::recording_as(recording, options, kind),
+            None => Replay::new(recording, options),
+        };
+        Self::of(replay, Purpose::Verify, None)
+    }
+
+    /// The scene over `replay`, which the core builds from any parsed
+    /// recording.
+    fn of(
+        replay: Result<Replay, RecordingError>,
+        purpose: Purpose,
+        take_over_at: Option<u32>,
+    ) -> Self {
+        // `Replay::new` refuses no parsed recording; should a later core
+        // refuse one, the scene shows a blank screen and ends at once.
+        let feed = match replay {
+            Ok(replay) => Feed::Playing(Box::new(replay)),
+            Err(error) => {
+                crate::report::notice(format!("cannot play back the recording: {error}"));
+                Feed::Ended(Box::new(Framebuffer::new()))
+            }
+        };
+        Self {
+            feed,
+            purpose,
+            take_over_at,
+            source: None,
             pause: Pause::new(),
             last_step: None,
-        })
+        }
     }
 
     /// Runs one frame: exactly one step of the playback.
     pub(crate) fn frame(&mut self, input: &ShellInput, cx: &mut Context<'_>) -> Transition {
+        let Feed::Playing(replay) = &mut self.feed else {
+            // Only a verification run stays on an ended playback, for the
+            // frame that asks the platform to exit.
+            return match self.purpose {
+                Purpose::Verify => Transition::Stay,
+                Purpose::Watch => cx.after_playback(),
+            };
+        };
         if input.close_requested {
-            self.step(&QUIT, cx);
-            return Transition::Exit(0);
+            step(replay, &QUIT, &mut self.last_step, cx);
+            return self.end(Leave::Close, cx);
         }
         if input.has(Action::Quit) {
-            self.step(&QUIT, cx);
-            return to_title(cx);
+            step(replay, &QUIT, &mut self.last_step, cx);
+            return self.end(Leave::Quit, cx);
+        }
+        // The hand-over takes effect on the frame whose tick is the first
+        // after the take-over tick, so that this frame's controls already
+        // drive it (`configuration` spec, taking over a playback).
+        if let Some(after) = self.take_over_at
+            && !replay.taken_over()
+            && replay.game().state().ticks() >= after
+        {
+            replay.request_take_over();
         }
         // Once taken over, the game is a live one: the player's controls
         // drive it and losing focus pauses it. It still never enters the
         // score tables, as a playback reports no player result.
-        let taken_over = self.replay.taken_over();
+        let taken_over = replay.taken_over();
         let pause = self.pause.before_step(input, taken_over);
         // Before that the recording supplies every control; only the
         // pause request goes in.
@@ -381,30 +508,99 @@ impl PlaybackScene {
             pause: pause.request,
             quit: false,
         };
-        let step = self.step(&frame, cx);
-        self.pause.after_step(self.replay.game().is_paused());
-        match step {
-            ReplayStep::Finished(_) => to_title(cx),
+        let outcome = step(replay, &frame, &mut self.last_step, cx);
+        self.pause.after_step(replay.game().is_paused());
+        match outcome {
+            ReplayStep::Finished(_) => self.end(Leave::End, cx),
             ReplayStep::Running(_) => Transition::Stay,
         }
     }
 
-    /// Steps the playback once and forwards its sound.
-    fn step(&mut self, input: &FrameInput, cx: &mut Context<'_>) -> ReplayStep {
-        let step = self.replay.step(input, &mut digger_core::NoopObserver);
-        self.last_step = Some(step);
-        cx.sound(self.replay.drain_sound());
-        step
+    /// Ends the playback, which has finished or was just quit, and decides
+    /// what follows.
+    fn end(&mut self, leave: Leave, cx: &mut Context<'_>) -> Transition {
+        let picture = Box::new(self.picture().clone());
+        let Feed::Playing(mut replay) = std::mem::replace(&mut self.feed, Feed::Ended(picture))
+        else {
+            return Transition::Stay;
+        };
+        // The game has finished: the step before ended it, or was a quit
+        // request, which the core honours at once. Should it not have,
+        // quitting until it does keeps the report complete.
+        let summary = loop {
+            if let ReplayStep::Finished(summary) =
+                replay.step(&QUIT, &mut digger_core::NoopObserver)
+            {
+                break summary;
+            }
+        };
+        cx.sound(replay.drain_sound());
+        let taken_over = replay.taken_over();
+        let kind = replay.recorder_mut().map(|recorder| recorder.kind());
+        let (report, text) = replay.finish_with_recording();
+        let recording = kind.zip(text).map(|(kind, text)| FinishedRecording {
+            kind,
+            text,
+            summary,
+            entry: None,
+        });
+        match self.purpose {
+            Purpose::Verify => {
+                // The re-recording goes to the `--record` file before the
+                // program ends (`configuration` spec, play-and-verify).
+                if let Some(recording) = recording {
+                    cx.finished(recording);
+                }
+                let status = report.exit_status();
+                *cx.verified = Some(report);
+                cx.sound([SoundCommand::StopAll]);
+                Transition::Exit(status)
+            }
+            Purpose::Watch => {
+                // A game the player took over is a game played by a
+                // person: its recording is kept like a live game's.
+                if taken_over && let Some(recording) = recording {
+                    cx.finished(recording);
+                }
+                match leave {
+                    Leave::Close => Transition::Exit(0),
+                    // Quitting a playback ends the `--play` list, the loop
+                    // included, and shows the title screen (compat quirk
+                    // SH11).
+                    Leave::Quit => {
+                        cx.playlist.stop();
+                        to_title(cx)
+                    }
+                    Leave::End => cx.after_playback(),
+                }
+            }
+        }
     }
 
     /// The picture to present: the game's own.
     pub(crate) fn picture(&self) -> &Framebuffer {
-        self.replay.game().framebuffer()
+        match &self.feed {
+            Feed::Playing(replay) => replay.game().framebuffer(),
+            Feed::Ended(picture) => picture,
+        }
     }
 
-    /// The game being played back.
-    pub(crate) fn game(&self) -> &Game {
-        self.replay.game()
+    /// The game being played back, until the playback has ended.
+    pub(crate) fn game(&self) -> Option<&Game> {
+        match &self.feed {
+            Feed::Playing(replay) => Some(replay.game()),
+            Feed::Ended(_) => None,
+        }
+    }
+
+    /// Whether the player has taken the game over.
+    pub(crate) fn taken_over(&self) -> bool {
+        matches!(&self.feed, Feed::Playing(replay) if replay.taken_over())
+    }
+
+    /// The `--play` file being played, if the playback is one of the list.
+    pub(crate) fn source(&self) -> Option<&Path> {
+        self.source.as_deref()
     }
 
     /// The kind of the last frame, if it ran.
@@ -414,4 +610,18 @@ impl PlaybackScene {
             _ => None,
         }
     }
+}
+
+/// Steps `replay` once with `input`, notes the step and forwards its
+/// sound.
+fn step(
+    replay: &mut Replay,
+    input: &FrameInput,
+    last_step: &mut Option<ReplayStep>,
+    cx: &mut Context<'_>,
+) -> ReplayStep {
+    let outcome = replay.step(input, &mut digger_core::NoopObserver);
+    *last_step = Some(outcome);
+    cx.sound(replay.drain_sound());
+    outcome
 }

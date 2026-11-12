@@ -172,7 +172,9 @@ impl Harness {
     pub(super) fn game(&self) -> &Game {
         match self.shell.scene() {
             Scene::Playing(play) => play.game(),
-            Scene::Playback(playback) => playback.game(),
+            Scene::Playback(playback) => playback
+                .game()
+                .unwrap_or_else(|| panic!("the playback has ended")),
             Scene::Title(_) => panic!("no game on the title screen"),
             Scene::Redefine(_) => panic!("no game during key redefinition"),
         }

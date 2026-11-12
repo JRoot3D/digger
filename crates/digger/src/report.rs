@@ -7,14 +7,6 @@
 //! Every message goes through this module, so the wording stays uniform
 //! and the browser build can send the lines to its console instead.
 
-#![cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the helpers are used by the configuration, storage and audio code of later task groups"
-    )
-)]
-
 use std::fmt;
 use std::io::Write;
 
@@ -51,6 +43,13 @@ pub(crate) fn line(level: Level, message: impl fmt::Display) -> String {
 pub(crate) fn emit(level: Level, message: impl fmt::Display) {
     let text = line(level, message);
     let _ = writeln!(std::io::stderr().lock(), "{text}");
+}
+
+/// Prints `line` on standard error as it is, without the prefix: for
+/// reports whose wording another specification fixes, such as a replay's
+/// divergence report (replay-verification spec, "Divergence report").
+pub(crate) fn emit_raw(line: &str) {
+    let _ = writeln!(std::io::stderr().lock(), "{line}");
 }
 
 /// Prints `digger: error: <message>` on standard error.

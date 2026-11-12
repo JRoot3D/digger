@@ -348,6 +348,30 @@ only steps. Ids `SH`; tests are run with `cargo test -p digger <name>`.
 | SH8 | Upstream's redefinition ends at once when the Exit key is pressed for any other action, writes nothing, but keeps the keys already changed in memory for the rest of the run (research 05 §1.3, `prockey`); the port works on a copy of the key table, so the quit key in effect (or closing the window) leaves every key as it was before the screen opened, and nothing is written | Usability bug, fixed | `RedefineScene::press` and `RedefineScene::frame` (`shell/redefine.rs`) | `redefine_abort_restores` |
 | SH9 | In a one-Digger mode upstream does not ask for player 2's keys and does not check player 1's new keys against them, so a key can end up bound to a player-1 and a player-2 action at once (e.g. `A`, player 2's left, chosen for player 1). The port's configuration file allows a key for one action only, so a player-2 action that lost a key to player 1 takes player 1's old key for the same control instead (with the defaults, player 2's left becomes `ArrowLeft` when player 1 takes `KeyA`), and is asked for only when that key is taken too (port decision; confirmed against upstream's `redefkeyb`) | Port decision | `RedefineScene::hand_over_player2_key` (`shell/redefine.rs`) | `redefine_duplicate_refused`; unit tests `pressed_key_becomes_only_binding`, `player2_asked_when_old_key_taken_too` |
 | SH10 | Redefinition reads raw key presses, as upstream's blocking `getkey` does: no function action applies while it is shown (F7 becomes a key instead of switching the music), a key of an action earlier in the order of asking is refused and the action asked again (for the function actions, upstream's re-check loop against every player key and earlier function key), the pressed key becomes the action's only key (so `Equal` stops speeding up once speed-up is given `NumpadAdd`), and the Alt keys are refused (port decision). Only the Alt+Enter chord still switches fullscreen. Names are upstream's (`RIGHT`, `ACCEL`, `SAVE DRF`, …) upper case; the fullscreen action is `FULLSCREEN` | Kept, with Alt refused | `RedefineScene::press` (`shell/redefine.rs`); `Shell::function_actions` (`shell/mod.rs`) | `redefine_duplicate_refused`, `redefine_conflict_asks_pause`, `redefine_all_asks_every_action` |
+| SH11 | Upstream plays each `/P` file while parsing the command line; F10 during one sets `escape`, which stops the `/O` restart (`norepf`), lets every later playback end at once, and the title screen follows (`main.c`, `/P` and `/O`). The port does the same: the quit action during a `--play` playback ends the whole list, `--loop` included, and shows the title screen, from where the next quit ends the program; closing the window ends it at once. This corrects the `configuration` spec's screensaver scenario, which had F10 end the program. A file that cannot be read or is not a recording is reported once as a notice and skipped on every lap; a lap with nothing playable ends the list | Kept | `PlayList` (`shell/playlist.rs`), `PlaybackScene::end` (`shell/play.rs`) | `playback_loop_until_quit`, `playback_bad_file_skipped_with_notice`, `playback_list_then_title` |
+| SH12 | Upstream hands a playback over at the end of tick n of `/T:n` (`edrf.c`, `playtakeat`), so tick n+1 runs on the player's controls; the port hands over before the frame whose tick is the first after `--take-over-at`, so its controls drive it, keeps recording across the hand-over (the recording of a taken-over game covers both parts and replays to the same game), pauses on focus loss from then on, and never offers initials entry (HS7) | Kept | `PlaybackScene::frame` (`shell/play.rs`), the core's `Replay::request_take_over` | `take_over_switches_to_live_controls_after_tick`, `take_over_recording_replays_whole_game`, `taken_over_game_never_enters_scores` |
+
+## Verification (`add-desktop-app`)
+
+`--verify <file>` plays one recording and ends the program with the core's
+status (replay-verification spec, "Verify exit statuses"; research 05 §3,
+upstream's `/E`): **0** verified (eDRF) or completed (DRF), **1** the file
+cannot be opened or is not a recording (a message naming the file on
+standard error), **2** a checkpoint diverged or a record is invalid, **3**
+the playback was stopped before the end (F10), **4** an eDRF ended without
+its `Z` end marker. Only status 0 prints, on standard output, exactly one
+line `score=<S> level=<L> ticks=<T>`, or `score=<S> score2=<S2> level=<L>
+ticks=<T>` with two players or two Diggers. Upstream prints it only with
+the environment variable `DIGGER_CI_RUN` set; the port always prints it
+(port decision). With `--record`, the replayed game is re-recorded and
+written to that file before the program ends, whatever the status, as
+upstream's `/R:name /E:file`; `digger --record game.edrf --verify game.drf`
+converts a classic recording. `--headless` runs the same without a window
+or audio device and without pacing.
+
+| Id | Behaviour | Class | Isolated in | Test |
+|---|---|---|---|---|
+| VF1 | Exit statuses 0–4 and the result line of a verification run, headless or in the window, and the re-recording to `--record` | Kept (result line always printed: port decision) | `headless::conclude`, `headless::run` (`crates/digger/src/headless.rs`); `PlaybackScene::verify` and `PlaybackScene::end` (`shell/play.rs`) | `crates/digger/tests/verify_cli.rs` (`good_recordings_verify_with_their_result_line`, `text_file_is_status_1`, `altered_checkpoint_is_status_2`, `edrf_without_end_marker_is_status_4`, `record_while_verifying_converts`); unit tests `verify_status_mapping`, `result_line_formats`, `verify_in_window_statuses` |
 
 ## High scores and game over (`add-desktop-app`)
 

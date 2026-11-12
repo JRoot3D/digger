@@ -58,7 +58,7 @@ The command line SHALL accept `--quiet` (start with all sound off), `--no-music`
 - **THEN** `ABC12300.drf` is written in the `recordings` folder, and a second F8 writes nothing
 
 ### Requirement: Play options
-`--play <file>` SHALL play a recording in the window before the title screen appears; it can be given several times and the recordings are played in the order given. `--loop` SHALL repeat the list until the quit action or the closing of the window. A file that cannot be opened or is not a recording SHALL be reported on standard error and skipped. Mode, start level and levels come from the recording; `--unlimited-lives` is not applied. (research 01 §1.1, research 05 §2.3 and §3)
+`--play <file>`, given once or more, SHALL play the recordings in the window in the order given before the title screen appears. `--loop` SHALL repeat the list until quit, which shows the title screen, or until the window closes. A file that cannot be opened or is not a recording SHALL be reported on standard error and skipped. Mode, start level and levels come from the recording; `--unlimited-lives` is not applied. (research 01 §1.1, research 05 §2.3 and §3)
 
 #### Scenario: Play then title
 - **WHEN** the program is started with `--play a.drf --play b.edrf`
@@ -66,7 +66,11 @@ The command line SHALL accept `--quiet` (start with all sound off), `--no-music`
 
 #### Scenario: Screensaver loop
 - **WHEN** the program is started with `--play a.drf --loop`
-- **THEN** the recording restarts each time it ends until the player presses F10, which ends the program
+- **THEN** the recording restarts each time it ends until the player presses F10, which ends the loop and shows the title screen (as upstream's `/O`; compat quirk SH11)
+
+#### Scenario: Unreadable file in the list
+- **WHEN** the program is started with `--play notes.txt --play a.drf`, where `notes.txt` is not a recording
+- **THEN** standard error carries a notice naming `notes.txt`, and `a.drf` is played
 
 ### Requirement: Taking over a playback
 `--take-over-at <tick>` (alias `/T:<tick>`), given together with `--play`, SHALL hand the game being played back to the player once that tick has been played: from the next tick the player's controls drive the game and the recording supplies nothing more. The game then continues as a live game, is saved by `--record` in full, and SHALL NOT enter the high-score tables. Without `--play` the option SHALL be refused with exit status 64. (research 05 §3, §4.6)

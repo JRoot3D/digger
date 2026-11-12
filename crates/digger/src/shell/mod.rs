@@ -26,13 +26,14 @@
 use std::path::PathBuf;
 
 use digger_core::recording::{Recording, RecordingError, RecordingKind};
-use digger_core::replay::ReplayOptions;
+use digger_core::replay::{ReplayOptions, ReplayReport};
 use digger_core::video::Framebuffer;
 use digger_core::{GameConfig, GauntletSeconds, LevelSet, SoundCommand, StartLevel};
 use digger_sound::SoundControl;
 
 use crate::cli::Redefine;
 use crate::config::{FrameTime, GameMode, Layer, Settings};
+use crate::headless::VerifyJob;
 use crate::input::{Action, Bindings, InputFrame};
 use crate::scores::store::ScoreStore;
 use crate::scores::{self, ScoreTable, Scores, TableKey};
@@ -40,7 +41,8 @@ use crate::scores::{self, ScoreTable, Scores, TableKey};
 mod game_over;
 mod initials;
 mod play;
-mod recording;
+mod playlist;
+pub(crate) mod recording;
 mod redefine;
 mod title;
 
@@ -49,11 +51,14 @@ mod game_over_tests;
 #[cfg(test)]
 mod harness;
 #[cfg(test)]
+mod playback_tests;
+#[cfg(test)]
 mod redefine_tests;
 #[cfg(test)]
 mod tests;
 
 pub(crate) use play::{PlayScene, PlaybackScene};
+pub(crate) use playlist::PlayList;
 pub(crate) use recording::FinishedRecording;
 pub(crate) use redefine::{KeyTable, RedefineScene, Variant};
 pub(crate) use title::TitleScene;
@@ -188,6 +193,16 @@ pub(crate) struct Setup {
     /// `--redefine-keys[=all]`: the program opens on key redefinition
     /// instead of the title screen.
     pub(crate) redefine_keys: Option<Redefine>,
+    /// `--play`: the recordings played before the title screen, in order.
+    pub(crate) play: Vec<PathBuf>,
+    /// `--loop`: the `--play` list repeats until quit.
+    pub(crate) loop_playback: bool,
+    /// `--take-over-at`: each `--play` recording is handed to the player
+    /// once this many ticks have been played.
+    pub(crate) take_over_at: Option<u32>,
+    /// `--verify`: the program plays this recording and ends with its
+    /// status.
+    pub(crate) verify: Option<VerifyJob>,
 }
 
 impl Default for Setup {
@@ -201,6 +216,10 @@ impl Default for Setup {
             recordings_dir: None,
             config_file: None,
             redefine_keys: None,
+            play: Vec::new(),
+            loop_playback: false,
+            take_over_at: None,
+            verify: None,
         }
     }
 }
@@ -222,6 +241,10 @@ pub(crate) struct Context<'a> {
     games_started: &'a mut u64,
     /// The recording of the last finished game.
     last_game: &'a mut Option<FinishedRecording>,
+    /// The `--play` list.
+    playlist: &'a mut PlayList,
+    /// The report of a finished `--verify` run.
+    verified: &'a mut Option<ReplayReport>,
     /// The frame's output.
     out: &'a mut Pending,
 }
@@ -302,6 +325,14 @@ impl Context<'_> {
         }
     }
 
+    /// What follows a playback of the `--play` list that ended: the next
+    /// recording of the list, else the title screen. The playback's sound
+    /// stops.
+    fn after_playback(&mut self) -> Transition {
+        self.sound([SoundCommand::StopAll]);
+        Transition::To(next_playback(self.playlist, self.setup).unwrap_or_else(|| self.title()))
+    }
+
     /// The save-recording action: writes the last game into the
     /// recordings folder under its automatic name, once; nothing happens
     /// when there is no unsaved game (`desktop-app` spec, other title
@@ -314,6 +345,14 @@ impl Context<'_> {
             recording::save_to_recordings(&recording, dir);
         }
     }
+}
+
+/// The playback of the next recording of `playlist`, if the list goes
+/// on (`configuration` spec, play options and taking over a playback).
+fn next_playback(playlist: &mut PlayList, setup: &Setup) -> Option<Scene> {
+    let (file, recording) = playlist.advance()?;
+    let scene = PlaybackScene::watch(recording, file, setup.take_over_at, setup.record_kind);
+    Some(Scene::Playback(Box::new(scene)))
 }
 
 /// Key redefinition over the keys of `settings`, for `mode`.
@@ -369,6 +408,10 @@ pub(crate) struct Shell {
     games_started: u64,
     /// The recording of the last finished game, until it is saved.
     last_game: Option<FinishedRecording>,
+    /// The `--play` list.
+    playlist: PlayList,
+    /// The report of the `--verify` run, once it has ended.
+    verified: Option<ReplayReport>,
     /// The high-score tables and their file.
     scores: ScoreStore,
     /// The current scene.
@@ -394,10 +437,22 @@ impl Shell {
         let table = scores
             .scores()
             .table(&TableKey::from_mode(mode, setup.score_levels.clone()));
-        let scene = match setup.redefine_keys {
-            Some(Redefine::Usual) => redefine_scene(&settings, mode, Variant::Usual),
-            Some(Redefine::All) => redefine_scene(&settings, mode, Variant::All),
-            None => Scene::Title(TitleScene::new(mode, table)),
+        let mut playlist = PlayList::new(&setup.play, setup.loop_playback);
+        // A verification run plays its recording and nothing else; a
+        // `--play` list comes before the title screen (or the key
+        // redefinition `--redefine-keys` opens on).
+        let first = match &setup.verify {
+            Some(job) => Some(Scene::Playback(Box::new(PlaybackScene::verify(
+                &job.recording,
+                setup.record_path.as_ref().map(|_| setup.record_kind),
+            )))),
+            None => next_playback(&mut playlist, &setup),
+        };
+        let scene = match (first, setup.redefine_keys) {
+            (Some(scene), _) => scene,
+            (None, Some(Redefine::Usual)) => redefine_scene(&settings, mode, Variant::Usual),
+            (None, Some(Redefine::All)) => redefine_scene(&settings, mode, Variant::All),
+            (None, None) => Scene::Title(TitleScene::new(mode, table)),
         };
         Self {
             runtime: Layer::default(),
@@ -407,6 +462,8 @@ impl Shell {
             music_on: settings.music,
             games_started: 0,
             last_game: None,
+            playlist,
+            verified: None,
             scene,
             scores,
             settings,
@@ -426,6 +483,8 @@ impl Shell {
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
+            playlist: &mut self.playlist,
+            verified: &mut self.verified,
             out: &mut out,
         };
         let transition = match &mut self.scene {
@@ -570,6 +629,8 @@ impl Shell {
             setup: &self.setup,
             games_started: &mut self.games_started,
             last_game: &mut self.last_game,
+            playlist: &mut self.playlist,
+            verified: &mut self.verified,
             out: &mut out,
         };
         self.scene = cx.new_game();
@@ -629,6 +690,18 @@ impl Shell {
     /// Whether music is switched on.
     pub(crate) const fn music_on(&self) -> bool {
         self.music_on
+    }
+
+    /// The report of the `--verify` run, once it has ended: the platform
+    /// turns it into the result line or the error that ends the program
+    /// (`crate::headless::conclude`).
+    pub(crate) const fn verify_report(&self) -> Option<&ReplayReport> {
+        self.verified.as_ref()
+    }
+
+    /// The notices given for skipped `--play` files so far.
+    pub(crate) fn playback_notices(&self) -> &[String] {
+        self.playlist.notices()
     }
 
     /// The recording of the last finished game, if it was not saved yet.

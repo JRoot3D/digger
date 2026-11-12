@@ -533,19 +533,24 @@ fn playback_never_enters_scores() {
 
 #[test]
 fn taken_over_game_never_enters_scores() {
+    // `--play game.drf --take-over-at 20`, with empty tables that any
+    // score would enter.
     let (text, _) = recorded_game();
-    let recording = recording::parse(text.as_bytes()).unwrap();
-    let mut h = Harness::new();
-    let options = ReplayOptions {
-        take_over_after: Some(20),
-        ..ReplayOptions::default()
+    let dir = TempDir::new("take-over-scores");
+    let file = dir.path().join("game.drf");
+    fs::write(&file, &text).unwrap();
+    let setup = Setup {
+        play: vec![file],
+        take_over_at: Some(20),
+        ..Setup::default()
     };
-    h.shell.start_playback_with(&recording, options).unwrap();
+    let mut h = harness(GameMode::OnePlayer, Scores::default(), setup);
     h.run(60);
     let Scene::Playback(playback) = h.shell.scene() else {
         panic!("a playback");
     };
-    assert!(playback.game().state().ticks() > 20, "taken over");
+    assert!(playback.taken_over(), "taken over");
+    assert!(h.game().state().ticks() > 20);
     // The player digs, scoring above the empty tables, and the game ends.
     h.dig(&["ArrowLeft"]);
     let mut frames = 0;
@@ -556,6 +561,8 @@ fn taken_over_game_never_enters_scores() {
         assert!(frames < 20_000);
     }
     assert_eq!(*h.shell.scores(), Scores::default(), "tables unchanged");
+    // The game is kept for the save-recording action like a live one.
+    assert!(h.shell.last_game().is_some(), "the taken-over game is kept");
 }
 
 #[test]
