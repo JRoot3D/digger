@@ -569,9 +569,10 @@ mod tests {
         assert!(digger.not_firing);
         assert_eq!(digger.fireball.stage, FireballStage::Flying);
         assert!(!game.gfx.sprites().is_enabled(first.fireball().sprite()));
-        // A flying fireball has no fire cue left to stop.
+        // A flying fireball has no fire cue left to stop; the music stops
+        // first, as at the start of a wind-down (quirk P17).
         let sounds: Vec<SoundCommand> = game.drain_sound().collect();
-        assert_eq!(sounds, [SoundCommand::StopAll]);
+        assert_eq!(sounds, [SoundCommand::MusicOff, SoundCommand::StopAll]);
     }
 
     #[test]

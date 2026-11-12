@@ -468,6 +468,7 @@ in code, and the listed test.
 | P14 | eDRF `I` records: no slot list when slots agree with "unread" as wildcard; unread and 0 split runs but both print `@` (format) | `EdrfRecorder` chunk writer | `edrf_chunk_forms`, twin conversion test |
 | P15 | DRF writer: runs capped at 999, line wrap when the column counter reaches 60, seed as `%08X` (format) | `DrfRecorder` | `drf_writer_run_cap_and_wrap` |
 | P16 | Level records are produced only for participating players; in a one-player game the unused player two's level set-up produces none (format) | `Observer::level_plan` call site | `one_player_game_has_single_level_record` |
+| P17 | A quit in the main phase or its pause hides the diggers (erase, invisible, music off) before the round end, so the quit's `E` checkpoint sees them invisible; found in triage on `2riptest01.edrf` and `2test03.edrf` (simulation) | quit path of `Game::step_observed` | `quirk_p17_quit_hides_diggers_before_round_end` |
 
 Deliberate deviations (class "presentation or usability bug" or "dropped
 feature"), each also listed in `docs/compat-quirks.md`:

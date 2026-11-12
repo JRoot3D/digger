@@ -47,6 +47,9 @@ fn quit_during_play_reports_300_ticks() {
         !monsters.is_empty(),
         "monsters are on screen after 300 ticks"
     );
+    // Quirk P17: the digger's sprite is erased as well.
+    let digger = run.state().sprites().rect(DiggerId::ALL[0].sprite());
+    let erased: Vec<Rect> = monsters.iter().copied().chain([digger]).collect();
     let reached = ScoreId::ALL.map(|id| {
         let scores = run.state().scores();
         (scores.visible(id), scores.total(id))
@@ -73,16 +76,61 @@ fn quit_during_play_reports_300_ticks() {
     }
     assert_eq!(run.ticks(), 300);
     assert_eq!(run.summary(), Some(summary));
-    // All sound stops, the monsters are erased and no game-over notice is
-    // drawn.
-    assert_eq!(run.take_sounds(), [SoundCommand::StopAll]);
+    // The music stops and then all sound, the digger is hidden (quirk
+    // P17), the monsters are erased and no game-over notice is drawn.
+    assert_eq!(
+        run.take_sounds(),
+        [SoundCommand::MusicOff, SoundCommand::StopAll]
+    );
+    assert!(!run.state().diggers_visible());
+    assert!(!run.state().sprites().is_enabled(DiggerId::ALL[0].sprite()));
     for slot in MonsterSlot::ALL {
         assert!(!run.state().sprites().is_enabled(slot.sprite()));
     }
     assert_eq!(
-        changed_outside(run.game().framebuffer(), &picture, &monsters),
+        changed_outside(run.game().framebuffer(), &picture, &erased),
         0
     );
+}
+
+/// Whether the diggers were visible at each round end the observer saw.
+#[derive(Debug, Default)]
+struct VisibleAtRoundEnd(Vec<bool>);
+
+impl Observer for VisibleAtRoundEnd {
+    fn round_end(&mut self, state: StateView<'_>) {
+        self.0.push(state.diggers_visible());
+    }
+}
+
+/// Quirk P17 (exposed by `2riptest01.edrf` at tick 1024 and `2test03.edrf`
+/// at tick 2391): a quit during the main phase, or during its pause,
+/// skips the wind-down ticks but not the wind-down's start, so the round
+/// end sees both diggers erased and hidden.
+#[test]
+fn quirk_p17_quit_hides_diggers_before_round_end() {
+    for pause in [false, true] {
+        let mut run = Scenario::new(GameMode::TwoDiggers)
+            .seed(3)
+            .build_observed(VisibleAtRoundEnd::default());
+        assert_eq!(run.run_ticks(40), 40);
+        assert!(run.state().diggers_visible());
+        if pause {
+            let paused = FrameInput {
+                pause: true,
+                ..FrameInput::NONE
+            };
+            run.step(&paused);
+            assert_eq!(run.step(&FrameInput::NONE).frame, FrameKind::Paused);
+        }
+        let ticks = run.ticks();
+        let summary = run.step(&QUIT).finished.expect("the game finished");
+        assert_eq!(summary.ticks, ticks, "no wind-down tick runs");
+        assert_eq!(run.observer().0, [false], "pause {pause}");
+        for digger in DiggerId::ALL {
+            assert!(!run.state().sprites().is_enabled(digger.sprite()));
+        }
+    }
 }
 
 /// The number of pixels that differ between `a` and `b` outside the

@@ -873,12 +873,7 @@ impl Ctx<'_> {
     /// stops. The wind-down follows, except after a gauntlet time-out,
     /// whose tick was the game's last, when the round ends at once.
     fn end_main_phase(&mut self) -> Advance {
-        for unit in self.sim.units() {
-            self.gfx.erase(unit.sprite());
-        }
-        self.sim.diggers_visible = false;
-        self.sim.main_tune = None;
-        self.sound.push(SoundCommand::MusicOff);
+        self.hide_diggers();
         if self.sim.timed_out() {
             return self.round_end();
         }
@@ -888,6 +883,18 @@ impl Ctx<'_> {
             },
             FrameKind::Tick,
         )
+    }
+
+    /// The start of the wind-down, also run when a quit ends the main phase
+    /// (quirk P17): the diggers' sprites are erased, the diggers hidden and
+    /// the music stopped.
+    fn hide_diggers(&mut self) {
+        for unit in self.sim.units() {
+            self.gfx.erase(unit.sprite());
+        }
+        self.sim.diggers_visible = false;
+        self.sim.main_tune = None;
+        self.sound.push(SoundCommand::MusicOff);
     }
 
     /// One wind-down tick and what follows it (game-flow spec, "Wind-down").
@@ -1251,6 +1258,13 @@ impl Game {
             obs,
         };
         if input.quit {
+            // Quirk P17: a quit during the main phase or its pause skips
+            // the wind-down ticks but not the wind-down's start, so the
+            // diggers are hidden before the round end and its `E`
+            // checkpoint.
+            if matches!(self.phase, Phase::Playing | Phase::Paused { .. }) {
+                cx.hide_diggers();
+            }
             let summary = cx.finish(FinishReason::Quit, self.phase.in_round());
             self.phase = Phase::Finished(summary);
             return StepOutcome::finished(summary);

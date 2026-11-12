@@ -172,7 +172,8 @@ the state of the game.
 Each entry reproduces a rule of upstream's recording formats, playback or
 state hash, so that the port's recordings and checkpoints agree with
 upstream's corpus. The ids follow the design of `add-recording-and-conformance`
-(P1 to P16).
+(P1 to P16; P17 and later are findings of its divergence triage, task
+group 12).
 
 | Id | Behaviour | Class | Implemented in | Test |
 |---|---|---|---|---|
@@ -192,6 +193,7 @@ upstream's corpus. The ids follow the design of `add-recording-and-conformance`
 | P14 | eDRF `I` records hold at most 32 ticks and are written when the tick count is a multiple of 32 and before any other record. A record has no slot list when every slot agrees on every tick, a slot not read on a tick agreeing with anything (the one-digger form: slot 1 is never read); otherwise it lists each slot that holds a control on some tick and gives one run list per listed slot, in which a run ends wherever the sample changes, so an unread tick and a read 0 make two runs although both print `@`. A slot counts as read on every tick on which a digger plays from it, dead or paused too, as upstream's `readdirect` runs for every digger in play; during DRF playback a read slot's value is the direction and fire of its control read's record, 0 on a tick without one (research 05 §5.2, §5.3; `edrf.c` `flushin`, `allsame`, `edrf_input`, `edrf_movement`) | Format | `EdrfRecorder::flush_controls`, `EdrfRecorder::tick_end` and `EdrfRecorder::for_drf_playback` (`crates/digger-core/src/replay/recorder.rs`) | `edrf_chunk_forms`, `conversion_bits_from_drf_records` |
 | P15 | The DRF writer caps runs at 999 (a longer run continues as a new run of the same letter), counts 1 plus the digits of the count per run into a column counter and writes a line break whenever the counter reaches 60, writes `EOL` on a line of its own, and writes each round seed as eight upper-case hex digits (research 05 §4.4; `record.c` `putrun`, `recputdir`, `recputeol`) | Format | `DrfRecorder::put_record`, `DrfRecorder::put_run` and `DrfRecorder`'s `round_seed` and `round_end` hooks (`crates/digger-core/src/replay/recorder.rs`) | `drf_writer_run_cap_and_wrap` |
 | P16 | Level records (`L`) are written only for participating players: a one-player or two-digger game writes one at game start, an alternating game two (the second player's reusing the first's map), and the placeholder level of player two outside alternating games writes none; maps are written as played, with the two-digger start cells opened unless a playback supplied the map, and a map already written is referred to by its number (research 05 §5.3; `main.c` `initlevel`, `edrf.c` `edrf_level`) | Format | the `Observer::level_plan` call sites (`Ctx::start_game`, `Ctx::set_up_level_observed`, quirk Q06); `EdrfRecorder::note_level` (`crates/digger-core/src/replay/recorder.rs`) | `one_player_game_has_single_level_record`, `edrf_map_reuse_written` |
+| P17 | A quit during the main phase or its pause skips the wind-down ticks but not the wind-down's start: the diggers' sprites are erased, the diggers hidden and the music stopped before the round-end clean-up, so the round-end `E` checkpoint written for the quit hashes the diggers as invisible. Research 01 §3.2 shows `erasediggers()` after the main loop but research and the game-flow spec were silent on the quit path; found on `2riptest01.edrf` (E at tick 1024) and `2test03.edrf` (E at tick 2391), confirmed in upstream `main.c` `game()` | Affects the simulation | `Game::step_observed` and `Ctx::hide_diggers` (`crates/digger-core/src/sim/mod.rs`) | `quirk_p17_quit_hides_diggers_before_round_end`, `quit_during_play_reports_300_ticks` |
 
 ## Playback deviations (`add-recording-and-conformance`)
 
@@ -260,3 +262,20 @@ and that every `quirk_q*` test is listed in its quirk's row.
 
 ## Findings from recordings
 
+Behaviour found by replaying the upstream corpus where the research reports
+were wrong or silent (task group 12 of `add-recording-and-conformance`). The
+first full run (task 7.5) had 48 of the 50 recordings passing; the two
+failures had one cause.
+
+| Recording | Tick | Finding | Quirk | Test |
+|---|---|---|---|---|
+| `2riptest01.edrf` | 1024 (`E` after the recorded quit) | A quit hides the diggers before the round end | P17 | `quirk_p17_quit_hides_diggers_before_round_end` |
+| `2test03.edrf` | 2391 (`E` after the recorded quit) | The same | P17 | `quirk_p17_quit_hides_diggers_before_round_end` |
+
+The monster-body lifetime rule of design D5 (the monster block holds a
+body from the monster's spawn until the round's monster reset) was
+confirmed, not corrected: every `E` checkpoint of the corpus matches, and
+the tick-256 hash of `dror0.edrf` (`17B2FBDB`, monster block 187 bytes)
+equals its first `C` record. No codec check had to be relaxed for any
+recording, so the "Deliberate deviations" of the change's design stand as
+written.
