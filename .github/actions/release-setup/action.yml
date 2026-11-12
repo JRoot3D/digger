@@ -1,0 +1,75 @@
+# The tools every release build job needs (add-web-build-and-releases,
+# design decisions 13 and 14): the pinned Rust toolchain of
+# rust-toolchain.toml, the ALSA and udev development packages on Linux, and
+# `cargo about` for THIRD-PARTY-LICENSES.html. With `web: true` also the
+# `wasm-bindgen` command at the version of the library in Cargo.lock.
+name: Release build setup
+description: Install the toolchain and tools of `cargo xtask dist`.
+
+inputs:
+  web:
+    description: Also install wasm-bindgen-cli for the web build.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # Hosted arm64 Linux images may come without rustup.
+    - name: Install rustup if missing
+      shell: bash
+      run: |
+        if ! command -v rustup >/dev/null 2>&1; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        fi
+    # rustup reads rust-toolchain.toml (Rust 1.99, the wasm32 and Apple
+    # targets).
+    - name: Install the pinned toolchain
+      shell: bash
+      run: |
+        rustup toolchain install
+        rustc --version
+        cargo --version
+    # cpal (ALSA) and gilrs (libudev) find the system libraries through
+    # pkg-config when the desktop crate is built on Linux.
+    - name: Install the ALSA and udev development packages
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+    - name: Read the pinned tool versions
+      id: versions
+      shell: bash
+      run: |
+        bindgen=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' Cargo.lock)
+        test -n "$bindgen"
+        echo "wasm-bindgen=$bindgen" >> "$GITHUB_OUTPUT"
+        # The cargo-about release the archives' licence files are made with.
+        echo "cargo-about=0.9.3" >> "$GITHUB_OUTPUT"
+    - name: Cache cargo-about
+      id: about-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/cargo-about
+          ~/.cargo/bin/cargo-about.exe
+        key: cargo-about-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.cargo-about }}
+    - name: Install cargo-about
+      if: steps.about-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install --locked cargo-about --version "${{ steps.versions.outputs.cargo-about }}" --features cli
+    # The command-line tool must be the version of the library in
+    # Cargo.lock; `cargo xtask web` refuses any other.
+    - name: Cache wasm-bindgen-cli
+      if: inputs.web == 'true'
+      id: bindgen-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/bin/wasm-bindgen
+        key: wasm-bindgen-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.wasm-bindgen }}
+    - name: Install wasm-bindgen-cli
+      if: inputs.web == 'true' && steps.bindgen-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install --locked wasm-bindgen-cli --version "${{ steps.versions.outputs.wasm-bindgen }}" --bin wasm-bindgen

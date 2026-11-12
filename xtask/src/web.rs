@@ -8,7 +8,10 @@
 //! --no-typescript`, assembles `dist/web/` from the generated files and the
 //! hand-written page in `web/`, and checks the result against the download
 //! size budget. With `--serve` it then serves `dist/web/` on `127.0.0.1`
-//! with a small static server, which the browser tests also use.
+//! with a small static server, which the browser tests also use. With
+//! `--serve --site <DIR>` it skips the build and serves an existing site,
+//! such as the `site/` of an unpacked release archive (the release
+//! workflow's browser tests).
 
 use std::fmt;
 use std::fs;
@@ -47,6 +50,9 @@ pub(crate) struct WebArgs {
     /// The URL path the site is served under, such as /games/digger/.
     #[arg(long, default_value = "/", requires = "serve")]
     prefix: String,
+    /// Serve this already built site instead of building dist/web/.
+    #[arg(long, value_name = "DIR", requires = "serve")]
+    site: Option<PathBuf>,
 }
 
 /// The workspace root.
@@ -58,6 +64,12 @@ fn workspace_root() -> PathBuf {
 
 /// Runs `cargo xtask web`.
 pub(crate) fn run(args: &WebArgs) -> Result<(), String> {
+    if let Some(site) = &args.site {
+        if !site.join("index.html").is_file() {
+            return Err(format!("{} holds no index.html", site.display()));
+        }
+        return serve(site, args.port, &Prefix::new(&args.prefix)?);
+    }
     let root = workspace_root();
     let dist = build(&root, &BuildOptions::default())?;
     if args.serve {

@@ -8,7 +8,8 @@
 //! before a game is configured. The desktop's command line (`cli`) is
 //! compiled for native targets only; it refuses a bad value with a usage
 //! error. The browser reads the page address's query string with
-//! [`parse_query`], ignores a bad value and shows a [`LaunchWarning`].
+//! `parse_query` (compiled for the browser only), ignores a bad value and
+//! shows a [`LaunchWarning`].
 
 use std::fmt;
 

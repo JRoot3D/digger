@@ -377,7 +377,10 @@ the console:
 - query: an invalid `speed` shows the warning.
 
 Pull requests run the Chromium project; pushes to `main` and release tags run
-all three.
+all three. In the release workflow the tests run against the `site/` of the
+built web archive, not a fresh build: with `DIGGER_WEB_SITE` set to that
+directory the `webServer` command becomes `cargo xtask web --serve --site
+<dir>`, which serves an existing site without building (task 7.2).
 
 `@playwright/test` is pinned to 1.63.0 (exact version in `package.json`, lock
 file committed); the CI job caches the browsers under that version. The
@@ -605,3 +608,10 @@ re-running that tag's workflow.
   later.
 - Whether a custom domain is used for the site. All paths are relative, so
   the choice does not affect the build.
+- Whether the archives must also carry the text of the GNU GPL version 3.
+  Binaries containing the Apache-2.0-only crates (`winit`, `dpi`, `cpal`,
+  and on Linux a few font and X11 crates) are conveyed under the "or later"
+  option, i.e. GPL version 3 (decision 15), whose section 4 asks for a copy
+  of that licence to be given with them; the archives hold only the
+  version 2 text in `LICENSE` (found in task 7.4, recorded in
+  `docs/releasing.md`, "Licences"). Settle before the first public release.

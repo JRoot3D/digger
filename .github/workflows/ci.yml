@@ -141,11 +141,15 @@ jobs:
       - name: Install the browsers
         if: steps.browser-cache.outputs.cache-hit != 'true'
         working-directory: web/tests
-        run: npx playwright install --with-deps $ENGINES
+        run: |
+          read -ra engines <<< "$ENGINES"
+          npx playwright install --with-deps "${engines[@]}"
       - name: Install the browsers' system libraries
         if: steps.browser-cache.outputs.cache-hit == 'true'
         working-directory: web/tests
-        run: npx playwright install-deps $ENGINES
+        run: |
+          read -ra engines <<< "$ENGINES"
+          npx playwright install-deps "${engines[@]}"
       - name: Browser smoke tests
         working-directory: web/tests
         run: |

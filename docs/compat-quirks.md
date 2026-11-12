@@ -392,6 +392,20 @@ the recording saves (`shell/recording.rs`). Ids `HS`; tests are run with
 | HS8 | Upstream saves the last game on F8 into the current directory as `<initials><score>.drf`, squeezed to 8.3 above 99999 points, with the score of the last digger considered and a fixed name for two-player games, and overwrites an existing file (research 05 §4.5, `recsavedrf`). The port writes into the `recordings` folder of the data directory: the initials of the last entry made with that entry's score, or `___` and the first Digger's score without one, never squeezed, with `-2`, `-3`, … before the extension when the name is taken; F8 saves a game once | Usability bug, fixed | `FinishedRecording::auto_stem` and `FinishedRecording::save_auto` (`shell/recording.rs`) | `f8_saves_once_with_auto_name`, `f8_without_game_does_nothing` |
 | HS9 | The initials are handed to the recording when the entry is made: a classic recording gets the line `*ABC` after the round's `EOL`, as upstream's `recputinit`; an extended recording has no initials line | Kept | `LiveRecording::add_initials` (`shell/recording.rs`) | `initials_line_in_drf` |
 
+## Web build (`add-web-build-and-releases`)
+
+The browser build adds no simulation code: the game, renderer and sound
+engine are the desktop ones, and the page's prompt, notices and letterbox
+are page elements outside the game picture (design decision 17). Two
+behaviours of the browser shell are kept visible here. Ids `WB`; tests are
+run with `cargo test -p digger <name>` and, in a browser, with the
+Playwright project in `web/tests/` (`npx playwright test`).
+
+| Id | Behaviour | Class | Isolated in | Test |
+|---|---|---|---|---|
+| WB1 | The exit key on the title screen does not end the program in a browser, as in upstream's web build (research 05 §8.4): a page is never closed by the game, so the title screen simply runs on; during a game the exit key still ends the game and the title screen follows, and a close request (none comes in a browser) also ends a game on the title screen | Presentation, kept from upstream's web build | `ExitPolicy::StayOnTitle`, set by the web `run` (`shell/mod.rs`, `main.rs`) | `web_exit_stays_on_title` |
+| WB2 | A hidden page (another tab, a minimised window) pauses a game played by a person through the game's own pause phase, as the pause key does, so hidden time consumes no ticks and the gauntlet clock stands still; the request is kept until the core honours it on a main-phase tick (SH2), so a page hidden while a level is still being drawn pauses once play starts. The title screen and playbacks only stop stepping while hidden and go on by themselves when the page is shown again (port decision, as SH5) | Port decision | `Shell::event` on `AppEvent::Visibility` (`shell/mod.rs`) with `Pause` (`shell/play.rs`); the web driver stops stepping and audio while hidden (`platform/web/app.rs`) | `hidden_during_play_enters_pause_phase`, `hidden_during_playback_resumes_alone`; Playwright `a hidden page stops the game, which shows its pause when visible again` |
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user

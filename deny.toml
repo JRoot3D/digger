@@ -30,30 +30,52 @@ ignore = [
 
 [licenses]
 # The workspace is GPL-2.0-or-later. Only licences that may be combined with
-# it and distributed under the GPL are allowed. Apache-2.0 and MPL-2.0 are
-# compatible with GPL version 3, which "or later" permits; in practice the
-# Rust ecosystem offers them dual-licensed with MIT.
+# it and distributed under the GPL are allowed, and only those some crate of
+# the graph (all six targets above, browser-only crates included) actually
+# needs: a crate offering several licences is taken under one of these, so
+# most dual MIT/Apache-2.0 crates are taken under MIT. A licence missing
+# here makes `cargo deny check` fail, in CI and in the release workflow's
+# `verify` job (add-web-build-and-releases, design decision 15). Reviewed
+# for the web build: every browser-only crate (wasm-bindgen and its macro
+# crates, js-sys, web-sys, wasm-bindgen-futures, web-time, bumpalo,
+# futures-*, pin-project) is MIT OR Apache-2.0, so it adds no licence.
 allow = [
+  # The workspace crates themselves (digger, digger-core, digger-sound,
+  # xtask).
   "GPL-2.0-or-later",
-  "GPL-2.0",
+  # Most dependencies; compatible with GPL version 2.
   "MIT",
-  "MIT-0",
+  # Crates offered under Apache-2.0 only: winit and its dpi crate (in every
+  # build, the web one included), cpal (every build), gethostname (x11rb,
+  # Linux), ab_glyph, ab_glyph_rasterizer and owned_ttf_parser (the Wayland
+  # title bar, Linux). Apache-2.0 is compatible with GPL version 3 but
+  # not with version 2, so binaries containing these crates are conveyed
+  # under the "or later" option of GPL-2.0-or-later, i.e. GPL version 3
+  # (docs/releasing.md, "Licences").
   "Apache-2.0",
-  "Apache-2.0 WITH LLVM-exception",
+  # arrayref (tiny-skia, the Wayland title bar); compatible with GPL 2.
   "BSD-2-Clause",
+  # tiny-skia and tiny-skia-path (the Wayland title bar); compatible with
+  # GPL 2.
   "BSD-3-Clause",
+  # inotify and inotify-sys (gilrs, Linux) and libloading (dlib, which
+  # loads the Wayland and X11 libraries on Linux); ISC is
+  # equivalent to the MIT terms.
   "ISC",
-  "Zlib",
-  "BSL-1.0",
-  "Unicode-3.0",
-  "Unicode-DFS-2016",
-  "CC0-1.0",
-  "Unlicense",
+  # option-ext (directories, native builds): MPL-2.0 lists the GNU GPL
+  # version 2 or later as a Secondary Licence, so it may be combined with
+  # the workspace.
   "MPL-2.0",
+  # unicode-ident's Unicode data tables ("(MIT OR Apache-2.0) AND
+  # Unicode-3.0"; a proc-macro dependency, not linked into the binaries);
+  # a permissive notice licence.
+  "Unicode-3.0",
 ]
 confidence-threshold = 0.9
-# The allow-list anticipates the platform crates later changes add.
-unused-allowed-license = "allow"
+# An entry no crate needs any more is reported, so the list stays the set
+# of licences actually in use; it is a warning so that a dependency update
+# that drops a crate does not block a release.
+unused-allowed-license = "warn"
 exceptions = []
 
 [licenses.private]

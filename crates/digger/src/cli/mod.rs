@@ -81,6 +81,10 @@ struct Cli {
         clippy::option_option,
         reason = "clap's form of an option whose value may be left out"
     )]
+    #[allow(
+        rustdoc::broken_intra_doc_links,
+        reason = "the doc comment is the --help text, where `/G[:SECS]` is the upstream alias, not a link"
+    )]
     gauntlet: Option<Option<u16>>,
 
     /// Start with all sound off [alias: /Q]

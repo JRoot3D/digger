@@ -1,0 +1,242 @@
+# Tagged releases (openspec/changes/add-web-build-and-releases/design.md,
+# decisions 13 to 15; docs/releasing.md). A tag `vX.Y.Z` or `vX.Y.Z-suffix`
+# that equals `v` + the workspace version builds one archive per platform,
+# checks that the Linux and web archives are reproducible, attaches all
+# archives and `SHA256SUMS` to a draft GitHub release and, unless the tag
+# has a pre-release suffix, deploys the web build to GitHub Pages.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+# Every job reads only, except `publish` (its own permissions below).
+permissions:
+  contents: read
+
+# One release run per tag; a second push of the same tag waits.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # The tag selects what is released; the version itself has one source,
+  # `[workspace.package] version` in Cargo.toml. All checks of CI and the
+  # licence gate run again on the tagged commit.
+  verify:
+    name: verify
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag equals v + workspace version
+        id: version
+        run: .github/scripts/release-version.sh "$GITHUB_REF_NAME"
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Install the ALSA and udev development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - name: cargo xtask ci
+        run: cargo xtask ci
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2
+      # Licences and bans of every release target, wasm32 included
+      # (deny.toml, `[graph] targets`).
+      - name: cargo deny check
+        run: cargo deny check
+
+  # The four native archives. Linux aarch64 is built natively on an arm64
+  # runner, not cross-compiled; macOS universal is built on one arm64
+  # runner for both Apple targets (design decision 13).
+  native:
+    name: ${{ matrix.platform }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-22.04
+            ext: tar.gz
+          - platform: linux-aarch64
+            runner: ubuntu-22.04-arm
+            ext: tar.gz
+          - platform: windows-x86_64
+            runner: windows-2022
+            ext: zip
+          - platform: macos-universal
+            runner: macos-14
+            ext: tar.gz
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/release-setup
+      - name: cargo xtask dist
+        run: cargo xtask dist --platform "${{ matrix.platform }}" --version "$VERSION"
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.platform }}
+          path: dist/digger-${{ env.VERSION }}-${{ matrix.platform }}.${{ matrix.ext }}
+          if-no-files-found: error
+
+  # The web archive, and the browser smoke tests in all three engines run
+  # against the site inside that archive, exactly as it will be deployed.
+  web:
+    name: web
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      ENGINES: chromium firefox webkit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/release-setup
+        with:
+          web: "true"
+      - name: cargo xtask dist
+        run: cargo xtask dist --platform web --version "$VERSION"
+      - name: Unpack the site
+        run: |
+          mkdir -p "$RUNNER_TEMP/web"
+          tar -xzf "dist/digger-$VERSION-web.tar.gz" -C "$RUNNER_TEMP/web"
+          echo "DIGGER_WEB_SITE=$RUNNER_TEMP/web/digger-$VERSION-web/site" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/tests/package-lock.json
+      - name: Install the test tools
+        working-directory: web/tests
+        run: npm ci
+      - name: Install the browsers
+        working-directory: web/tests
+        run: |
+          read -ra engines <<< "$ENGINES"
+          npx playwright install --with-deps "${engines[@]}"
+      # DIGGER_WEB_SITE makes the tests serve the unpacked site instead of
+      # building a new one (web/tests/playwright.config.js).
+      - name: Browser smoke tests (all engines)
+        working-directory: web/tests
+        run: |
+          projects=()
+          for engine in $ENGINES; do projects+=("--project=$engine"); done
+          npx playwright test "${projects[@]}"
+      - name: Upload the test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: web/tests/test-results/
+          if-no-files-found: ignore
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-web
+          path: dist/digger-${{ env.VERSION }}-web.tar.gz
+          if-no-files-found: error
+
+  # Reproducibility is claimed for the same toolchain and runner image: the
+  # Linux x86_64 and web archives are each built twice, in two copies of
+  # the source tree in different directories, and must have the same
+  # SHA-256 (design decision 14). Not claimed for macOS.
+  reproducible:
+    name: reproducible
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/release-setup
+        with:
+          web: "true"
+      - name: Linux x86_64 archive, built twice
+        run: cargo xtask dist --platform linux-x86_64 --version "$VERSION" --check-reproducible
+      - name: Web archive, built twice
+        run: cargo xtask dist --platform web --version "$VERSION" --check-reproducible
+
+  # Collects the archives, writes SHA256SUMS, creates the draft release
+  # (a maintainer reviews and publishes it, docs/releasing.md) and deploys
+  # the site, except for pre-release tags.
+  publish:
+    name: publish
+    needs: [verify, native, web, reproducible]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+    steps:
+      - name: Download the archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: release
+      - name: Write SHA256SUMS
+        working-directory: release
+        run: |
+          ls -l
+          test "$(find . -maxdepth 1 -name 'digger-*' | wc -l)" -eq 5
+          sha256sum digger-* | LC_ALL=C sort -k 2 > SHA256SUMS
+          cat SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Create the draft release
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # A re-run of an earlier tag's workflow (docs/releasing.md,
+          # "Rollback") leaves its existing release alone and only deploys
+          # that tag's site again.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "A release for $GITHUB_REF_NAME exists already; it is not changed."
+            exit 0
+          fi
+          flags=(--draft --verify-tag --title "Digger $VERSION" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" digger-* SHA256SUMS
+      - name: Unpack the site
+        if: env.PRERELEASE != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/web"
+          tar -xzf "release/digger-$VERSION-web.tar.gz" -C "$RUNNER_TEMP/web"
+          echo "SITE=$RUNNER_TEMP/web/digger-$VERSION-web/site" >> "$GITHUB_ENV"
+      - name: Configure Pages
+        if: env.PRERELEASE != 'true'
+        uses: actions/configure-pages@v5
+      - name: Upload the site
+        if: env.PRERELEASE != 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE }}
+      - name: Deploy the site
+        if: env.PRERELEASE != 'true'
+        id: deploy
+        uses: actions/deploy-pages@v4

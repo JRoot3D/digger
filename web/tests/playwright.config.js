@@ -7,6 +7,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.DIGGER_WEB_PORT ?? 8123);
+// With DIGGER_WEB_SITE set to a built site (the `site/` of an unpacked
+// release archive), that site is served as it is instead of a fresh build.
+const site = process.env.DIGGER_WEB_SITE;
+const siteOption = site ? ` --site ${JSON.stringify(site)}` : "";
 export const prefix = "/games/digger/";
 export const origin = `http://127.0.0.1:${port}`;
 
@@ -26,7 +30,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `cargo xtask web --serve --port ${port} --prefix ${prefix}`,
+    command: `cargo xtask web --serve --port ${port} --prefix ${prefix}${siteOption}`,
     cwd: "../..",
     url: `${origin}${prefix}`,
     reuseExistingServer: !process.env.CI,

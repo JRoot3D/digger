@@ -89,7 +89,7 @@ enum Command {
     /// Write the Linux and macOS icons under packaging/ from the game's
     /// window icon (or compare with --check).
     Icons(icons::IconsArgs),
-    /// Build one release archive, dist/digger-<V>-<platform>.<tar.gz|zip>,
+    /// Build one release archive, `dist/digger-<V>-<platform>.<tar.gz|zip>`,
     /// reproducibly; with --check-reproducible build it twice in two
     /// copies of the tree and compare the SHA-256 values.
     Dist(dist::DistArgs),
