@@ -105,7 +105,7 @@ From a fall-start command until a fall-stop command, the engine SHALL repeat a 4
 - **THEN** the fall effect offers nothing from that tick on
 
 ### Requirement: Bag wobble effect
-From a wobble-start command until a wobble-stop command, the engine SHALL sound a one-tick blip every 16 ticks, in a 64-tick cycle: divisor 2500 (477 Hz) on tick 16, 3000 (397 Hz) on tick 32, 2500 on tick 48 and 2000 (596 Hz) on tick 64. A wobble-stop SHALL reset the cycle. (research 04 §2)
+From a wobble-start command until a wobble-stop command, the engine SHALL sound a one-tick blip every 16 ticks, in a 64-tick cycle: divisor 2500 (477 Hz) on tick 16, 3000 (397 Hz) on tick 32, 2500 on tick 48 and 2000 (596 Hz) on tick 64. A wobble-start while the wobble runs SHALL keep its position in the cycle; a wobble-stop SHALL reset the cycle. (research 04 §2)
 
 #### Scenario: One full cycle
 - **WHEN** a wobble effect runs for 64 ticks
@@ -114,6 +114,10 @@ From a wobble-start command until a wobble-stop command, the engine SHALL sound 
 #### Scenario: Restart after stop
 - **WHEN** a wobble effect is stopped on its 20th tick and started again
 - **THEN** its next blip is divisor 2500, 16 ticks after the restart
+
+#### Scenario: Repeated start
+- **WHEN** wobble-start commands arrive again every 11 ticks while the wobble runs
+- **THEN** the blips stay on ticks 16, 32, 48 and 64 of the first start
 
 ### Requirement: Bag break effect
 A break command SHALL sound divisor 15000 (79 Hz) for exactly 3 ticks and then end. (research 04 §2)
@@ -160,11 +164,15 @@ An explode command for a fireball SHALL end that fireball's flight effect and so
 - **THEN** fireball 1's flight effect offers nothing from that tick on
 
 ### Requirement: Bonus siren effect
-From a bonus-start command until a bonus-stop command, the engine SHALL sound a two-tone siren in a 16-tick cycle: divisor 1230 (970 Hz) on positions 0 to 5, nothing on 6 and 7, divisor 1513 (788 Hz) on positions 8 to 13, nothing on 14 and 15. The first tick after a start SHALL be position 1. A bonus-stop SHALL reset the position. (research 04 §2)
+From a bonus-start command until a bonus-stop command, the engine SHALL sound a two-tone siren in a 16-tick cycle: divisor 1230 (970 Hz) on positions 0 to 5, nothing on 6 and 7, divisor 1513 (788 Hz) on positions 8 to 13, nothing on 14 and 15. The first tick after a start SHALL be position 1. A bonus-start while the siren sounds SHALL keep its position; a bonus-stop SHALL reset the position. (research 04 §2)
 
 #### Scenario: First cycle
 - **WHEN** a bonus siren runs for 21 ticks
 - **THEN** it sounds 1230 on ticks 1 to 5, nothing on 6 and 7, 1513 on ticks 8 to 13, nothing on 14 and 15, and 1230 on ticks 16 to 21
+
+#### Scenario: Repeated start
+- **WHEN** bonus-start commands arrive again while the siren sounds
+- **THEN** the siren keeps its position in the cycle
 
 ### Requirement: Emerald click effect
 An emerald-click command SHALL sound divisor 1000 (1193 Hz) for exactly one tick. (research 04 §2)
@@ -192,7 +200,7 @@ A gold command SHALL sound two interleaved sweeps for 31 ticks. One value starts
 - **THEN** the divisors on ticks 1 to 8 are 4000, 531, 3516, 599, 3091, 675, 2717 and 761, tick 31 sounds 582, and the effect is over on tick 32
 
 ### Requirement: Eat-monster effect
-An eat-monster command SHALL sound three identical rising chirps, each 20 ticks followed by one tick of nothing (63 ticks in all). In a chirp a value starts at 2000 and loses one sixteenth of itself on every tick; a tone sounds on even ticks only. (research 04 §2)
+An eat-monster command SHALL sound three identical rising chirps, each 20 ticks followed by one tick of nothing (63 ticks in all). In a chirp a value starts at 2000 and loses one sixteenth of itself on every tick (integer shift); a tone sounds on even ticks only, on ticks 2, 6, 10, 14 and 18 of a chirp at the value after that tick's loss and on ticks 4, 8, 12, 16 and 20 at the value before it. (research 04 §2)
 
 #### Scenario: One chirp
 - **WHEN** an eat-monster command takes effect

@@ -228,6 +228,41 @@ judged or reported, never the game played.
   pass as completed. The trailer after the last `EOL` (`EOG`, initials)
   holds no round. Test: `outcome_stopped_when_game_ends_early`.
 
+## Sound (`add-sound-engine`)
+
+None of these affects the simulation: the sound engine never feeds back
+into the game. They are listed because this file is the project's single
+register (design D14 of `add-sound-engine`). Test names are those of the
+`digger-sound` crate, with the module path for library tests; run one with
+`cargo test -p digger-sound <name>`. Entries SQ6 to SQ12, SF1 to SF5, SF7,
+SF8 and SF10 are added with the tunes, switches, synthesis and drivers.
+
+Kept (the audible shape of the original):
+
+| Id | Quirk | Class | Isolated in | Test |
+|---|---|---|---|---|
+| SQ1 | A divisor of 16384 (0x4000) or more is silent, so the death effect is heard only on ticks 4 to 22 of its 51 while it displaces music on all 51 (research 04 §1.2, §2) | Presentation, kept | `Voice::tone` (`crates/digger-sound/src/voice.rs`) | `death_is_audible_on_ticks_4_to_22` (`tests/effects_trace.rs`) |
+| SQ2 | A tone's frequency is `1193181 / divisor` with integer division, so every frequency is a whole number of Hz (research 04 §1.2) | Presentation, kept | `Divisor::hertz` (`crates/digger-sound/src/units.rs`) | `units::tests::divisor_division_truncates` |
+| SQ3 | Effect priority is the original's updater order (the last effect to offer a divisor on a tick is heard), and an effect that offers nothing on a tick lets a lower one through; with both fireballs sounding the one heard alternates by a round-robin turn that is kept across ticks and stop-all (research 04 §1.3, §2) | Presentation, kept | `Effects::tick` and `Turn` (`crates/digger-sound/src/effects/mod.rs`) | `effect_priority_pairs`, `two_fireballs_alternate`, `two_explosions_alternate` (`tests/effects_trace.rs`) |
+| SQ4 | A fire-start for a flying fireball resets its base divisor to 500 but not its two-tick cadence; fire-stop and explode reset both (research 04 §2) | Presentation, kept | `FireSlot` (`crates/digger-sound/src/effects/fire.rs`) | `fire_restart_keeps_cadence` (`tests/effects_trace.rs`) |
+| SQ5 | Gold and death still sound on the tick on which they end, so they last 31 and 51 ticks (research 04 §2) | Presentation, kept | `Step { offer, done }` (`crates/digger-sound/src/effects/mod.rs`), `Gold` and `Death` | `gold_lasts_31_ticks`, `death_lasts_51_ticks` (`tests/effects_trace.rs`) |
+| SQ9 | The fireball noise comes from a sound-only 32-bit LCG (`state * 0x15A4E35 + 1`, wrapping), seeded 0 when the engine is created, drawn only on ticks on which a flight sounds and never reseeded by stop-all; it never touches the game's random numbers (research 04 §2) | Presentation, kept | `NoiseRng` (`crates/digger-sound/src/noise.rs`) | `noise::tests::noise_first_values`, `effects::tests::stop_all_empties_every_slot_but_keeps_the_noise` |
+
+Also kept, without an id because the spec states it directly: a start
+command for a running wobble or bonus siren keeps its position (the
+original's start only raises a flag), and only the matching stop resets it.
+The simulation repeats these starts while the cue lasts, so a reset on
+start would never let the wobble reach its first blip. Tests:
+`wobble_start_while_wobbling_keeps_position`,
+`bonus_start_while_sounding_keeps_position`.
+
+Fixed (presentation bugs, with the reason):
+
+| Id | Upstream behaviour | Port | Isolated in | Test |
+|---|---|---|---|---|
+| SF6 | The fall effect's on/off phase survives a stop and a restart, so a restarted fall may sound up to 2 ticks (27 ms) earlier or later | A fall-start always begins the same cycle, tone on its third tick at divisor 1000 | `Fall::new` (`crates/digger-sound/src/effects/fall.rs`) | `fall_first_three_tones`, `fall_restart_begins_same_cycle` (`tests/effects_trace.rs`) |
+| SF9 | The emerald step indexes the divisor table without a bounds check | `EmeraldStep` holds only 0 to 7, so the lookup cannot go out of range | `emerald_divisor` (`crates/digger-sound/src/effects/emerald.rs`) | `effects::tests::emerald_step_range` |
+
 ## Not ported
 
 Class: dropped feature. Each is rejected with a clear message where a user

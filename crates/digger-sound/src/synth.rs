@@ -5,9 +5,9 @@
 //! with [`Synth::apply`], in the order they were sent, and then calls
 //! [`Synth::tick`]. Nothing here allocates or fails.
 
-use crate::command::{Input, SoundCommand, SoundEvent};
+use crate::command::{Input, SoundEvent};
 use crate::config::SoundConfig;
-use crate::effects::Effects;
+use crate::effects::{Effects, EffectsTick};
 use crate::music::TuneTables;
 use crate::units::Level;
 use crate::voice::{TickTrace, Voice};
@@ -63,22 +63,22 @@ impl Synth {
     /// [`Synth::tick`], before anything advances on that tick.
     pub fn apply(&mut self, input: Input) {
         match input {
-            Input::Game(SoundCommand::StopAll) => self.effects.stop_all(),
-            #[cfg(test)]
-            Input::Game(SoundCommand::FallStart) => {
-                self.effects.probe = Some(crate::effects::probe::Probe(crate::Divisor(1000)));
-            }
-            #[cfg(test)]
-            Input::Game(SoundCommand::FallStop) => self.effects.probe = None,
-            // The effects, tunes, switches and controls are added by the
-            // later task groups; until then they are ignored.
-            Input::Game(_) | Input::Control(_) => {}
+            Input::Game(command) => self.effects.apply(command),
+            // The tunes, the jingle, pause and the controls are added by
+            // the later task groups; until then they are ignored.
+            Input::Control(_) => {}
         }
     }
 
     /// Advances the engine by one tick and reports what sounds on it.
     pub fn tick(&mut self) -> TickTrace {
-        let effect_offer = self.effects.tick();
+        let EffectsTick {
+            offer: effect_offer,
+            stop_music,
+        } = self.effects.tick();
+        // The death effect stops the tune on its first tick; the music
+        // player that acts on this is added with the tunes (task group 5).
+        let _ = stop_music;
         let voice = effect_offer.map_or(Voice::Silent, Voice::Effect);
         TickTrace {
             voice,
@@ -129,8 +129,8 @@ mod tests {
     #[test]
     fn stop_all_silences_a_running_effect() {
         let mut synth = synth();
-        synth.apply(SoundCommand::FallStart.into());
-        assert_eq!(synth.tick().voice, Voice::Effect(crate::Divisor(1000)));
+        synth.apply(SoundCommand::Break.into());
+        assert_eq!(synth.tick().voice, Voice::Effect(crate::Divisor(15_000)));
         synth.apply(SoundCommand::StopAll.into());
         assert_eq!(synth.tick().voice, Voice::Silent);
     }

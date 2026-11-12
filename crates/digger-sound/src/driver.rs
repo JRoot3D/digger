@@ -97,10 +97,6 @@ mod tests {
         ManualDriver::new(SoundConfig::default(), tables)
     }
 
-    // Until the real fall effect exists (task group 4), fall-start and
-    // fall-stop drive a test-only effect that offers divisor 1000 on every
-    // tick; the ordering rule under test does not depend on its shape.
-
     #[test]
     fn commands_apply_in_order_at_next_tick() {
         let mut driver = driver();
@@ -115,18 +111,23 @@ mod tests {
                 .all(|t| t.effect_offer.is_none() && t.voice == Voice::Silent)
         );
 
-        // Stop then start: the start, sent last, wins.
+        // Stop then start: the start, sent last, wins, and the fall sounds
+        // on the third tick of its cycle.
         driver.send(SoundCommand::FallStop);
         driver.send(SoundCommand::FallStart);
-        let traces = driver.advance_ticks(2);
-        assert!(traces.iter().all(|t| t.effect_offer == Some(Divisor(1000))));
+        let offers: Vec<_> = driver
+            .advance_ticks(3)
+            .iter()
+            .map(|t| t.effect_offer)
+            .collect();
+        assert_eq!(offers, [None, None, Some(Divisor(1000))]);
     }
 
     #[test]
     fn commands_wait_for_the_next_tick() {
         let mut driver = driver();
         assert_eq!(driver.advance_ticks(1)[..], [silent()]);
-        driver.send(SoundCommand::FallStart);
+        driver.send(SoundCommand::EmeraldClick);
         // Nothing has ticked yet, so nothing sounds until the next tick,
         // which applies the command before advancing.
         let traces = driver.advance_ticks(1);

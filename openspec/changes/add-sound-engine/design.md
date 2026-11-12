@@ -122,11 +122,12 @@ pub struct Effects {
 }
 ```
 
-- "Inactive" is `None`, not a flag next to stale fields. Starting an effect constructs a fresh state, which is what makes restarts deterministic.
+- "Inactive" is `None`, not a flag next to stale fields. Starting an effect constructs a fresh state, which is what makes restarts deterministic. The exceptions are the wobble and the bonus siren: the simulation repeats their start command for as long as the cue lasts (every other frame for a wobbling bag, every frame of the bonus flashing), and upstream's start only raises a flag, so a start keeps a running state and only the stop resets it; a fresh state per start would never let the wobble reach its first blip on tick 16.
 - Each state type has `fn tick(&mut self) -> Step`, where `Step { offer: Option<Divisor>, done: bool }`. `done` on the same tick as an offer covers the effects that sound on the tick they end (gold, death).
 - `Effects::tick` calls the slots in upstream's updater order (emerald, wobble, death, break, gold, click, explode, fire, eat, fall, extra life, bonus) and keeps the last `Some` offer. The order is one array literal of method calls in one function, with the spec's priority list in its doc comment; a test asserts every adjacent pair.
 - `FireSlot { flight: Option<Fire>, cadence: bool }`: the cadence bit lives outside the `Option` because a restart must not reset it (kept quirk SQ4), while `FireStop` resets both.
-- Death needs to stop the music on its first tick. `Death::tick` returns that as a flag in an effect-specific result; `Synth::tick` acts on it. Effects never hold a reference to the music player.
+- Death needs to stop the music on its first tick. `Death::tick` returns that as a flag in an effect-specific result, `Effects::tick` returns it next to the heard offer (`EffectsTick { offer, stop_music }`), and `Synth::tick` acts on it. Effects never hold a reference to the music player.
+- Stop-all empties every slot but keeps the noise generator and the two round-robin turns, as upstream's stop-all only switches each effect off.
 - All arithmetic is on `u16`/`u32` with plain operators; the sequences stay far below overflow (largest value 30500). The only wrapping arithmetic is `NoiseRng` (`wrapping_mul`, `wrapping_add`), named as such.
 
 ### D4. Level-done jingle and music
