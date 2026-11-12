@@ -128,9 +128,10 @@ impl ScoreTable {
     /// below every higher one; the entries below move down and the former
     /// tenth entry is dropped (research 01 §6.3: ties go above). Returns
     /// the place taken, 0 for first; `None`, leaving the table unchanged,
-    /// when the score does not qualify.
+    /// when the score does not qualify or the initials are not three
+    /// letters `A`–`Z` (a table only ever holds entries it can store).
     pub(crate) fn insert(&mut self, entry: Entry) -> Option<usize> {
-        if !self.qualifies(entry.score) {
+        if !self.qualifies(entry.score) || !valid_initials(entry.initials) {
             return None;
         }
         let place = self.entries.iter().position(|e| e.score <= entry.score)?;
@@ -415,5 +416,10 @@ mod tests {
         let mut entries = [Entry::EMPTY; TABLE_LEN];
         entries[0].score = MAX_SCORE + 1;
         assert_eq!(ScoreTable::from_entries(entries), None, "too large");
+        // Insertion keeps the same rules: initials that could not be
+        // stored are refused and the table is unchanged.
+        let mut t = ScoreTable::EMPTY;
+        assert_eq!(t.insert(Entry::new(*b"a\"b", 100)), None);
+        assert_eq!(t, ScoreTable::EMPTY);
     }
 }
