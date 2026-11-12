@@ -37,12 +37,12 @@ use crate::event::AppEvent;
 use crate::headless::VerifyJob;
 use crate::input::{Action, Bindings, InputFrame};
 use crate::launch::Redefine;
-use crate::notice::Notice;
+use crate::notice::{Notice, Rejection};
 use crate::page::Phase;
 use crate::scores::store::ScoreStore;
 use crate::scores::{self, ScoreTable, Scores, TableKey};
 use crate::store::{Storage, StoreKey};
-use crate::transfer::FileTransfer;
+use crate::transfer::{FileTransfer, MAX_IMPORT_BYTES, TransferError};
 
 mod game_over;
 mod initials;
@@ -62,6 +62,8 @@ mod playback_tests;
 mod redefine_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod web_tests;
 
 pub(crate) use play::{PlayScene, PlaybackScene};
 pub(crate) use playlist::PlayList;
@@ -117,6 +119,22 @@ pub(crate) enum Request {
     /// A key redefinition completed: the input layer takes the bindings of
     /// [`Shell::bindings`] from the next event on.
     BindingsChanged,
+}
+
+/// What the shell does when a scene ends the program (add-web-build-and-
+/// releases, design decision 17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ExitPolicy {
+    /// The desktop: the program ends through [`Request::Exit`].
+    #[default]
+    Quit,
+    /// The browser: a page is never closed, so the title screen runs on
+    /// (`web-build` spec, no command line and no exit).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser's exit policy")
+    )]
+    StayOnTitle,
 }
 
 /// What one frame produced (design D2).
@@ -396,6 +414,11 @@ fn game_config(settings: &Settings, mode: GameMode, levels: &LevelSet) -> GameCo
 /// scene, the settings and what the player changed at run time, the frame
 /// time and the sound switches, and the last game's recording.
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent switches: sound, music, the hidden-page pause and the \
+              damaged-settings rule"
+)]
 pub(crate) struct Shell {
     /// The resolved settings the program started with.
     settings: Settings,
@@ -429,6 +452,17 @@ pub(crate) struct Shell {
     transfer: Option<Box<dyn FileTransfer>>,
     /// The notices raised besides the storage's, until they are taken.
     notices: Vec<Notice>,
+    /// What an exit of the current scene does.
+    exit: ExitPolicy,
+    /// The page was hidden during live play: the next frame carries the
+    /// pause action (add-web-build-and-releases, design decision 5).
+    hidden_pause: bool,
+    /// The runtime changes as last saved by
+    /// [`Shell::save_changed_settings`].
+    saved: Layer,
+    /// The stored settings were damaged when the program started: the
+    /// next save replaces them (`web-build` spec, damaged stored settings).
+    replace_damaged: bool,
     /// The current scene.
     scene: Scene,
 }
@@ -496,6 +530,10 @@ impl Shell {
             storage,
             transfer: None,
             notices: Vec::new(),
+            exit: ExitPolicy::Quit,
+            hidden_pause: false,
+            saved: Layer::default(),
+            replace_damaged: false,
             settings,
             setup,
         }
@@ -503,6 +541,20 @@ impl Shell {
 
     /// Runs one frame.
     pub(crate) fn frame(&mut self, input: &ShellInput) -> FrameOutput<'_> {
+        let paused;
+        let input = if std::mem::take(&mut self.hidden_pause)
+            && matches!(self.scene, Scene::Playing(_))
+            && !self.entering_initials()
+        {
+            // The page was hidden during live play: the game enters its
+            // own pause phase, as with the pause key.
+            let mut with_pause = input.clone();
+            with_pause.input.actions.push(Action::Pause);
+            paused = with_pause;
+            &paused
+        } else {
+            input
+        };
         let mut out = Pending::default();
         self.function_actions(input, &mut out);
         let mut cx = Context {
@@ -529,7 +581,14 @@ impl Shell {
         match transition {
             Transition::Stay => {}
             Transition::To(scene) => self.scene = scene,
-            Transition::Exit(code) => out.requests.push(Request::Exit(code)),
+            Transition::Exit(code) => match self.exit {
+                ExitPolicy::Quit => out.requests.push(Request::Exit(code)),
+                ExitPolicy::StayOnTitle => {
+                    if !matches!(self.scene, Scene::Title(_)) {
+                        self.scene = self.title_scene();
+                    }
+                }
+            },
         }
         if let Some(keys) = out.keys.take() {
             self.apply_keys(*keys, &mut out);
@@ -611,15 +670,68 @@ impl Shell {
     }
 
     /// Saves `changes` over the stored settings; a failure raises a
-    /// notice and the changes stay in effect for this run.
+    /// notice and the changes stay in effect for this run. Stored settings
+    /// that were damaged at start are replaced when
+    /// [`Shell::replace_damaged_settings`] was called.
     fn save_changes(&mut self, changes: &Layer) {
-        match crate::config::file::save(self.storage.store_mut(), changes) {
+        let store = self.storage.store_mut();
+        let result = match crate::config::file::save(store, changes) {
+            Err(SaveError::Invalid(_)) if self.replace_damaged => {
+                crate::config::file::save_fresh(store, changes).map_err(SaveError::Store)
+            }
+            result => result,
+        };
+        match result {
             Ok(_) => {}
             Err(SaveError::Store(error)) => self.storage.failed(StoreKey::Settings, error),
             Err(SaveError::Invalid(error)) => self
                 .storage
                 .notice(Notice::SettingsNotSaved(error.to_string())),
         }
+    }
+
+    /// Saves the runtime changes if they differ from those last saved
+    /// here: the browser saves the settings as they change rather than at
+    /// exit (add-web-build-and-releases, design decision 4).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser saves settings as they change")
+    )]
+    pub(crate) fn save_changed_settings(&mut self) {
+        if self.runtime != self.saved {
+            let changes = self.runtime.clone();
+            self.save_changes(&changes);
+            self.saved = changes;
+        }
+    }
+
+    /// The stored settings could not be read at start, so the defaults
+    /// apply: the next save replaces them instead of refusing to touch
+    /// them (`web-build` spec, damaged stored settings).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser starts over damaged settings")
+    )]
+    pub(crate) const fn replace_damaged_settings(&mut self) {
+        self.replace_damaged = true;
+    }
+
+    /// Sets what an exit of the current scene does.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser's exit policy")
+    )]
+    pub(crate) const fn set_exit_policy(&mut self, exit: ExitPolicy) {
+        self.exit = exit;
+    }
+
+    /// The title screen for the selected mode, showing its table.
+    fn title_scene(&self) -> Scene {
+        let table = self.scores.scores().table(&TableKey::from_mode(
+            self.mode,
+            self.setup.score_levels.clone(),
+        ));
+        Scene::Title(TitleScene::new(self.mode, table))
     }
 
     /// Saves the settings the player changed during the run (at exit, on
@@ -652,23 +764,49 @@ impl Shell {
     pub(crate) fn event(&mut self, event: AppEvent) {
         match event {
             AppEvent::RecordingPicked { name, bytes } => self.picked(name, &bytes),
+            AppEvent::TransferFailed(TransferError::TooLarge { name, size }) => {
+                self.notices.push(Notice::RecordingRejected {
+                    name,
+                    reason: Rejection::TooLarge { size },
+                });
+            }
+            AppEvent::TransferFailed(TransferError::Unreadable { name, reason }) => {
+                self.notices.push(Notice::RecordingRejected {
+                    name,
+                    reason: Rejection::Unreadable(reason),
+                });
+            }
             AppEvent::TransferFailed(error) => {
                 self.notices.push(Notice::RecordingNotSaved(error));
             }
             AppEvent::StorageFailed(key, error) => self.storage.failed(key, error),
-            // Pausing for a hidden page is task 3.6 of add-web-build-and-
-            // releases; the desktop sends no visibility events.
-            AppEvent::Visibility(_) => {}
+            // A page hidden during live play pauses the game from the next
+            // frame on, through the game's own pause phase; the title and a
+            // playback simply go on when the platform steps them again
+            // (`web-build` spec, hidden tab pauses the game).
+            AppEvent::Visibility(visible) => {
+                if !visible && matches!(self.scene, Scene::Playing(_)) {
+                    self.hidden_pause = true;
+                }
+            }
         }
     }
 
-    /// A recording picked by the player.
+    /// A recording picked by the player: rejected with a notice naming
+    /// the reason when it is too large, is no recording, is of a kind not
+    /// played, is damaged, or is picked away from the title screen.
     fn picked(&mut self, name: String, bytes: &[u8]) {
-        if !matches!(self.scene, Scene::Title(_)) {
-            self.notices.push(Notice::RecordingRejected {
-                name,
-                reason: String::from("recordings are played from the title screen"),
-            });
+        let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        let rejected = if size > MAX_IMPORT_BYTES {
+            Some(Rejection::TooLarge { size })
+        } else if !matches!(self.scene, Scene::Title(_)) {
+            Some(Rejection::NotOnTitle)
+        } else {
+            None
+        };
+        if let Some(reason) = rejected {
+            self.notices
+                .push(Notice::RecordingRejected { name, reason });
             return;
         }
         match digger_core::recording::parse(bytes) {
@@ -683,7 +821,7 @@ impl Shell {
             }
             Err(error) => self.notices.push(Notice::RecordingRejected {
                 name,
-                reason: error.to_string(),
+                reason: Rejection::of(&error),
             }),
         }
     }

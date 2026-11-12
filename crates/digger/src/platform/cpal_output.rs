@@ -1,4 +1,4 @@
-//! The desktop's audio device: cpal's default host and output behind the
+//! The audio device: cpal's default host and output behind the
 //! shared [`Backend`] trait (design D6 of `add-desktop-app`).
 
 use std::fmt;
@@ -15,10 +15,10 @@ use crate::platform::audio::{
 
 /// The real device: cpal's default host and output.
 #[derive(Debug, Default)]
-pub(super) struct CpalBackend;
+pub(crate) struct CpalBackend;
 
 /// A playing cpal stream; dropping it stops the device.
-pub(super) struct CpalStream(cpal::Stream);
+pub(crate) struct CpalStream(cpal::Stream);
 
 impl fmt::Debug for CpalStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

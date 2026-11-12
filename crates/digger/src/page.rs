@@ -27,7 +27,7 @@ pub(crate) enum Phase {
 impl Phase {
     /// The phase's name on the page.
     #[cfg_attr(
-        not(any(test, target_arch = "wasm32")),
+        not(test),
         allow(dead_code, reason = "written into the page by task 4.2")
     )]
     pub(crate) const fn name(self) -> &'static str {

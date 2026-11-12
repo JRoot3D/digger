@@ -688,6 +688,16 @@ impl Bindings {
         self.keys.get(&key).copied()
     }
 
+    /// Whether `key` is bound to any action (the browser keeps its own
+    /// action off such keys).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser guards bound keys")
+    )]
+    pub(crate) fn is_bound(&self, key: KeyName) -> bool {
+        self.keys.contains_key(&key)
+    }
+
     /// The pad action `button` is bound to.
     pub(crate) fn pad_action_of(&self, button: PadButton) -> Option<PadAction> {
         self.buttons.get(&button).copied()

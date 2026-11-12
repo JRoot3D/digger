@@ -17,7 +17,7 @@ use crate::input::{PadButton, PadEvent, PadId, StickAxis};
 
 /// The gamepads, while polling works.
 #[derive(Debug)]
-pub(super) struct GamepadPoller {
+pub(crate) struct GamepadPoller {
     gilrs: Gilrs,
     /// Connections found at start, reported by the first poll.
     initial: Vec<PadEvent>,
@@ -26,7 +26,7 @@ pub(super) struct GamepadPoller {
 impl GamepadPoller {
     /// Starts polling; `Err` is the reason, for a notice, when gamepads
     /// cannot be read on this system.
-    pub(super) fn new() -> Result<Self, String> {
+    pub(crate) fn new() -> Result<Self, String> {
         let gilrs = Gilrs::new().map_err(|error| error.to_string())?;
         let initial = gilrs
             .gamepads()
@@ -37,7 +37,7 @@ impl GamepadPoller {
     }
 
     /// Appends the pad events that happened since the last poll, in order.
-    pub(super) fn poll(&mut self, out: &mut Vec<PadEvent>) {
+    pub(crate) fn poll(&mut self, out: &mut Vec<PadEvent>) {
         out.append(&mut self.initial);
         while let Some(event) = self.gilrs.next_event() {
             if let Some(event) = translate(PadId(event.id.into()), event.event) {
@@ -48,7 +48,7 @@ impl GamepadPoller {
 }
 
 /// The pad event of one gilrs event, if it means anything to the game.
-pub(super) fn translate(pad: PadId, event: EventType) -> Option<PadEvent> {
+pub(crate) fn translate(pad: PadId, event: EventType) -> Option<PadEvent> {
     match event {
         EventType::Connected => Some(PadEvent::Connected(pad)),
         EventType::Disconnected => Some(PadEvent::Disconnected(pad)),

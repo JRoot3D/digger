@@ -29,17 +29,18 @@ winit.workspace = true
 clap.workspace = true
 directories.workspace = true
 
-# The browser bindings of the web build (design decisions 3 and 8). The
-# `web-sys` feature list is trimmed to what the code uses in task 3.8.
+# The browser bindings of the web build (design decisions 3 and 8), and
+# cpal's Web Audio host. The `web-sys` features are what the web code uses.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+cpal = { workspace = true, features = ["wasm-bindgen"] }
 js-sys.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 web-sys = { workspace = true, features = [
   "Blob",
   "BlobPropertyBag",
+  "CssStyleDeclaration",
   "Document",
-  "DomTokenList",
   "Element",
   "Event",
   "EventTarget",
@@ -49,10 +50,11 @@ web-sys = { workspace = true, features = [
   "HtmlCanvasElement",
   "HtmlElement",
   "HtmlInputElement",
+  "KeyboardEvent",
   "Location",
+  "Node",
   "Storage",
   "Url",
-  "VisibilityState",
   "Window",
   "console",
 ] }

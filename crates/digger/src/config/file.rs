@@ -253,6 +253,25 @@ pub(crate) fn save(store: &mut dyn Store, changes: &Layer) -> Result<bool, SaveE
     Ok(true)
 }
 
+/// Saves the defaults with `changes` applied, without reading what is
+/// stored: used over stored settings that were damaged at start, so the
+/// next change replaces them (`web-build` spec, damaged stored settings).
+///
+/// Returns whether anything was written: with no changes nothing is.
+///
+/// # Errors
+///
+/// The [`StoreError`] of a refused save.
+pub(crate) fn save_fresh(store: &mut dyn Store, changes: &Layer) -> Result<bool, StoreError> {
+    if changes.is_empty() {
+        return Ok(false);
+    }
+    let mut settings = Settings::default();
+    settings.apply(changes);
+    store.save(StoreKey::Settings, &render(&settings))?;
+    Ok(true)
+}
+
 /// [`save`] into the configuration file at `path`.
 ///
 /// # Errors

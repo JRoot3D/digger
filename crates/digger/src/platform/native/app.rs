@@ -22,8 +22,6 @@ use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
-use super::audio::CpalBackend;
-use super::pads::GamepadPoller;
 use super::window::GameWindow;
 use crate::config::ScaleMode;
 use crate::event::AppEvent;
@@ -31,7 +29,9 @@ use crate::input::{InputState, KeyPress, PadEvent, Pads};
 use crate::pacing::{Clock, Control, Pacer, SystemClock};
 use crate::page::{AudioStatus, NativePageUi, PageUi, Status};
 use crate::platform::audio::{Audio, AudioRequest};
+use crate::platform::cpal_output::CpalBackend;
 use crate::platform::keys::key_name;
+use crate::platform::pads::GamepadPoller;
 use crate::report;
 use crate::shell::{FrameOutput, Request, Shell, ShellInput};
 

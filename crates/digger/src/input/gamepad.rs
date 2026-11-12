@@ -75,6 +75,21 @@ pub(crate) enum PadEvent {
     },
 }
 
+impl PadEvent {
+    /// Whether this is a button or d-pad button going down (a user gesture,
+    /// where the browser counts it as one).
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser's audio unlock")
+    )]
+    pub(crate) const fn is_press(&self) -> bool {
+        matches!(
+            self,
+            Self::Button { pressed: true, .. } | Self::DPad { pressed: true, .. }
+        )
+    }
+}
+
 /// One input of a pad that can be held.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PadInput {
@@ -544,5 +559,76 @@ mod tests {
         let frame = state.take_frame();
         assert_eq!(frame.slots, [digger_core::Controls::NONE; 2]);
         assert_eq!(frame.pad_changes, []);
+    }
+
+    #[test]
+    fn pad_presses_are_gestures() {
+        let press = PadEvent::Button {
+            pad: PAD_A,
+            button: PadButton::South,
+            pressed: true,
+        };
+        let release = PadEvent::Button {
+            pad: PAD_A,
+            button: PadButton::South,
+            pressed: false,
+        };
+        let dpad = PadEvent::DPad {
+            pad: PAD_A,
+            direction: Direction::Left,
+            pressed: true,
+        };
+        assert!(press.is_press() && dpad.is_press());
+        assert!(!release.is_press());
+        assert!(!stick(PAD_A, StickAxis::X, 1.0).is_press());
+        assert!(!PadEvent::Connected(PAD_A).is_press());
+        // Bound keys, which the browser keeps its own action off.
+        let bindings = Bindings::from_settings(&Settings::default());
+        let bound = |name: &str| {
+            let key = crate::input::KeyName::parse(name);
+            assert!(key.is_some(), "{name} is a key name");
+            key.is_some_and(|key| bindings.is_bound(key))
+        };
+        for name in ["ArrowDown", "Space", "F1", "Tab", "F10"] {
+            assert!(bound(name), "{name}");
+        }
+        for name in ["F5", "F12", "KeyQ"] {
+            assert!(!bound(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn gamepad_disconnect_releases_controls() {
+        // `web-build` spec, gamepad unplugged while moving: the browser
+        // reports the disconnect through the same pad events.
+        let mut state = InputState::new(Bindings::from_settings(&Settings::default()));
+        let mut pads = Pads::new(0.5);
+        state.pad_event(&mut pads, PadEvent::Connected(PAD_A));
+        state.take_frame();
+        // Left held on the stick, and the up arrow on the keyboard.
+        state.pad_event(&mut pads, stick(PAD_A, StickAxis::X, -0.9));
+        let up = crate::input::KeyName::parse("ArrowUp");
+        state.key_down(crate::input::KeyPress {
+            key: up,
+            repeat: false,
+            text: None,
+        });
+        let frame = state.take_frame();
+        assert!(frame.slots[0].left && frame.slots[0].up);
+        // The pad is unplugged: its left is released, the key stays held.
+        state.pad_event(&mut pads, PadEvent::Disconnected(PAD_A));
+        let frame = state.take_frame();
+        assert_eq!(frame.pad_changes, [PadChange::Removed(0)]);
+        assert!(!frame.slots[0].left, "the pad's left is released");
+        assert!(frame.slots[0].up, "the keyboard keeps working");
+        // Later stick reports of the gone pad do nothing.
+        state.pad_event(&mut pads, stick(PAD_A, StickAxis::X, -0.9));
+        let frame = state.take_frame();
+        assert!(!frame.slots[0].left && frame.slots[0].up);
+        // Plugged in again, it works from its first input.
+        state.pad_event(&mut pads, PadEvent::Connected(PAD_A));
+        state.pad_event(&mut pads, stick(PAD_A, StickAxis::X, -0.9));
+        let frame = state.take_frame();
+        assert!(frame.slots[0].left);
     }
 }

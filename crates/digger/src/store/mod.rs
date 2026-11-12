@@ -24,8 +24,13 @@ use crate::notice::Notice;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod native;
 
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod web;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use native::NativeStore;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::WebStore;
 
 /// What is stored. A closed set, so no caller can invent a key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -52,6 +57,10 @@ pub(crate) enum StoreError {
     )]
     Full,
     /// A file could not be read or written.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        allow(dead_code, reason = "the browser keeps no files")
+    )]
     Io {
         /// The path that could not be read, written or renamed.
         path: PathBuf,
@@ -59,6 +68,10 @@ pub(crate) enum StoreError {
         source: io::Error,
     },
     /// The stored value is not UTF-8 text.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        allow(dead_code, reason = "local storage holds text only")
+    )]
     NotText,
     /// A test store refuses every save.
     #[cfg(test)]

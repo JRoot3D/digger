@@ -123,7 +123,13 @@ state and the sound handle. The seams:
 | time | `Instant` | `std::time` | `web_time` |
 
 `StoreKey` is an enum (`Settings`, `Scores`), not a string, so a caller cannot
-invent a storage key. The shell owns the store through a small `Storage` wrapper that
+invent a storage key. In the browser (task 3.3), storage that cannot be used
+at all raises the one notice at start; stored settings that cannot be
+parsed give the defaults with a console warning, and the shell then
+replaces them on the next change (`Shell::replace_damaged_settings`,
+`config::file::save_fresh`) instead of refusing to touch them as the
+desktop does; the browser saves settings after every frame in which they
+changed (`Shell::save_changed_settings`). The shell owns the store through a small `Storage` wrapper that
 applies the failure rule on every target: the first failed save of either
 key raises one `Notice::StorageUnavailable`, later failures raise
 none, and the values stay in memory. The desktop keeps phase 6's
@@ -177,7 +183,14 @@ Visibility comes from the document's `visibilitychange` event, forwarded as
 `AppEvent::Visibility(bool)`. On hidden, `App` stops stepping, tells
 `AudioOutput` to suspend, and, if a live game is in play, feeds the pause
 control into the next step so the game enters its own pause phase; no new
-pause mechanism is added to the simulation.
+pause mechanism is added to the simulation. That step is run at once, in
+the hidden handler, so the pause is taken at the frame where the page was
+hidden; like the pause key, the frame that honours the request is one
+main-phase tick (found in task 3.6; a level draw keeps the request until
+its first tick). The shell holds the rule (`Shell::event` marks the pause,
+`Shell::frame` adds it); `Pacer::hide`/`Pacer::show` stop the batches and
+re-anchor on return, so the policy is host tested. Keys held when the page
+is hidden are released, as on focus loss.
 
 *Rejected:* `setTimeout`/`setInterval` at the frame length — throttled
 unpredictably in background tabs and not aligned with display. A fixed "one
@@ -198,7 +211,17 @@ size to backing size divided by the device pixel ratio, and sets
 `image-rendering: pixelated` for the reduced case. Letterboxing is therefore
 done by the page, and the canvas never holds anything but game pixels.
 Viewport and pixel-ratio changes arrive as `winit` `Resized` and
-`ScaleFactorChanged` events, as on the desktop.
+`ScaleFactorChanged` events, as on the desktop. Because the canvas's own
+size is set by the game, a browser window resize does not resize the
+canvas element, so `winit` would not report it: the web presenter reads
+`innerWidth`, `innerHeight` and `devicePixelRatio` on every animation
+callback as well (two property reads) and re-lays out when they change
+(task 3.1). The size computation (`present::canvas`) is pure and keeps
+device and CSS pixels in separate types. Fullscreen (key and button) puts
+the document root, not the canvas, into fullscreen, so the page's black
+background stays the letterbox and the scaling rule applies to the whole
+screen; a fullscreen canvas would be stretched by the browser's own
+fullscreen style instead.
 
 ### 7. Audio unlock as an ownership hand-over
 
@@ -230,6 +253,15 @@ itself a gesture.
 The prompt is a page element shown while the state is `Locked`; it is set
 through `PageUi::set_notice`, never drawn into the framebuffer.
 
+Found in task 3.4: a gamepad press is treated as a gesture only when
+`navigator.userActivation.isActive` says so (or the browser does not
+tell), so a press that is no gesture leaves the state `Locked` instead of
+creating an audio context the browser holds back; every later key or
+pointer press also asks a running stream to play (`Audio::nudge`), which
+starts a context the browser did hold back. A quiet start (`Off`) is not
+unlocked by a gesture, only by the sound toggle. The web audio request
+uses a buffer of at least 100 ms of samples.
+
 In the browser `cpal` runs its callback on the main thread through Web Audio.
 The single-producer queue between game and synthesiser works unchanged with
 both ends on one thread.
@@ -250,7 +282,15 @@ the size is checked against 16 MiB before reading, the file's
 `array_buffer()` promise is awaited with `wasm-bindgen-futures`, and the
 bytes are sent as `AppEvent::RecordingPicked { name, bytes }`. Parsing,
 format detection (by content, with the name as a hint) and playback are the
-existing desktop code paths; a parse error becomes a `Notice`. The `rfd`
+existing desktop code paths; a parse error becomes a `Notice`. The reasons
+are distinct (`notice::Rejection`): too large, not a recording, unsupported
+(pre-1998), damaged, unreadable, or picked away from the title screen. A
+file over 16 MiB is not read: the picker sends
+`AppEvent::TransferFailed(TransferError::TooLarge)`, and the shell checks
+the size of picked bytes again. Browsers open a file picker only inside a
+user gesture, so the page's play-recording button opens the hidden input
+itself in its click listener; `FileTransfer::request_import` stays the
+seam's hook but neither platform calls it (task 3.7). The `rfd`
 crate was considered and rejected: its Linux backends pull in toolkit
 dependencies the desktop build does not need, and the browser part is about
 forty lines of `web-sys`.
@@ -264,7 +304,10 @@ function compiled and tested on every target. It fills the same settings
 the `mode` values are the `game.mode` names of the configuration file. Each
 rejected parameter
 is a `LaunchWarning { name, value, reason }` shown through `PageUi`; nothing
-panics on user-supplied text. Launch options are layered over stored settings
+panics on user-supplied text. Numbers are decimal digits only; `quiet=0` is
+accepted and has no effect, any other `quiet` value but none or `1` is
+warned about; a parameter given twice keeps its last valid value
+(task 3.2). Launch options are layered over stored settings
 in memory and are never passed to `Store::save`.
 
 ### 10. The page
@@ -453,7 +496,7 @@ to reproduce. Four documented behaviours touch it and are kept visible:
 |---|---|---|---|
 | Speed and pacing never change game results (research 05 §6.3) | Simulation invariant | phase 6's `Pacer` only decides when `Game::step` is called, never what it is given | Playwright replay of an upstream recording at `speed=0` matches score, level and ticks; `pacer_*` unit tests |
 | The picture is game state (porting plan §3) | Simulation invariant | Prompt, notices and letterbox are page elements; the canvas holds only game pixels | Playwright replay with the prompt visible still matches; canvas backing size test |
-| Exit from the title screen does not quit in a browser (research 05 §8.4) | Presentation, kept from upstream's web build | `run` on web never exits; the frontend ignores the game's exit outcome and re-enters the title | `web_exit_stays_on_title` (host test with the web policy) and a Playwright check |
+| Exit from the title screen does not quit in a browser (research 05 §8.4) | Presentation, kept from upstream's web build | `run` on web never exits; the shell's `ExitPolicy::StayOnTitle` turns the game's exit outcome into the title screen (on the title screen it simply runs on) | `web_exit_stays_on_title` (host test with the web policy) and a Playwright check |
 | Sound can be switched on after a quiet start (upstream bug, fixed in phase 6) | Presentation fix | `AudioOutput::Off -> Locked -> Running` on the toggle key | `audio_quiet_then_toggle_unlocks` host test; Playwright `?quiet` test |
 
 `docs/compat-quirks.md` gets a short "web build" section recording the third

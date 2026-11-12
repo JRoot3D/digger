@@ -15,16 +15,6 @@
 //! otherwise runs the shell in the game window.
 
 #![forbid(unsafe_code)]
-// Temporary (add-web-build-and-releases, tasks 2.1 to 3.8): until the web
-// platform of task group 3 drives the shell, most of the program is not
-// reached from the web stub entry point.
-#![cfg_attr(
-    target_arch = "wasm32",
-    allow(
-        dead_code,
-        reason = "temporary: the web platform is filled in by task group 3"
-    )
-)]
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
@@ -32,6 +22,9 @@ use std::path::Path;
 use std::process::ExitCode;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
+// `std::time::SystemTime` is unavailable in a browser.
+#[cfg(target_arch = "wasm32")]
+use web_time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(not(target_arch = "wasm32"))]
 use digger_core::recording::RecordingKind;
@@ -41,15 +34,6 @@ mod cli;
 mod config;
 mod error;
 mod event;
-// The web stub entry point of task 1.2 runs no verification yet (temporary
-// until task 3.8 of add-web-build-and-releases).
-#[cfg_attr(
-    target_arch = "wasm32",
-    expect(
-        dead_code,
-        reason = "temporary: the web stub entry point verifies nothing"
-    )
-)]
 mod headless;
 mod input;
 mod launch;
@@ -189,7 +173,6 @@ fn finish(mut shell: shell::Shell, status: u8, verify: Option<&Path>) -> Result<
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 /// A base seed for live games from the system clock: games differ from
 /// run to run, while the simulation itself stays deterministic.
 fn clock_seed() -> u64 {
@@ -201,12 +184,52 @@ fn clock_seed() -> u64 {
         })
 }
 
-/// A stub entry point for the web build (add-web-build-and-releases, task
-/// 1.2): the web platform is still empty (task 2.1), so this only builds
-/// the shell with default settings and in-memory tables. Task 3.1 runs it
-/// in the page's canvas; task 3.8 removes the temporary gates.
+/// The browser's program (add-web-build-and-releases, task group 3): the
+/// panic hook, the start-up options of the query string (a bad value is a
+/// warning), the settings and high scores from local storage (missing,
+/// refused or damaged storage gives the defaults and play goes on), then
+/// the shell in the page's canvas. The shell never ends the program: its
+/// exit outcome returns to the title screen, and settings are saved as
+/// they change.
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    let shell = shell::Shell::new(config::Settings::default(), shell::Setup::default());
-    drop(shell);
+    platform::install_panic_hook();
+    let (launch, warnings) = platform::launch_options();
+    for warning in &warnings {
+        report::warning(warning);
+    }
+    let files = store::WebStore::open();
+    let unavailable = files.unavailable();
+    let (stored, damaged) = match config::file::load(&files) {
+        Ok(stored) => (stored.unwrap_or_default(), false),
+        Err(error) => {
+            if unavailable.is_none() {
+                report::warning(format_args!("{error}; the default settings apply"));
+            }
+            (config::file::FileLayer::default(), true)
+        }
+    };
+    for warning in &stored.warnings {
+        report::warning(warning);
+    }
+    let settings = config::Settings::resolve(&stored.layer, &launch);
+    let options = platform::WindowOptions {
+        scale: settings.scale,
+    };
+    let setup = shell::Setup {
+        base_seed: clock_seed(),
+        ..shell::Setup::default()
+    };
+    let mut storage = store::Storage::new(files);
+    if let Some(error) = unavailable {
+        storage.failed(store::StoreKey::Settings, error);
+    }
+    let mut shell = shell::Shell::with_storage(settings, setup, storage);
+    shell.set_exit_policy(shell::ExitPolicy::StayOnTitle);
+    if damaged {
+        shell.replace_damaged_settings();
+    }
+    if let Err(error) = platform::run(platform::App::new(shell, options)) {
+        report::error(error);
+    }
 }

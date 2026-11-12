@@ -8,6 +8,7 @@
 //! and the browser build can send the lines to its console instead.
 
 use std::fmt;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
 
 /// How serious a message is.
@@ -16,13 +17,6 @@ pub(crate) enum Level {
     /// The program ends.
     Error,
     /// Something in the user's input was ignored.
-    #[cfg_attr(
-        target_arch = "wasm32",
-        expect(
-            dead_code,
-            reason = "temporary: the web stub entry point of task 1.2 reports no warnings"
-        )
-    )]
     Warning,
     /// The program carries on with less (no sound, scores not saved).
     Notice,
@@ -47,21 +41,28 @@ pub(crate) fn line(level: Level, message: impl fmt::Display) -> String {
 
 /// Prints a message at `level` on standard error. A failed write to
 /// standard error is ignored: there is nowhere left to report it.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn emit(level: Level, message: impl fmt::Display) {
     let text = line(level, message);
     let _ = writeln!(std::io::stderr().lock(), "{text}");
 }
 
+/// Writes a message at `level` to the browser's console: a page has no
+/// standard error.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn emit(level: Level, message: impl fmt::Display) {
+    let text = wasm_bindgen::JsValue::from_str(&line(level, message));
+    match level {
+        Level::Error => web_sys::console::error_1(&text),
+        Level::Warning => web_sys::console::warn_1(&text),
+        Level::Notice => web_sys::console::info_1(&text),
+    }
+}
+
 /// Prints `line` on standard error as it is, without the prefix: for
 /// reports whose wording another specification fixes, such as a replay's
 /// divergence report (replay-verification spec, "Divergence report").
-#[cfg_attr(
-    target_arch = "wasm32",
-    expect(
-        dead_code,
-        reason = "temporary: the web stub entry point verifies nothing"
-    )
-)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn emit_raw(line: &str) {
     let _ = writeln!(std::io::stderr().lock(), "{line}");
 }
@@ -72,7 +73,6 @@ pub(crate) fn error(message: impl fmt::Display) {
 }
 
 /// Prints `digger: warning: <message>` on standard error.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn warning(message: impl fmt::Display) {
     emit(Level::Warning, message);
 }

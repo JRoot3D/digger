@@ -29,8 +29,61 @@ pub(crate) enum Notice {
         /// The file's name.
         name: String,
         /// Why.
-        reason: String,
+        reason: Rejection,
     },
+}
+
+/// Why a picked recording is not played back (`web-build` spec, loading a
+/// recording through a file picker): each reason has its own notice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Rejection {
+    /// The file is larger than [`MAX_IMPORT_BYTES`](crate::transfer::MAX_IMPORT_BYTES).
+    TooLarge {
+        /// Its size in bytes.
+        size: u64,
+    },
+    /// It does not begin with a recording header.
+    NotARecording,
+    /// A recording of a kind the game does not play (pre-1998).
+    Unsupported(String),
+    /// A recording whose header or body is damaged.
+    Malformed(String),
+    /// The file could not be read.
+    Unreadable(String),
+    /// Recordings are picked on the title screen only.
+    NotOnTitle,
+}
+
+impl Rejection {
+    /// The reason a recording that does not parse is rejected.
+    pub(crate) fn of(error: &digger_core::recording::RecordingError) -> Self {
+        use digger_core::recording::RecordingError;
+        match error {
+            RecordingError::NotARecording => Self::NotARecording,
+            RecordingError::UnsupportedVersion { .. } => Self::Unsupported(error.to_string()),
+            // A header, record or body that cannot be read (the error
+            // type is open to new kinds of damage).
+            _ => Self::Malformed(error.to_string()),
+        }
+    }
+}
+
+impl fmt::Display for Rejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooLarge { size } => write!(
+                f,
+                "the file is too large ({size} bytes; recordings are at most 16 MiB)"
+            ),
+            Self::NotARecording => f.write_str(
+                "the file is not a recording (it does not begin with a DRF or eDRF header)",
+            ),
+            Self::Unsupported(reason) => write!(f, "unsupported recording: {reason}"),
+            Self::Malformed(reason) => write!(f, "the recording is damaged: {reason}"),
+            Self::Unreadable(reason) => write!(f, "the file cannot be read: {reason}"),
+            Self::NotOnTitle => f.write_str("recordings are played from the title screen"),
+        }
+    }
 }
 
 impl fmt::Display for Notice {

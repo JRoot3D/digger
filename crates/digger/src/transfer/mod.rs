@@ -16,13 +16,47 @@ use std::path::PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 
+#[cfg(target_arch = "wasm32")]
+mod web;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use native::NativeFileTransfer;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::WebFileTransfer;
+
+/// The largest recording file the program reads: 16 MiB (`web-build`
+/// spec, loading a recording through a file picker). The upstream
+/// recordings are a few hundred kilobytes at most.
+pub(crate) const MAX_IMPORT_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Whether a picked file of `size` bytes may be read.
+///
+/// # Errors
+///
+/// [`TransferError::TooLarge`] above [`MAX_IMPORT_BYTES`].
+#[cfg_attr(
+    not(any(test, target_arch = "wasm32")),
+    expect(dead_code, reason = "the browser's file picker checks sizes")
+)]
+pub(crate) fn check_import_size(name: &str, size: u64) -> Result<(), TransferError> {
+    if size > MAX_IMPORT_BYTES {
+        Err(TransferError::TooLarge {
+            name: name.to_owned(),
+            size,
+        })
+    } else {
+        Ok(())
+    }
+}
 
 /// Why a recording could not be handed out or taken in.
 #[derive(Debug)]
 pub(crate) enum TransferError {
     /// A file or folder could not be written.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        allow(dead_code, reason = "the browser writes no files")
+    )]
     Io {
         /// The folder the recording was to be saved in.
         path: PathBuf,
@@ -35,6 +69,28 @@ pub(crate) enum TransferError {
         allow(dead_code, reason = "raised by the browser's transfer of task 3.7")
     )]
     Refused(String),
+    /// A picked file is larger than [`MAX_IMPORT_BYTES`]; it is not read.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        allow(dead_code, reason = "raised by the browser's file picker")
+    )]
+    TooLarge {
+        /// The file's name.
+        name: String,
+        /// Its size in bytes.
+        size: u64,
+    },
+    /// A picked file could not be read.
+    #[cfg_attr(
+        not(target_arch = "wasm32"),
+        allow(dead_code, reason = "raised by the browser's file picker")
+    )]
+    Unreadable {
+        /// The file's name.
+        name: String,
+        /// Why.
+        reason: String,
+    },
 }
 
 impl fmt::Display for TransferError {
@@ -42,6 +98,10 @@ impl fmt::Display for TransferError {
         match self {
             Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
             Self::Refused(reason) => f.write_str(reason),
+            Self::TooLarge { name, size } => {
+                write!(f, "{name}: {size} bytes is larger than the 16 MiB limit")
+            }
+            Self::Unreadable { name, reason } => write!(f, "{name}: {reason}"),
         }
     }
 }
@@ -60,9 +120,10 @@ pub(crate) trait FileTransfer: fmt::Debug {
     /// Asks the player for a recording to play; the answer arrives later
     /// as an [`AppEvent`](crate::event::AppEvent). The desktop takes its
     /// recordings from the command line and does nothing here.
-    #[cfg_attr(
-        not(target_arch = "wasm32"),
-        allow(dead_code, reason = "the page's play-recording button (task 3.7)")
+    #[allow(
+        dead_code,
+        reason = "the page's play-recording button opens the browser's picker itself, \
+                  inside its click, which the browser requires"
     )]
     fn request_import(&mut self) {}
 }

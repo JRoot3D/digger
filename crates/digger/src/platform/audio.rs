@@ -382,6 +382,10 @@ impl<B: Backend> Audio<B> {
     /// The desktop's start: already unlocked. Opens the device for
     /// `request`, with an engine set up as `config` says (its rate is
     /// replaced by the device's); `Failed`, with a notice, when that fails.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(dead_code, reason = "a page opens audio only after a gesture")
+    )]
     pub(super) fn running(backend: B, request: AudioRequest, config: SoundConfig) -> Self {
         let mut audio = Self::with_state(backend, request, AudioOutput::Off);
         audio.open_fresh(config);
@@ -547,6 +551,22 @@ impl<B: Backend> Audio<B> {
         }
     }
 
+    /// A user gesture while the stream runs: it is asked to play again, so
+    /// a browser audio context that was created without a gesture in
+    /// effect (and held back by the browser) starts now. Harmless on a
+    /// playing stream; does nothing while suspended or in any other state.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "the browser's audio unlock")
+    )]
+    pub(super) fn nudge(&mut self) {
+        if !self.suspended
+            && let AudioOutput::Running { stream, .. } = &self.state
+        {
+            let _ = B::play(stream);
+        }
+    }
+
     /// Pauses a running stream, with a notice on failure.
     fn pause(&mut self) {
         if let AudioOutput::Running { stream, .. } = &self.state
@@ -582,6 +602,10 @@ impl<B: Backend> Audio<B> {
     }
 
     /// Stops the device and drops the engine.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(dead_code, reason = "a page is never shut down by the game")
+    )]
     pub(super) fn close(&mut self) {
         self.state = AudioOutput::Off;
     }
@@ -961,6 +985,30 @@ mod tests {
         audio.retry(SoundConfig::DEFAULT);
         assert!(!audio.is_running());
         assert_eq!(audio.take_notices().len(), 1);
+    }
+
+    #[test]
+    fn audio_gesture_nudges_a_running_stream() {
+        let (backend, _) = fake(&[Plan::Present]);
+        let mut audio = Audio::locked(backend, REQUEST_48K, SoundConfig::DEFAULT);
+        // Locked: nothing to nudge, nothing opens.
+        audio.nudge();
+        assert_eq!(audio.status(), AudioStatus::Locked);
+        audio.unlock(SoundConfig::DEFAULT);
+        assert!(audio.is_running());
+        // A stream the browser held back is asked to play on the next
+        // gesture.
+        let stream = audio.stream().expect("open");
+        stream.paused.set(true);
+        audio.nudge();
+        assert!(!audio.stream().expect("open").paused.get());
+        // While the page is hidden the gesture leaves it paused.
+        audio.suspend();
+        assert!(audio.stream().expect("open").paused.get());
+        audio.nudge();
+        assert!(audio.stream().expect("open").paused.get());
+        audio.resume();
+        assert!(!audio.stream().expect("open").paused.get());
     }
 
     /// The audio request of the locked tests: the fake device's rate.

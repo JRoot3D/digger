@@ -61,6 +61,7 @@ impl SystemClock {
     }
 
     /// The instant `at` after the origin, for `ControlFlow::WaitUntil`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn instant(&self, at: Duration) -> Instant {
         self.origin + at
     }
@@ -135,6 +136,8 @@ pub(crate) struct Pacer<C: Clock> {
     batch: Batch,
     /// The frames run in the current batch.
     ran: u32,
+    /// The page is hidden: no frame is due until it is shown again.
+    hidden: bool,
 }
 
 impl<C: Clock> Pacer<C> {
@@ -146,6 +149,7 @@ impl<C: Clock> Pacer<C> {
             schedule: Self::schedule_at(frame_time, now),
             batch: Batch::Closed,
             ran: 0,
+            hidden: false,
         }
     }
 
@@ -180,9 +184,14 @@ impl<C: Clock> Pacer<C> {
     /// at most [`MAX_DUE`]; if the next frame is more than [`MAX_DUE`] frame
     /// times late, the schedule restarts now and the batch holds one frame.
     /// When unpaced, the batch runs frames for [`UNPACED_BUDGET`].
+    /// While the page is hidden ([`Pacer::hide`]) the batch is empty.
     pub(crate) fn begin(&mut self) {
         let now = self.clock.now();
         self.ran = 0;
+        if self.hidden {
+            self.batch = Batch::Frames(0);
+            return;
+        }
         self.batch = match &mut self.schedule {
             Schedule::Paced {
                 frame_time,
@@ -300,6 +309,38 @@ impl<C: Clock> Pacer<C> {
             *anchor = now;
             *frames_since_anchor = 0;
         }
+    }
+
+    /// The page was hidden (add-web-build-and-releases, design decision 5):
+    /// no batch runs a frame until [`Pacer::show`].
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "only a browser page is hidden")
+    )]
+    pub(crate) fn hide(&mut self) {
+        self.hidden = true;
+        self.batch = Batch::Closed;
+    }
+
+    /// The page is visible again: the schedule restarts now, so the hidden
+    /// time is never caught up.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "only a browser page is hidden")
+    )]
+    pub(crate) fn show(&mut self) {
+        if std::mem::replace(&mut self.hidden, false) {
+            self.reanchor();
+        }
+    }
+
+    /// Whether the page is hidden.
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "only a browser page is hidden")
+    )]
+    pub(crate) const fn is_hidden(&self) -> bool {
+        self.hidden
     }
 
     /// A new schedule at `frame_time` whose frame 0 is due at `at`.
@@ -695,5 +736,47 @@ mod tests {
         // 375 frames of the hidden 30 seconds.
         let total = before + total(&after);
         assert!((186..=190).contains(&total), "{total} frames");
+    }
+
+    #[test]
+    fn hidden_time_is_not_caught_up() {
+        let (clock, mut pacer) = pacer(DEFAULT);
+        let five = Duration::from_secs(5);
+        let before = total(&callbacks(&clock, &mut pacer, 60, Duration::ZERO, five));
+        // Hidden for 30 seconds. Browsers may still deliver callbacks to a
+        // hidden page (throttled); none of them runs a frame.
+        pacer.hide();
+        assert!(pacer.is_hidden());
+        let hidden = callbacks(&clock, &mut pacer, 1, five, five + Duration::from_secs(30));
+        assert_eq!(total(&hidden), 0, "no frame runs while hidden");
+        // Visible again: one frame at once, then normal speed.
+        let visible = five + Duration::from_secs(30);
+        clock.set(visible);
+        pacer.show();
+        assert!(!pacer.is_hidden());
+        assert_eq!(pacer.next_deadline(), Some(visible));
+        let after = callbacks(
+            &clock,
+            &mut pacer,
+            60,
+            visible,
+            visible + Duration::from_secs(10),
+        );
+        assert_eq!(after.first(), Some(&1), "the first callback runs one frame");
+        let total = before + total(&after);
+        assert!((186..=190).contains(&total), "{total} frames");
+        // Showing a page that was not hidden does not move the schedule.
+        let next = pacer.next_deadline();
+        pacer.show();
+        assert_eq!(pacer.next_deadline(), next);
+        // Unpaced, a hidden page runs nothing either.
+        let (clock, mut pacer) = self::pacer(Duration::ZERO);
+        pacer.hide();
+        clock.advance(Duration::from_millis(16));
+        assert_eq!(batch(&mut pacer).0, 0);
+        pacer.show();
+        pacer.begin();
+        assert!(pacer.next_frame(), "frames run again once shown");
+        pacer.end();
     }
 }

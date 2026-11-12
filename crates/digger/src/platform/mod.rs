@@ -15,7 +15,9 @@ use std::fmt;
 use crate::error::AppError;
 
 mod audio;
+mod cpal_output;
 mod keys;
+mod pads;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
@@ -24,6 +26,8 @@ mod web;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use native::{App, Finished, WindowOptions, run};
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::{App, WindowOptions, install_panic_hook, launch_options, run};
 
 /// Why the platform could not run the game.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,13 +58,6 @@ impl From<RunError> for AppError {
 /// The cause of a winit error as a sentence for the user: winit prefixes
 /// operating-system errors with the source location they were raised at
 /// (`os error at src/…/mod.rs:765: `), which is dropped here.
-#[cfg_attr(
-    target_arch = "wasm32",
-    expect(
-        dead_code,
-        reason = "the web platform of task 3.1 reports winit errors"
-    )
-)]
 fn cause(error: &impl fmt::Display) -> String {
     let text = error.to_string();
     match text.strip_prefix("os error at ") {

@@ -7,9 +7,15 @@
 //! (`GameMode::from_options`), so an impossible combination is refused
 //! before a game is configured. The desktop's command line (`cli`) is
 //! compiled for native targets only; it refuses a bad value with a usage
-//! error. The browser ignores a bad value and shows a [`LaunchWarning`].
+//! error. The browser reads the page address's query string with
+//! [`parse_query`], ignores a bad value and shows a [`LaunchWarning`].
 
 use std::fmt;
+
+mod query;
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) use query::parse_query;
 
 /// How the key redefinition opens before the title screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,7 +37,7 @@ pub(crate) enum Redefine {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     not(any(test, target_arch = "wasm32")),
-    allow(dead_code, reason = "made by the browser's query parser (task 3.2)")
+    expect(dead_code, reason = "made by the browser's query parser")
 )]
 pub(crate) struct LaunchWarning {
     /// The option's name (`speed`).

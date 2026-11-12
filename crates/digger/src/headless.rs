@@ -18,15 +18,25 @@
 //! `/R:name /E:file`), which converts a classic recording to the extended
 //! format.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
+use std::path::PathBuf;
 
-use digger_core::recording::{self, Recording, RecordingError};
+use digger_core::recording::Recording;
+#[cfg(not(target_arch = "wasm32"))]
+use digger_core::recording::{self, RecordingError};
+#[cfg(not(target_arch = "wasm32"))]
 use digger_core::replay::{Replay, ReplayOptions, ReplayReport, ReplayStep};
+#[cfg(not(target_arch = "wasm32"))]
 use digger_core::{FrameInput, NoopObserver};
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::error::AppError;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::report;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::shell::recording::kind_for_path;
 
 /// A recording to verify, read and parsed, with the file it came from.
@@ -38,6 +48,8 @@ pub(crate) struct VerifyJob {
     pub(crate) recording: Recording,
 }
 
+// The verification run is started from the desktop's command line.
+#[cfg(not(target_arch = "wasm32"))]
 impl VerifyJob {
     /// Reads and parses the recording at `file`.
     ///
@@ -59,6 +71,7 @@ impl VerifyJob {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The error of a recording that could not be parsed: status 1, or 2 for
 /// a bad record, with a message naming the file.
 pub(crate) fn unplayable(file: &Path, error: &RecordingError) -> AppError {
@@ -68,6 +81,7 @@ pub(crate) fn unplayable(file: &Path, error: &RecordingError) -> AppError {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// What a finished verification run ends the program with: for status 0
 /// the result line to print on standard output (with its line end),
 /// otherwise the error carrying the status. The report's diagnostics are
@@ -93,6 +107,7 @@ pub(crate) fn conclude(report: &ReplayReport, file: &Path) -> Result<String, App
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The `--verify <file> --headless` run, re-recording to `record` if
 /// given: returns the result line of a successful run.
 ///
@@ -105,6 +120,7 @@ pub(crate) fn run(file: &Path, record: Option<&Path>) -> Result<String, AppError
     conclude(&report, file)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Plays `job` to its end with no devices and no pacing, re-recording to
 /// `record` if given, and returns the report.
 fn play(job: &VerifyJob, record: Option<&Path>) -> Result<ReplayReport, AppError> {

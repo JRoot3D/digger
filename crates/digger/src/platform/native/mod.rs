@@ -11,8 +11,6 @@ use crate::event::AppEvent;
 use crate::shell::Shell;
 
 mod app;
-mod audio;
-mod pads;
 mod window;
 
 pub(crate) use app::{App, WindowOptions};
