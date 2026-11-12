@@ -245,3 +245,53 @@ fn quirks_doc_names_existing_tests_for_undefined_behaviour() {
     // Test. A dropped feature has no code or test in this change.
     check_table('U', 12, 6, 4, 5, false);
 }
+
+#[test]
+fn quirks_doc_names_existing_tests_for_playback() {
+    // Id, Behaviour, Class, Implemented in, Test. The ids are P1 to P16 of
+    // `add-recording-and-conformance`, added as its task groups land, so
+    // the rows are checked in order but not for completeness.
+    let tests = tests_of_crate();
+    let rows: Vec<(u32, Vec<String>)> = DOC
+        .lines()
+        .filter_map(|line| {
+            let inner = line.strip_prefix("| ")?.strip_suffix(" |")?;
+            let cells: Vec<String> = inner.split(" | ").map(|c| c.trim().to_owned()).collect();
+            let number = cells.first()?.strip_prefix('P')?.parse().ok()?;
+            Some((number, cells.get(1..).unwrap_or_default().to_vec()))
+        })
+        .collect();
+    let numbers: Vec<u32> = rows.iter().map(|(n, _)| *n).collect();
+    let mut sorted = numbers.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(numbers, sorted, "the P rows, once each and in order");
+    assert!(
+        (1..=9).all(|n| numbers.contains(&n)),
+        "P1 to P9: {numbers:?}"
+    );
+    let mut problems = Vec::new();
+    for (number, cells) in &rows {
+        assert_eq!(
+            cells.len(),
+            4,
+            "P{number}: {} cells after the id",
+            cells.len()
+        );
+        let implemented = cells.get(2).expect("the Implemented in cell");
+        let test_cell = cells.get(3).expect("the Test cell");
+        if code_spans(implemented).is_empty() {
+            problems.push(format!("P{number}: the Implemented in cell names no code"));
+        }
+        let named = named_tests(test_cell);
+        if named.is_empty() {
+            problems.push(format!("P{number}: the Test cell names no test"));
+        }
+        for name in named {
+            if !exists(&tests, name) {
+                problems.push(format!("P{number}: no test {name}"));
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}

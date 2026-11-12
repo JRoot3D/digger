@@ -89,7 +89,13 @@ are the same with fire. Seeds take hex digits of either case.
   above 4294967295 are errors that give the byte offset in the file
   (`DRF: bad record at offset N: ...`). Upstream reads garbage silently.
 - A round end where a run still has repeats to give, or where the body does
-  not hold `EOL`, is reported as out of step instead of being ignored.
+  not hold `EOL`, is reported as out of step instead of being ignored. It is
+  not checked when the caller stops the playback, nor once the recording has
+  ended inside the round.
+- A round start that finds the end of the data, or the `E`/`e` of `EOG`,
+  where a seed should be ends the recording as the end marker does: the
+  game is quit at the start of the next frame. Upstream reads the seed out
+  of whatever follows.
 - Short map rows are earth; upstream stores the NUL that ended the line.
 - The run counter starts afresh with every playback; upstream's is a static
   variable never reset.
@@ -178,6 +184,14 @@ resolution, tap pulse and one-tick fire delay as live controls.
   any other line after it is a bad record.
 - A recording without `Z` was cut short: it is classified as truncated
   once played.
+- During playback the recording has run out when every slot's control
+  values are used up; the game is then quit at the start of the next frame.
+  The other records were all read before play started, which is what
+  upstream's lazy reader finds when its input queues are empty and the file
+  has no line left.
+- A round that starts with no `R` record left is played with seed 0, and a
+  level that starts with no `L` record left is played on the configured
+  plan, as upstream does.
 
 ### Data model
 
