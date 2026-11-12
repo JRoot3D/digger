@@ -33,8 +33,8 @@ at a time and group 13 forbids any that remain.
 - [x] 3.2 Implement the pre-1998 check (decimal at byte offset 7 ≤ 19981125, missing date reads as 0) with the message quoting the version line; verify with tests `rejects_19981125`, `accepts_19990130`, `rejects_version_without_date`
 - [x] 3.3 Implement the DRF map block (80 lines, first 15 bytes, short rows and non-map bytes are earth); verify with tests `drf_short_map_row_is_earth`, `drf_overlong_map_row_truncated`, `drf_missing_map_rows_is_header_error`
 - [x] 3.4 Implement the DRF body filter and `DrfCursor` (seed with optional initials, runs with counts, `EOL`, `E`/end of data, checked count parsing, runs not expanded); verify with tests `drf_run_length_decoding`, `drf_body_ignores_control_bytes`, `drf_initials_before_seed`, `drf_bad_seed_reports_offset`, `drf_unknown_run_letter_reports_offset`, `drf_end_of_data_is_end_marker`
-- [ ] 3.5 Parse all 23 corpus `.drf` headers and walk each body with the cursor alone (seed, runs, `EOL` repeatedly); verify with test `corpus_drf_bodies_tokenise` that every file tokenises to the end with no error, and record per file the version line, mode and number of rounds in `docs/conformance.md`
-- [ ] 3.6 Run the gate and commit (`feat(core): read DRF recordings`)
+- [x] 3.5 Parse all 23 corpus `.drf` headers and walk each body with the cursor alone (seed, runs, `EOL` repeatedly); verify with test `corpus_drf_bodies_tokenise` that every file tokenises to the end with no error, and record per file the version line, mode and number of rounds in `docs/conformance.md`
+- [x] 3.6 Run the gate and commit (`feat(core): read DRF recordings`)
 
 ## 4. eDRF reader
 

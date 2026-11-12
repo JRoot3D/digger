@@ -127,15 +127,18 @@ The DRF body SHALL be read as one character stream in which every byte below
 optional initials, an 8-digit hexadecimal seed (either case), any number of
 runs, then `EOL`. A run is one of `s r u l d` (stop, right, up, left, down
 without fire) or `S R U L D` (the same with fire), optionally followed by a
-decimal repeat count. `EOG` may follow the last `EOL`.
-(research 05 §4.1, §4.2)
+decimal repeat count. `EOG` may follow the last `EOL`. Whatever follows the
+last round is a trailer that playback ignores: upstream's recordings hold
+initials there as `*abc`, twice (`2test01.drf`) or without the `*`
+(`p1092525.drf`, `s1058800.drf`). (research 05 §4.1, §4.2)
 
 #### Scenario: Grammar
 - **WHEN** a DRF body is parsed
-- **THEN** it is accepted if and only if it matches
+- **THEN** its rounds are accepted if and only if they match
 
 ```
-body   := round* ["EOG"] ["*" c c c]
+body   := round* ["EOG"] trailer
+trailer:= any bytes               ; usually "*" c c c, the initials; ignored
 round  := ["*" c c c] seed run* "EOL"
 seed   := 8 hex digits            ; round RNG seed, most significant digit first
 run    := dirchar [count]

@@ -69,3 +69,47 @@ plays from after the slots in play and drops the returned value; the test
 and that the value returned for an unread slot changes nothing, and
 `observer_sees_one_movement_per_movable_tick` was corrected to expect both
 slots.
+
+## DRF corpus
+
+The 23 upstream `.drf` files read with the DRF reader alone, without a game
+(task 3.5, test `corpus_drf_bodies_tokenise` in
+`crates/digger-core/tests/drf_corpus.rs`, which fails when this table is
+stale). Every header parses and every body tokenises to its end: seed,
+runs up to the end marker, `EOL`, repeated while another seed follows.
+"Rounds" is the number of seeds read and equals the number of `R` records
+of the file's `.edrf` twin; "Records" is the number of movement records the
+runs expand to (one per control read during play); "Trailer" is what
+follows the last `EOL`, which playback ignores.
+
+No file holds `EOG`. Three
+trailers do not match the `["*" c c c]` of research 05 §4.1: `2test01.drf`
+holds its initials twice and `p1092525.drf` and `s1058800.drf` hold three
+letters without the `*`. The game-recording spec's body grammar was
+corrected to treat everything after the last round as an ignored trailer.
+
+| File | Version line | Mode | Rounds | Records | Trailer |
+|---|---|---|---:|---:|---|
+| `2test01.drf` | `POK SDL 20110912` | `M2` | 6 | 4722 | `*max*max` |
+| `a1104675.drf` | `TD WIN 20020310` | `1` | 168 | 106526 | `*AJU` |
+| `a1195000.drf` | `TD WIN 20020310` | `1` | 183 | 113769 | `*AJU` |
+| `a1262500.drf` | `AJ DOS 19990506` | `1` | 153 | 256961 | `*alb` |
+| `b1072175.drf` | `AJ DOS 19990506` | `1` | 162 | 124369 | (none) |
+| `dror0.drf` | `AJ DOS 19990130` | `1` | 4 | 2624 | (none) |
+| `f1172525.drf` | `AJ DOS 19990506` | `1` | 182 | 195910 | `*fip` |
+| `g1322150.drf` | `TD WIN 20020310` | `1` | 200 | 149422 | `*GRY` |
+| `h1266775.drf` | `AJ DOS 19990506` | `1` | 180 | 177207 | (none) |
+| `k1859075.drf` | `AJ DOS 19990506` | `1` | 232 | 185635 | `*kkk` |
+| `k2223700.drf` | `AJ DOS 19990506` | `1` | 233 | 347385 | `*gkl` |
+| `m1143925.drf` | `AJ DOS 19990506` | `1` | 165 | 146176 | `*mjw` |
+| `muu27700.drf` | `MS MPL 20190212` | `1` | 8 | 7289 | `*muu` |
+| `p1092525.drf` | `AJ DOS 19990506` | `1` | 150 | 116006 | `PLA` |
+| `r2222400.drf` | `AJ DOS 19990506` | `1` | 256 | 400557 | `*rtp` |
+| `r3333300.drf` | `AJ DOS 19990506` | `1` | 398 | 557981 | `*rtp` |
+| `ramon.drf` | `TD WIN 20020310` | `1` | 4 | 6732 | (none) |
+| `s1058800.drf` | `AJ DOS 19990506` | `1` | 132 | 108045 | `STO` |
+| `s1177650.drf` | `AJ DOS 19990506` | `1` | 180 | 221138 | (none) |
+| `s1302025.drf` | `AJ DOS 19990506` | `1` | 192 | 147482 | (none) |
+| `sobodig.drf` | `POK SDL 20110912` | `1` | 4 | 1050 | `*mmm` |
+| `thevoid.drf` | `AJ DOS 19990506` | `1` | 4 | 3545 | `*gkl` |
+| `thevoids.drf` | `AJ DOS 19990506` | `1` | 15 | 40841 | (none) |
