@@ -2,9 +2,10 @@
 
 How the port proves that its simulation behaves like the original: by
 replaying upstream's recordings and comparing state-hash checkpoints
-(change `add-recording-and-conformance`). This document grows with that
-change; later sections cover the corpus, the triage procedure and the
-tracking table of all 50 recordings.
+(change `add-recording-and-conformance`). It covers the simulation seam,
+the corpus, the triage procedure, the tracking table of all 50
+recordings (all passing), the port-made fixtures for the modes upstream
+never recorded, and the continuous-integration jobs that run the suite.
 
 ## Simulation seam
 
@@ -258,6 +259,60 @@ recorded controls, so a window may extend beyond the first failure.
    failing checkpoint, cause, fixing commit) and flip its entry in
    `crates/digger-core/tests/conformance.rs` from `pending` to `passing`.
 4. Commit per fixed defect (`fix(core): …` naming the quirk).
+
+## Port-made fixtures
+
+Upstream never recorded an alternating two-player game (mode `2`) or a
+game with a start level (`I<n>`). `tests/recordings/port/` holds one game
+of each, as DRF and eDRF, recorded by the port from scripted controls
+(task 13.3): `alternating.*` (two alternating players; a bot sweeps the
+field row by row, and player 1 clears level 1) and `start-level-5.*` (one
+player from level 5, mode line `1I5`). They are regression fixtures, not
+upstream-verified, and lie outside `MANIFEST.sha256` and the 50-recording
+list (`tests/recordings/port/README.md`).
+
+`crates/digger-core/tests/port_fixtures.rs` checks them in the ordinary
+test run: `port_fixture_alternating` and `port_fixture_start_level`
+replay each eDRF to `verified` (every checkpoint matches) and each DRF,
+which has no checkpoints, to `completed`, both with the result line of
+the fixture's `.out` file (status 0 either way);
+`port_fixtures_regenerate_identically` plays the scripts again and
+compares the bytes. `DIGGER_WRITE_PORT_FIXTURES=1 cargo test -p
+digger-core --test port_fixtures` rewrites the files after a deliberate
+change.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the suite in two places:
+
+- every `check` job (Linux, Windows and macOS) runs `cargo test
+  --workspace`, which covers the quick tier (18 recordings), the codec
+  round trips, the state-hash tests, the malformed-input tests, the
+  isolation tests, the corpus manifest and the port-made fixtures. On
+  Windows this also proves that the checkout keeps the corpus byte-for-byte
+  (the `-text` attribute; `muu27700.drf` keeps its CR LF line ends);
+- the `conformance` job (Linux) runs `cargo test --release -p digger-core
+  --test conformance -- --include-ignored` (all 50 recordings) and then
+  `cargo xtask conformance --tier full`, and uploads
+  `target/conformance/report.md` as the `conformance-report` artifact.
+
+`cargo xtask` builds in its own `xtask` profile (target/xtask/, defined in
+the workspace manifest) with the simulation optimised, so the full tier
+runs fast from the plain alias, and so that the `cargo test` run by `cargo
+xtask ci` never has to replace the running xtask executable, which Windows
+refuses.
+
+Full-tier duration (budget: 10 minutes in an optimised build, replay-
+verification spec, "Suite tiers and run time"):
+
+| Where | `cargo test --release … --include-ignored` | `cargo xtask conformance --tier full` |
+|---|---|---|
+| this sandbox, 4 processors, warm build | 13 s (12.9 s of tests) | 19 s (46 s of verification over 4 jobs) |
+| GitHub Actions `ubuntu-latest`, run 43150498983 (cached dependencies) | 23 s step (16.7 s of tests) | 31 s step, build included |
+
+Both are well under the budget; the whole `conformance` job took 1 min 11 s.
+That run was the first with every job green on the change's branch
+(`check` on Linux, Windows and macOS, `conformance`, `deny`, `openspec`).
 
 ## Tracking table
 

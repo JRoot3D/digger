@@ -1,10 +1,12 @@
 # tests/recordings/
 
 Upstream's recording corpus, used by the conformance suite. **Do not edit
-these files by hand.** Every file except this README is written by
-`cargo xtask import-recordings` and guarded by `MANIFEST.sha256` and the test
-`crates/digger-core/tests/corpus_integrity.rs`; a change made by hand makes
-`cargo test --workspace` fail.
+these files by hand.** Every file except this README and `port/` is written
+by `cargo xtask import-recordings` and guarded by `MANIFEST.sha256` and the
+test `crates/digger-core/tests/corpus_integrity.rs`; a change made by hand
+makes `cargo test --workspace` fail. `port/` holds the port's own regression
+fixtures for the modes listed under "Known gaps" (see `port/README.md`); they
+are not upstream recordings.
 
 ## Origin
 
@@ -53,8 +55,10 @@ was written by `MS MPL 20190212`.
 
 ## Known gaps
 
-- No alternating two-player game (mode `2`).
-- No recording with a start level (`I`).
+- No alternating two-player game (mode `2`); `port/alternating.*` is a
+  port-made regression fixture, not upstream-verified.
+- No recording with a start level (`I`); `port/start-level-5.*` is a
+  port-made regression fixture, not upstream-verified.
 - No pre-1998 ("kludge"-era) file: no recording has a version date of
   19981125 or earlier, so the old monster behaviour such files select is
   never exercised; the port refuses them.
