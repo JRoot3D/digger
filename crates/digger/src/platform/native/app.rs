@@ -22,12 +22,13 @@ use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::WindowId;
 
-use super::audio::{Audio, AudioRequest, CpalBackend};
+use super::audio::CpalBackend;
 use super::pads::GamepadPoller;
 use super::window::GameWindow;
 use crate::config::ScaleMode;
 use crate::input::{InputState, KeyPress, PadEvent, Pads};
 use crate::pacing::{Clock, Control, Pacer, SystemClock};
+use crate::platform::audio::{Audio, AudioRequest};
 use crate::platform::keys::key_name;
 use crate::report;
 use crate::shell::{FrameOutput, Request, Shell, ShellInput};
@@ -243,7 +244,7 @@ impl App {
             buffer: settings.buffer_size,
         };
         let pads_enabled = settings.pad_enabled;
-        self.audio = Some(Audio::open(CpalBackend, request, self.sound_config()));
+        self.audio = Some(Audio::running(CpalBackend, request, self.sound_config()));
         self.report_audio_notices();
         if pads_enabled {
             match GamepadPoller::new() {

@@ -14,6 +14,7 @@ use std::fmt;
 
 use crate::error::AppError;
 
+mod audio;
 mod keys;
 
 #[cfg(not(target_arch = "wasm32"))]
